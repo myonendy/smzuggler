@@ -13,6 +13,8 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Harden logger scrubbing for punctuation, root homes and Windows path casing;
+  register POSIX logger fixtures only on supported platforms.
 - Add explicit assertions for logger privacy path and buffer boundaries.
 - Scrub home path prefixes from logger console, file and callback output.
 - Added SHA-pinned Linux, Windows and macOS QuickJS CI and local testing guidance.

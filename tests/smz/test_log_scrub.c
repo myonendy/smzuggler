@@ -31,9 +31,6 @@ int main(void)
     char home[] = "/tmp/smz-log-XXXXXX";
     check(mkdtemp(home) != NULL);
     check(setenv("HOME", home, 1) == 0);
-#ifdef _WIN32
-    check(_putenv_s("USERPROFILE", home) == 0);
-#endif
     char file[256], msg[1024], out[1024], other[256];
     snprintf(file, sizeof(file), "%s/log", home);
     snprintf(other, sizeof(other), "%sx/file", home);
