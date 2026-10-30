@@ -17,7 +17,10 @@ WORKFLOW = ROOT / '.github/workflows/privacy.yml'
 
 def script_for(text, name):
     """Return a named CI step's shell script for local, isolated execution."""
-    section = text.split(f'      - name: {name}\n', 1)[1]
+    marker = f'      - name: {name}\n'
+    if marker not in text:
+        raise ValueError(f'Workflow step not found: {name}')
+    section = text.split(marker, 1)[1]
     block = section.split('        run: |\n', 1)[1]
     lines = []
     for line in block.splitlines():
@@ -43,7 +46,7 @@ class PrivacyWorkflowTests(unittest.TestCase):
         self.assertNotIn('echo', text)
         self.assertNotIn('set -x', text)
 
-    def run_step(self, name, event, secret='blocked-example-token'):
+    def run_step(self, name, event, secret='blocked-example-token', **overrides):
         """Run real shell wiring with recording tool stubs in a temporary checkout."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -72,6 +75,16 @@ class PrivacyWorkflowTests(unittest.TestCase):
                        PRIVACY_DENYLIST=secret, EVENT_NAME=event,
                        BASE='base-sha', HEAD='head-sha', BEFORE='before-sha',
                        AFTER='after-sha')
+            env.update(overrides)
+            git = checkout / 'git'
+            git.write_text('#!/bin/bash\n'
+                           'case "$1" in\n'
+                           'cat-file) test "${BEFORE_REACHABLE:-yes}" = yes ;;\n'
+                           "rev-parse) printf '%s\\n' \"$DEFAULT_TIP\" ;;\n"
+                           '*) exit 2 ;;\n'
+                           'esac\n')
+            git.chmod(0o700)
+            env['PATH'] = str(checkout) + os.pathsep + env['PATH']
             result = subprocess.run(['bash', '-euo', 'pipefail', '-c',
                                      script_for(WORKFLOW.read_text(), name)],
                                     cwd=checkout, env=env, capture_output=True, text=True)
@@ -106,6 +119,20 @@ class PrivacyWorkflowTests(unittest.TestCase):
                 result, calls = self.run_step('Check commit subjects', event)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn(repr(['--range', expected]), calls)
+
+
+        for before, reachable, tip, expected in (
+                ('0' * 40, 'yes', 'default-sha', 'origin/main..after-sha'),
+                ('missing-sha', 'no', 'default-sha', 'origin/main..after-sha'),
+                ('0' * 40, 'yes', 'after-sha', 'after-sha')):
+            with self.subTest(before=before, reachable=reachable, tip=tip):
+                result, calls = self.run_step(
+                    'Check commit subjects', 'push', BEFORE=before,
+                    BEFORE_REACHABLE=reachable, DEFAULT_TIP=tip,
+                    DEFAULT_BRANCH='main')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(repr(['--range', expected]), calls)
+                self.assertNotIn('0' * 40 + '..after-sha', calls)
 
 
 if __name__ == '__main__':

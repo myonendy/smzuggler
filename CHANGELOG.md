@@ -7,6 +7,7 @@
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Handle new branches, tags and unavailable old push tips in CI subject checks.
 - Added CI privacy and commit-subject checks and contributor privacy guidance.
 - Forked from Outsider f789f46 as smzuggler (QuickJS mode, unchanged behaviour).
 - Added the v0.5.1 spec, the privacy scan and hooks (§16), and the AgentForge setup.

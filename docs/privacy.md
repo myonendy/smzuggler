@@ -31,7 +31,11 @@ user.email` for this repository only, never globally. Messages and PR text
 must follow the privacy rules too. Follow [Commit messages](../CONTRIBUTING.md)
 for imperative, specific subjects of at most 72 characters and card trailers.
 The CI `commit-subjects` job checks PR base-to-head or push before-to-after
-ranges with full history, independently of the privacy job.
+ranges with full history, independently of the privacy job. For new branches,
+tags, or force pushes whose old tip is unavailable, it checks the default
+branch tip through the pushed tip. If the pushed tip is the default branch
+tip itself, it checks the full reachable history. An unavailable default
+branch reference fails the job rather than bypassing the check.
 
 ## Runtime logs and environment
 
