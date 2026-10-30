@@ -10,11 +10,11 @@ strict_milestones = true          # never start milestone N+1 before N is fully 
 [agents]
 # Claude is review-only in this project (owner, 2026-10-30): never a worker, implementer,
 # fallback worker, planner or auditor. Same shape as the earlier project used for review-only Claude.
-workers = ["codex", "codex", "oc-deepseek"]
+workers = ["codex", "codex"]  # OpenCode Go cancelled 2026-10-30
 fallback_workers = []              # never "claude" here
 reviewer = "cross"                 # never the author; prefers another model family and CLI
 self_review_fallback = true        # author reviews only when every other reviewer is cooling
-review_pool = ["claude", "codex", "oc-deepseek"]
+review_pool = ["claude", "codex"]  # OpenCode Go cancelled 2026-10-30
 planner = "codex"
 auditor = "codex"
 swap_on_retry = true               # attempt 3+ goes to the other vendor
