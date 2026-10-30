@@ -1314,10 +1314,10 @@ TEST(build_pipeline_structure)
 
     /* Verify the build produced the main executable (name and location
        depend on platform and CMake generator). */
-    ASSERT(file_exists("build/outsider") ||
-           file_exists("build/outsider.exe") ||
-           file_exists("build/Debug/outsider.exe") ||
-           file_exists("build/Release/outsider.exe"));
+    ASSERT(file_exists("build/smzuggler-rt") ||
+           file_exists("build/smzuggler-rt.exe") ||
+           file_exists("build/Debug/smzuggler-rt.exe") ||
+           file_exists("build/Release/smzuggler-rt.exe"));
 
     const char *shims[] = {
         "src/shims/dom_shim.js",

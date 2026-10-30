@@ -1,6 +1,11 @@
 /*
  * Copyright (c) 2026 General Arcade (Pte. Ltd.)
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
+ * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-10-30: use the configurable runtime identity.
+ *
+ * Platform bindings for browser window operations; main thread only.
+ * See docs/DECISIONS.md (DEC-M0-T001) for identity ownership.
  */
 
 #include "bindings/bind_platform.h"
@@ -77,8 +82,11 @@ static JSValue js_platform_get_window_size(JSContext *ctx, JSValueConst this_val
     return obj;
 }
 
-/* setWindowTitle(title) - window title becomes "<title> [Outsider]", or just
-   "Outsider" when the title is empty. Called from the document.title setter. */
+/** Implement the document.title setter on the JS/main thread (MDN:
+ * https://developer.mozilla.org/en-US/docs/Web/API/Document/title).
+ * Borrow argv[0] as the title, copy it with the runtime suffix, and release
+ * the temporary string. Return undefined or a JS conversion exception.
+ * Empty titles use the runtime name. Compat row: platform/window title. */
 static JSValue js_platform_set_window_title(JSContext *ctx, JSValueConst this_val,
                                             int argc, JSValueConst *argv)
 {

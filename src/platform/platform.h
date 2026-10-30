@@ -1,6 +1,11 @@
 /*
  * Copyright (c) 2026 General Arcade (Pte. Ltd.)
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
+ * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-10-30: use the configurable runtime identity.
+ *
+ * Platform adapter contract; callers own resources until shutdown.
+ * See docs/DECISIONS.md (DEC-M0-T001) for identity ownership.
  */
 
 #ifndef RMMZ_PLATFORM_H
@@ -12,7 +17,8 @@ typedef struct Platform Platform;
 
 /* Create the window and OpenGL 4.5 context. Returns NULL on failure. */
 /* Application name used for the window title and dialogs. */
-#define RMMZ_APP_NAME "Outsider"
+#include "smzuggler/names.h"
+#define RMMZ_APP_NAME SMZUGGLER_NAME
 
 Platform *platform_init(const char *title, int width, int height);
 

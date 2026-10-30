@@ -1,5 +1,17 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 The smzuggler contributors
+# Modified 2026-10-30: configure the runtime identity.
+# Build orchestration; see docs/DECISIONS.md (DEC-M0-T001).
+
 cmake_minimum_required(VERSION 3.20)
 project(outsider C CXX)
+
+set(SMZUGGLER_NAME "smzuggler" CACHE STRING "Runtime display name")
+set(SMZUGGLER_BIN "smzuggler-rt" CACHE STRING "Runtime executable name")
+add_compile_definitions(
+    SMZUGGLER_NAME="${SMZUGGLER_NAME}"
+    SMZUGGLER_BIN="${SMZUGGLER_BIN}"
+)
 
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -181,6 +193,7 @@ if(ANDROID)
     set_target_properties(outsider PROPERTIES OUTPUT_NAME main)
 else()
     add_executable(outsider ${RMMZ_RUNTIME_SOURCES})
+    set_target_properties(outsider PROPERTIES OUTPUT_NAME "${SMZUGGLER_BIN}")
 endif()
 
 # Windows: embed an application manifest so the process uses the UTF-8 code

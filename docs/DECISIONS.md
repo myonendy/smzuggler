@@ -1,3 +1,10 @@
+<!--
+SPDX-License-Identifier: GPL-3.0-or-later
+Copyright (C) 2026 The smzuggler contributors
+Modified 2026-10-30: document runtime naming.
+Project documentation; identity decisions are in docs/DECISIONS.md.
+-->
+
 # Decisions
 
 One entry per non-obvious decision. Entries made by a card are named after the card
@@ -89,3 +96,9 @@ go in a `Card:` trailer; no generic or `forge:` subjects (CONTRIBUTING.md). Enfo
 commit-msg hook and the `commit_subjects` gate (`tools/commitmsg/`). AgentForge's fixed
 `<ID>: attempt N by <vendor>` subjects cannot be configured; the gate reports them and
 docs/FORGE.md lists the forge change that would remove the exception (SI-15).
+
+## DEC-M0-T001 — Keep the upstream target, configure the runtime identity
+The CMake target remains `outsider` to keep upstream merges mechanical. Desktop
+output and installation use `SMZUGGLER_BIN`; Android retains `libmain.so` because
+SDLActivity requires it. Cache strings feed the shared names header and platform
+alias; standalone compilation uses the same defaults. This changes naming only.

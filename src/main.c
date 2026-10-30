@@ -1,6 +1,11 @@
 /*
  * Copyright (c) 2026 General Arcade (Pte. Ltd.)
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
+ * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-10-30: use the configurable runtime identity.
+ *
+ * Runtime entry point; owns startup and shutdown on the main thread.
+ * See docs/DECISIONS.md (DEC-M0-T001) for identity ownership.
  */
 
 #include "platform/platform.h"
@@ -80,6 +85,8 @@ static bool find_dir_next_to_exe(const char *name, char *out, size_t out_size)
     return file_io_is_directory(out);
 }
 
+/** Start the runtime on the main thread using borrowed CLI arguments; return
+ * an exit status on startup failure or after releasing runtime resources. */
 int main(int argc, char *argv[])
 {
     /* Android: printf output is lost unless routed to logcat. No-op elsewhere. */
@@ -192,14 +199,14 @@ int main(int argc, char *argv[])
     setvbuf(stdout, NULL, _IONBF, 0);
 
     error_handler_init(log_path, LOG_INFO);
-    error_handler_log(LOG_INFO, "Outsider (RPG Maker MZ native runtime) starting");
+    error_handler_log(LOG_INFO, SMZUGGLER_NAME " (RPG Maker MZ native runtime) starting");
 
     /* Validate the game directory before opening a window, so a bad launch
        (wrong path, bare double-click) produces a clear error instead of a
        black screen. */
     if (!game_dir) {
         fatal_error("No game directory specified.\n\n"
-                    "Run with:  outsider --game <path to RPG Maker MZ game>\n"
+                    "Run with:  " SMZUGGLER_BIN " --game <path to RPG Maker MZ game>\n"
                     "or place a \"game\" folder next to the executable.");
         error_handler_shutdown();
         return 1;

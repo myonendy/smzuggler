@@ -1,9 +1,22 @@
-# Outsider: RPG Maker MZ Native Runtime
+<!--
+SPDX-License-Identifier: GPL-3.0-or-later
+Copyright (C) 2026 The smzuggler contributors
+Modified 2026-10-30: document runtime naming.
+Project documentation; identity decisions are in docs/DECISIONS.md.
+-->
 
-Outsider is a native, browser-free runtime for RPG Maker MZ games. The game's original
-JavaScript runs unmodified inside [QuickJS](https://github.com/quickjs-ng/quickjs),
-with windowing and input from SDL3, rendering through the GPU (Metal, Vulkan or
-D3D12), and audio through SoLoud. No NW.js, no Chromium, no Node.
+# smzuggler: RPG Maker MZ Native Runtime
+
+smzuggler is an independent, open-source runtime for RPG Maker MZ games,
+based on Outsider by General Arcade. It is distinct from American Revolution
+Smuggler and is not affiliated with or endorsed by HIROTONFA, by General Arcade
+(the Outsider authors), or by the makers of RPG Maker.
+
+Compatibility: tested with American Revolution Smuggler; you need your own copy.
+
+The game's original JavaScript runs unmodified inside
+[QuickJS](https://github.com/quickjs-ng/quickjs), with SDL3 windowing and input,
+GPU rendering and SoLoud audio.
 
 The result is a small executable (a few megabytes instead of a couple hundred)
 that starts instantly, uses far less memory than the stock NW.js player, and
@@ -32,8 +45,8 @@ runs on Linux, Windows and macOS from the same source tree.
 - **Plugin friendly.** Common plugin needs such as `document.currentScript`,
   `fetch()`, `<script>` elements inserted at run time, Steam/Greenworks
   stubs, Web Audio effect nodes and PIXI filter stubs are covered.
-- **Save data compatible.** Saves are written next to the game exactly where
-  the NW.js player puts them.
+- **Save data compatible.** The inherited runtime supports the NW.js player's
+  save format.
 - **Effekseer** particle effects through the native SDK (optional build).
 - **Packaging tools** that decrypt assets, convert audio and bundle a
   self-contained distribution.
@@ -41,20 +54,20 @@ runs on Linux, Windows and macOS from the same source tree.
 ## Tested Games
 
 Commercial RPG Maker MZ games from Steam, run unmodified from their converted
-assets. All screenshots below are Outsider, not the original player.
+assets. All screenshots below are smzuggler, not the original player.
 
 <table>
   <tr>
-    <td align="center"><img src="screenshots/look-outside.png" alt="Look Outside running in Outsider" width="100%"><br><b>Look Outside</b></td>
-    <td align="center"><img src="screenshots/ann.png" alt="Ann running in Outsider" width="100%"><br><b>Ann</b></td>
+    <td align="center"><img src="screenshots/look-outside.png" alt="Look Outside running in smzuggler" width="100%"><br><b>Look Outside</b></td>
+    <td align="center"><img src="screenshots/ann.png" alt="Ann running in smzuggler" width="100%"><br><b>Ann</b></td>
   </tr>
   <tr>
-    <td align="center"><img src="screenshots/drapline.png" alt="DRAPLINE Demo running in Outsider" width="100%"><br><b>DRAPLINE Demo</b></td>
-    <td align="center"><img src="screenshots/saihate-station.png" alt="Saihate Station running in Outsider" width="100%"><br><b>Saihate Station</b></td>
+    <td align="center"><img src="screenshots/drapline.png" alt="DRAPLINE Demo running in smzuggler" width="100%"><br><b>DRAPLINE Demo</b></td>
+    <td align="center"><img src="screenshots/saihate-station.png" alt="Saihate Station running in smzuggler" width="100%"><br><b>Saihate Station</b></td>
   </tr>
   <tr>
-    <td align="center"><img src="screenshots/aquarium.png" alt="The Aquarium does not dance running in Outsider" width="100%"><br><b>The Aquarium does not dance</b></td>
-    <td align="center"><img src="screenshots/pocket-mirror.png" alt="Pocket Mirror ~ GoldenerTraum running in Outsider" width="100%"><br><b>Pocket Mirror ~ GoldenerTraum</b></td>
+    <td align="center"><img src="screenshots/aquarium.png" alt="The Aquarium does not dance running in smzuggler" width="100%"><br><b>The Aquarium does not dance</b></td>
+    <td align="center"><img src="screenshots/pocket-mirror.png" alt="Pocket Mirror ~ GoldenerTraum running in smzuggler" width="100%"><br><b>Pocket Mirror ~ GoldenerTraum</b></td>
   </tr>
 </table>
 
@@ -174,10 +187,10 @@ cmake --build build --config Release --parallel
 ctest --test-dir build -C Release
 ```
 
-On Windows `outsider.exe` is a GUI application: no console window opens
+On Windows `smzuggler-rt.exe` is a GUI application: no console window opens
 when it is double-clicked. Output still reaches the parent console when
 launched from a shell, follows redirection, and otherwise goes to
-`console.log` next to `debug.log` in the game directory. Fatal startup errors
+the runtime log files. Fatal startup errors
 are shown in a message box. Pass `-DRMMZ_WIN32_CONSOLE=ON` to build a
 console executable instead.
 
@@ -285,16 +298,16 @@ comes up.
 
 ```bash
 # Run a game (positional or --game); shims default to src/shims
-./build/outsider "/path/to/game"
-./build/outsider --game "/path/to/game" --shims "/path/to/shims"
+./build/smzuggler-rt "/path/to/game"
+./build/smzuggler-rt --game "/path/to/game" --shims "/path/to/shims"
 
 # Other options
-./build/outsider --game "/path/to/game" --resolution 1280x720 --no-audio
+./build/smzuggler-rt --game "/path/to/game" --resolution 1280x720 --no-audio
 
 # Debugging aids: stop after N frames with a screenshot and a JS probe,
 # or take commands from stdin (used by tools/visual_eval.py)
-./build/outsider "/path/to/game" --frames 300 --screenshot out.ppm --probe "SceneManager._scene.constructor.name"
-./build/outsider "/path/to/game" --control
+./build/smzuggler-rt "/path/to/game" --frames 300 --screenshot out.ppm --probe "SceneManager._scene.constructor.name"
+./build/smzuggler-rt "/path/to/game" --control
 ```
 
 The game directory is a normal RPG Maker MZ project: `js/`, `data/`, `img/`,
@@ -303,9 +316,10 @@ next to the executable, and for shims in `game/shims/` or `shims/` beside it.
 This is the layout produced by the packaging tool, so a packaged build runs
 on double-click.
 
-The window title shows `<game title> [Outsider]` from `System.json`.
-Logs are written to `debug.log` in the game directory. Saves go to
-`save/` in the game directory, matching the stock player.
+The window title shows `<game title> [smzuggler]` from `System.json`.
+The planned user-data layout uses `smzuggler-rt/` under the XDG data, state,
+cache and config directories (or the platform preference directory). This naming
+change does not migrate the inherited save or log implementation.
 
 ### Packaging a distribution
 
@@ -331,7 +345,7 @@ executable at `dist/`.
 
 RPG Maker MZ ships every movie twice, as `movies/<name>.webm` and
 `movies/<name>.mp4`, and plays them through the browser's video element.
-Outsider has no browser codecs; it plays MPEG-1 video with MP2 audio through
+smzuggler has no browser codecs; it plays MPEG-1 video with MP2 audio through
 the vendored `pl_mpeg` decoder, a single-file software decoder with no
 external dependencies. So the game's movies are transcoded once at packaging
 time:
@@ -463,7 +477,7 @@ The packaging and evaluator tools have their own tests:
 ### Visual evaluator
 
 `tools/visual_eval.py` compares how a game looks in its own NW.js player
-and in Outsider. It launches both, plays the same scenario in each (title,
+and in smzuggler. It launches both, plays the same scenario in each (title,
 options, a new game, every menu scene, a message window, shop, name entry,
 a battle), screenshots each scene at the same game frame and writes a
 report with side-by-side images, the differing regions and a verdict per
@@ -475,7 +489,7 @@ python tools/visual_eval.py "C:/Program Files (x86)/Steam/steamapps/common/Ann/A
 ```
 
 The original is driven through the Chrome DevTools Protocol
-(`--remote-debugging-port`); Outsider through `--control`, which reads
+(`--remote-debugging-port`); smzuggler through `--control`, which reads
 eval/screenshot commands on stdin. A JS prelude injected into both before
 the first frame seeds `Math.random`, ignores saved config and save files,
 keeps the window at the game's resolution and advances the game only while
@@ -487,12 +501,10 @@ iterating on the runtime.
 
 ## Authors and License
 
-Outsider is developed by [General Arcade](https://generalarcade.com). Written by Gennadii Potapov;
-see [AUTHORS](AUTHORS).
-
-Dual-licensed: [GPLv3 or later](LICENSES/GPL-3.0.txt) for free and open
-source use, or a [commercial license](LICENSES/COMMERCIAL.md) from General
-Arcade for proprietary and commercial projects (contact@generalarcade.com).
+smzuggler is based on Outsider by [General Arcade](https://generalarcade.com);
+see [AUTHORS](AUTHORS) for upstream credits. Upstream copyright and license
+headers are retained. smzuggler modifications are GPL-3.0-or-later; General
+Arcade's commercial licensing option does not cover these modifications.
 See [LICENSE](LICENSE).
 
 Contributions are welcome under the terms in [CONTRIBUTING.md](CONTRIBUTING.md).
