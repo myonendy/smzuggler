@@ -15,11 +15,15 @@
 
 typedef struct Platform Platform;
 
-/* Create the window and OpenGL 4.5 context. Returns NULL on failure. */
 /* Application name used for the window title and dialogs. */
 #include "smzuggler/names.h"
 #define RMMZ_APP_NAME SMZUGGLER_NAME
 
+/** Create the native window and rendering context on the main thread.
+ * title is a borrowed UTF-8 string, not retained; width and height are positive
+ * client dimensions in pixels. The caller owns the returned platform and must
+ * pass it to platform_shutdown. Returns NULL with an SDL diagnostic on failure.
+ */
 Platform *platform_init(const char *title, int width, int height);
 
 /* Shut down and free all platform resources. */
