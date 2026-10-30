@@ -1,0 +1,76 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 The smzuggler contributors
+#
+# Enforce commit and report hygiene at the CI boundary (docs/privacy.md).
+# Secrets remain outside the checkout; all scans must pass before reports
+# may be uploaded. This workflow itself does not publish artifacts.
+name: Privacy and commit subjects
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  privacy-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Scan privacy
+        shell: bash
+        env:
+          PRIVACY_DENYLIST: ${{ secrets.PRIVACY_DENYLIST }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          umask 077
+          denylist=$(mktemp "$RUNNER_TEMP/privacy-denylist.XXXXXX")
+          trap 'rm -f "$denylist"' EXIT
+          printf '%s' "$PRIVACY_DENYLIST" > "$denylist"
+          unset PRIVACY_DENYLIST
+          python3 tools/privacy/scan.py --denylist "$denylist" --tree HEAD
+          if [ "$EVENT_NAME" = pull_request ]; then
+            python3 tools/privacy/scan.py --denylist "$denylist" --range "$BASE..$HEAD"
+          fi
+          # Keep generated reports here; scan every file before any upload.
+          mapfile -d '' reports < <(find . -type f \( -name 'perf-report-*' -o -path './reports/*' -o -path './test-results/*' \) -print0)
+          if [ "${#reports[@]}" -gt 0 ]; then
+            python3 tools/privacy/scan.py --denylist "$denylist" --paths "${reports[@]}"
+          fi
+  commit-subjects:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Check commit subjects
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = pull_request ]; then
+            range="$BASE..$HEAD"
+          elif [[ "$BEFORE" =~ ^0+$ ]] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            default_tip=$(git rev-parse --verify "origin/$DEFAULT_BRANCH^{commit}")
+            if [ "$AFTER" = "$default_tip" ]; then
+              range="$AFTER"
+            else
+              range="origin/$DEFAULT_BRANCH..$AFTER"
+            fi
+          else
+            range="$BEFORE..$AFTER"
+          fi
+          python3 tools/commitmsg/check_subject.py --range "$range"
