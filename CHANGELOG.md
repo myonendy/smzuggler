@@ -14,6 +14,10 @@ All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
 - Added code style guidance, upstream-aligned clang-format and changed-file ES5 checks.
+- Harden logger scrubbing for punctuation, root homes and Windows path casing;
+  register POSIX logger fixtures only on supported platforms.
+- Add explicit assertions for logger privacy path and buffer boundaries.
+- Scrub home path prefixes from logger console, file and callback output.
 - Added SHA-pinned Linux, Windows and macOS QuickJS CI and local testing guidance.
 - Added configurable smzuggler identity and the smzuggler-rt executable name.
 - Handle new branches, tags and unavailable old push tips in CI subject checks.

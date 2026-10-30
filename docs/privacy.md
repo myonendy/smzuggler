@@ -45,6 +45,20 @@ it is visible to game code. Apply the same filter to crash and performance
 reports. Logger tests must supply a fake home path and host name and verify
 that neither survives.
 
+The allocation-free `log_scrub` boundary reads `HOME` (`USERPROFILE` on
+Windows), accepts either slash style, and preserves similarly named sibling
+paths. Console, file and callback messages, including file-open failures, pass
+through it. Keep environment changes serialized with logging. The runtime does
+not query user or host identity for diagnostics.
+Boundary regression tests also check punctuation, sibling paths and bounded
+output, including preservation of bytes beyond the destination capacity.
+Punctuation ends a home prefix unless it plausibly continues a sibling filename.
+Root-only homes (a single separator or drive root) are ignored to preserve
+ordinary diagnostics. Windows home matching ignores ASCII letter case.
+Both logger regression fixtures use POSIX temporary-directory and descriptor APIs
+and are registered only on non-Windows platforms; Windows builds still compile
+the production filter and run the existing engine tests.
+
 ## Local hooks
 
 Create the private deny-list first, then run `tools/privacy/install-hooks.sh`.
