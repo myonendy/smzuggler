@@ -10,11 +10,11 @@ strict_milestones = true          # never start milestone N+1 before N is fully 
 [agents]
 # Claude is review-only in this project (owner, 2026-10-30): never a worker, implementer,
 # fallback worker, planner or auditor. Same shape as the earlier project used for review-only Claude.
-workers = ["codex", "codex", "oc-deepseek"]
+workers = ["codex", "codex"]  # OpenCode Go cancelled 2026-10-30; grok is review-only (light use)
 fallback_workers = []              # never "claude" here
 reviewer = "cross"                 # never the author; prefers another model family and CLI
 self_review_fallback = true        # author reviews only when every other reviewer is cooling
-review_pool = ["claude", "codex", "oc-deepseek"]
+review_pool = ["claude", "codex", "grok"]  # OpenCode Go cancelled 2026-10-30; grok review-only, keep its use light
 planner = "codex"
 auditor = "codex"
 swap_on_retry = true               # attempt 3+ goes to the other vendor
@@ -39,6 +39,12 @@ network_access = false             # builds are offline (FetchContent disconnect
 # OpenCode Go vendors, same tables as the other projects on this plan (shared plan, shared ledger). Only oc-deepseek is in
 # the pools above; oc-glm and oc-kimi are defined so cards may pin them and `forge limits` shows
 # them. OWNER: add them to workers if wanted.
+[agents.grok]
+bin = "grok"
+# /etc/grok/requirements.toml disables --always-approve, so headless work runs use the
+# policy-permitted auto permission mode instead (forge commits the worktree itself).
+extra_args = ["--permission-mode", "auto"]
+
 [agents.oc-glm]
 harness = "opencode"
 pool = "opencode-go"
