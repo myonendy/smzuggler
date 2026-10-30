@@ -1,7 +1,7 @@
 <!--
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
-Modified 2026-10-30: document runtime naming.
+Modified 2026-10-30: document runtime naming and link testing instructions.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 
@@ -21,6 +21,8 @@ GPU rendering and SoLoud audio.
 The result is a small executable (a few megabytes instead of a couple hundred)
 that starts instantly, uses far less memory than the stock NW.js player, and
 runs on Linux, Windows and macOS from the same source tree.
+
+Build and test locally using the [testing guide](docs/testing.md).
 
 ## Features
 
