@@ -1,10 +1,15 @@
 /*
  * Copyright (c) 2026 General Arcade (Pte. Ltd.)
+ * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-10-30: filter diagnostic home paths before output.
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
+ * Engine diagnostics and crash recovery; see docs/privacy.md.
+ * Logging state belongs to the engine thread; callbacks borrow message buffers.
  */
 
 #include "engine/error_handler.h"
 #include "engine/js_engine.h"
+#include "smzuggler/log_scrub.h"
 
 #include <quickjs.h>
 #include <SDL3/SDL.h>
@@ -23,6 +28,10 @@ static const char *s_level_names[] = {
     "DEBUG", "INFO", "WARN", "ERROR"
 };
 
+/** Configure engine-thread logging at min_level (LOG_DEBUG through LOG_ERROR).
+ * Borrows path only for this call; NULL disables file output. Open failures are
+ * scrubbed and reported to stderr; no allocation is returned to the caller.
+ */
 void error_handler_init(const char *log_file_path, LogLevel min_level)
 {
     s_min_level = min_level;
@@ -30,7 +39,9 @@ void error_handler_init(const char *log_file_path, LogLevel min_level)
     if (log_file_path) {
         s_log_file = fopen(log_file_path, "a");
         if (!s_log_file) {
-            fprintf(stderr, "[ERROR] Failed to open log file: %s\n", log_file_path);
+            char safe_path[4096];
+            log_scrub(log_file_path, safe_path, sizeof(safe_path));
+            fprintf(stderr, "[ERROR] Failed to open log file: %s\n", safe_path);
         }
     }
 }
@@ -67,6 +78,11 @@ void error_handler_set_callback(LogCallback cb, void *userdata)
     s_callback_userdata = userdata;
 }
 
+/** Emit a diagnostic at level (LOG_DEBUG through LOG_ERROR) on the engine thread.
+ * Borrows printf fmt/arguments for this call; retains no message pointers.
+ * Messages truncate at 4095 bytes and every sink receives scrubbed text. Callers
+ * must serialize environment changes; output failures follow stdio semantics.
+ */
 void error_handler_log(LogLevel level, const char *fmt, ...)
 {
     if (level < s_min_level) return;
@@ -76,6 +92,9 @@ void error_handler_log(LogLevel level, const char *fmt, ...)
     va_start(args, fmt);
     vsnprintf(msg, sizeof(msg), fmt, args);
     va_end(args);
+
+    char safe_msg[sizeof(msg)];
+    log_scrub(msg, safe_msg, sizeof(safe_msg));
 
     time_t now = time(NULL);
     struct tm tm_buf;
@@ -94,15 +113,15 @@ void error_handler_log(LogLevel level, const char *fmt, ...)
     const char *level_name = error_handler_level_name(level);
 
     FILE *out = (level >= LOG_WARN) ? stderr : stdout;
-    fprintf(out, "[%s] [%s] %s\n", timestamp, level_name, msg);
+    fprintf(out, "[%s] [%s] %s\n", timestamp, level_name, safe_msg);
 
     if (s_log_file) {
-        fprintf(s_log_file, "[%s] [%s] %s\n", timestamp, level_name, msg);
+        fprintf(s_log_file, "[%s] [%s] %s\n", timestamp, level_name, safe_msg);
         fflush(s_log_file);
     }
 
     if (s_callback) {
-        s_callback(level, msg, s_callback_userdata);
+        s_callback(level, safe_msg, s_callback_userdata);
     }
 }
 

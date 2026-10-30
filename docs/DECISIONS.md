@@ -102,3 +102,13 @@ The CMake target remains `outsider` to keep upstream merges mechanical. Desktop
 output and installation use `SMZUGGLER_BIN`; Android retains `libmain.so` because
 SDLActivity requires it. Cache strings feed the shared names header and platform
 alias; standalone compilation uses the same defaults. This changes naming only.
+
+## DEC-M0-T004 — Filter diagnostics before sink dispatch
+The engine filters the formatted message once before console, file and callback
+output, so callback consumers cannot bypass the privacy boundary. File-open
+failures filter their path separately. The allocation-free filter accepts both
+slash styles and checks the end of the home component to preserve sibling paths.
+The test fragment attaches the filter source to existing test targets that compile
+`error_handler.c` directly; this keeps upstream test definitions unchanged.
+User and host identity lookup APIs are absent from `src`; diagnostics must not add
+such identity sources. See [privacy.md](privacy.md).

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 The smzuggler contributors
-# Modified 2026-10-30: configure the runtime identity.
+# Modified 2026-10-30: configure runtime identity and diagnostic privacy.
 # Build orchestration; see docs/DECISIONS.md (DEC-M0-T001).
 
 cmake_minimum_required(VERSION 3.20)
@@ -160,6 +160,7 @@ set(RMMZ_RUNTIME_SOURCES
     src/engine/js_engine.c
     src/engine/game_loop.c
     src/engine/error_handler.c
+    src/smzuggler/log_scrub.c
     src/engine/script_loader.c
     src/io/file_io.c
     src/bindings/bind_io.c

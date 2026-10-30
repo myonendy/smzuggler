@@ -45,6 +45,12 @@ it is visible to game code. Apply the same filter to crash and performance
 reports. Logger tests must supply a fake home path and host name and verify
 that neither survives.
 
+The allocation-free `log_scrub` boundary reads `HOME` (`USERPROFILE` on
+Windows), accepts either slash style, and preserves similarly named sibling
+paths. Console, file and callback messages, including file-open failures, pass
+through it. Keep environment changes serialized with logging. The runtime does
+not query user or host identity for diagnostics.
+
 ## Local hooks
 
 Create the private deny-list first, then run `tools/privacy/install-hooks.sh`.

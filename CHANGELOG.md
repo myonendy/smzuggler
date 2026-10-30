@@ -13,6 +13,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Scrub home path prefixes from logger console, file and callback output.
 - Added configurable smzuggler identity and the smzuggler-rt executable name.
 - Handle new branches, tags and unavailable old push tips in CI subject checks.
 - Added CI privacy and commit-subject checks and contributor privacy guidance.
