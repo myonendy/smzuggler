@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(cmake *)",
+      "Bash(ctest *)",
+      "Bash(make *)",
+      "Bash(ninja *)",
+      "Bash(cc *)",
+      "Bash(gcc *)",
+      "Bash(clang *)",
+      "Bash(clang-format *)",
+      "Bash(clang-tidy *)",
+      "Bash(python3 *)",
+      "Bash(pytest *)",
+      "Bash(./build/*)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(wc *)",
+      "Bash(grep *)",
+      "Bash(rg *)",
+      "Bash(find *)",
+      "Bash(diff *)",
+      "Bash(mkdir *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)"
+    ],
+    "deny": [
+      "Bash(git commit*)",
+      "Bash(git push*)",
+      "Bash(git reset*)",
+      "Bash(git checkout*)",
+      "Bash(git switch*)",
+      "Bash(git rebase*)",
+      "Bash(git stash*)",
+      "Bash(rm -rf*)",
+      "Bash(sudo *)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Edit(/AGENTS.md)",
+      "Write(/AGENTS.md)",
+      "Edit(/CLAUDE.md)",
+      "Write(/CLAUDE.md)",
+      "Edit(/forge.toml)",
+      "Write(/forge.toml)",
+      "Edit(/schemas/**)",
+      "Write(/schemas/**)",
+      "Edit(/prompts/**)",
+      "Write(/prompts/**)",
+      "Edit(/.claude/**)",
+      "Write(/.claude/**)",
+      "Edit(/.codex/**)",
+      "Write(/.codex/**)",
+      "Edit(/docs/spec/**)",
+      "Write(/docs/spec/**)",
+      "Edit(/tasks/**)",
+      "Write(/tasks/**)",
+      "Edit(/tools/privacy/**)",
+      "Write(/tools/privacy/**)",
+      "Edit(/tools/forge/**)",
+      "Write(/tools/forge/**)",
+      "Edit(/.forge-samples)",
+      "Write(/.forge-samples)",
+      "Edit(/LICENSE)",
+      "Write(/LICENSE)",
+      "Edit(/LICENSES/**)",
+      "Write(/LICENSES/**)",
+      "Edit(/.gitattributes)",
+      "Write(/.gitattributes)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

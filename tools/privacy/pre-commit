@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 The smzuggler contributors
+#
+# Git hook for the spec §16 privacy scan. Installed as both `pre-commit` and
+# `commit-msg` by tools/privacy/install-hooks.sh; the name it is called by
+# decides what it scans:
+#   pre-commit: the commit identity, the staged diff and the added file names;
+#   commit-msg: the commit message ($1).
+# Findings name the file and line only, never the matched text.
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+scan="$root/tools/privacy/scan.py"
+want="myonendy <350390780+myonendy@users.noreply.github.com>"
+
+case "$(basename "$0")" in
+  commit-msg)
+    exec python3 "$scan" --repo "$root" --msg-file "$1"
+    ;;
+  *)
+    # `git var` prints "name <email> timestamp tz"; drop the last two fields.
+    for kind in GIT_AUTHOR_IDENT GIT_COMMITTER_IDENT; do
+      ident=$(git var "$kind" | sed -E 's/ [0-9]+ [+-][0-9]{4}$//')
+      if [ "$ident" != "$want" ]; then
+        echo "privacy: $kind is not the project identity (set user.name/user.email in this repo only)" >&2
+        exit 1
+      fi
+    done
+    exec python3 "$scan" --repo "$root" --staged
+    ;;
+esac

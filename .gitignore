@@ -22,3 +22,11 @@ dist/
 # Python
 __pycache__/
 *.pyc
+
+# smzuggler
+.forge/
+*.rpgsave
+perf-report*
+/fixtures/
+*.cpuprofile
+share-bundle*.zip

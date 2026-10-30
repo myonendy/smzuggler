@@ -6,3 +6,7 @@
 *.wav binary
 *.ogg binary
 *.ttf binary
+
+# smzuggler: append-only logs merge by union so parallel forge cards don't conflict
+CHANGELOG.md merge=union
+docs/DECISIONS.md merge=union

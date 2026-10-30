@@ -1,0 +1,122 @@
+# forge.toml: orchestration + gates for smzuggler. Humans edit this; agents may not (protected).
+# Modelled on an earlier AgentForge project's forge.toml. Values marked "OWNER:" are conservative placeholders
+# chosen at setup (2026-10-30) and need the owner's decision before or during the first run.
+[project]
+name = "smzuggler"
+main_branch = "main"
+spec = "docs/spec/SPEC.md"        # v0.5.1, protected; see docs/spec/README.md
+strict_milestones = true          # never start milestone N+1 before N is fully merged
+
+[agents]
+# Claude is review-only in this project (owner, 2026-10-30): never a worker, implementer,
+# fallback worker, planner or auditor. Same shape as the earlier project used for review-only Claude.
+workers = ["codex", "codex", "oc-deepseek"]
+fallback_workers = []              # never "claude" here
+reviewer = "cross"                 # never the author; prefers another model family and CLI
+self_review_fallback = true        # author reviews only when every other reviewer is cooling
+review_pool = ["claude", "codex", "oc-deepseek"]
+planner = "codex"
+auditor = "codex"
+swap_on_retry = true               # attempt 3+ goes to the other vendor
+
+[agents.claude]
+bin = "claude"
+model = ""                         # "" = CLI default
+max_turns = 60
+review_max_turns = 25
+max_budget_usd = 4.0               # per run; only meaningful for API billing
+timeout_min = 40
+extra_args = []
+allow_overage = false              # never run Claude on paid overage (owner). Do not change.
+
+[agents.codex]
+bin = "codex"
+model = ""
+timeout_min = 40                   # codex exec has no max-turns flag; wall clock is the cap
+extra_args = []
+network_access = false             # builds are offline (FetchContent disconnected, local deps cache)
+
+# OpenCode Go vendors, same tables as the other projects on this plan (shared plan, shared ledger). Only oc-deepseek is in
+# the pools above; oc-glm and oc-kimi are defined so cards may pin them and `forge limits` shows
+# them. OWNER: add them to workers if wanted.
+[agents.oc-glm]
+harness = "opencode"
+pool = "opencode-go"
+model = "opencode-go/glm-5.3"
+family = "zhipu"
+monthly_usd = 15.0
+timeout_min = 40
+hide = ["~/.config/smzuggler-rt", "~/Documents/GrokBot/smuggler-saves"]
+
+[agents.oc-kimi]
+harness = "opencode"
+pool = "opencode-go"
+model = "opencode-go/kimi-k3"
+family = "moonshot"
+monthly_usd = 15.0
+timeout_min = 40
+hide = ["~/.config/smzuggler-rt", "~/Documents/GrokBot/smuggler-saves"]
+
+# Needs Global selected in the OpenCode workspace's Privacy settings (already done for this workspace).
+[agents.oc-deepseek]
+harness = "opencode"
+pool = "opencode-go"
+model = "opencode-go/deepseek-v4.1-flash"
+family = "deepseek"
+monthly_usd = 80.0
+timeout_min = 40
+hide = ["~/.config/smzuggler-rt", "~/Documents/GrokBot/smuggler-saves"]
+
+# Plan-wide OpenCode Go cap. Keep identical in every project that uses the pool.
+[pools.opencode-go]
+usd_5h = 2.25
+usd_7d = 0
+usd_30d = 0
+
+[budget]
+max_attempts = 4                   # worker attempts per task (gate + review loops)
+max_total_usd = 50.0               # OWNER: estimated Claude spend cap; Claude only reviews here
+max_agent_runs = 200               # OWNER: conservative first-run cap (an earlier project used 800)
+limit_cooldown_min = 60
+max_gate_output_lines = 60
+max_review_diff_chars = 60000
+
+[context]                          # context pack (agentforge docs/CONTEXT_PACK.md)
+enabled = true
+always_spec = []                   # cards cite their own §refs; §16 privacy is in AGENTS.md
+decision_index = false
+max_chars = 24000                  # OWNER: above the 16000 default; spec sections are long
+
+[gates]
+# policy (built in) -> privacy (§16; forge commits skip git hooks) -> names (§13) -> build -> test.
+# Gates added by a human after their M0 cards land (cards can't edit this file): format, doclint,
+# docs_touched, headers, compat_surface, game_smoke. See docs/FORGE.md, "Human checkpoints".
+order = ["policy", "privacy", "names", "build", "test"]
+timeout_sec = 2400                 # first build of a fresh worktree compiles every dependency
+[gates.cmd]
+privacy = "tools/forge/privacy_gate.sh"
+names   = "tools/forge/game_names.sh"
+build   = "tools/forge/build.sh"
+test    = "tools/forge/test.sh"
+
+[policy]
+test_globs = ["tests/**"]
+source_globs = ["src/**", "tools/**", "CMakeLists.txt", "third_party/**", "packaging/**"]
+scene_globs = []
+protected = ["AGENTS.md", "CLAUDE.md", "forge.toml", "schemas/**", "prompts/**", ".claude/**",
+             ".codex/**", "docs/spec/**", "tasks/**", "tools/privacy/**", "tools/forge/**",
+             ".forge-samples", "LICENSE", "LICENSES/**", ".gitattributes"]
+always_allowed = ["docs/**", "CHANGELOG.md"]
+forbid_added = ['\bTODO\b', '\bFIXME\b', '\bXXX\b', 'UNIMPLEMENTED\(', 'not implemented',
+                '#pragma\s+(GCC|clang)\s+diagnostic\s+ignored', 'eslint-disable', 'NOLINT',
+                '# *type: *ignore', '# *noqa']
+skip_markers = ['#if 0', 'DISABLED_', '\bSKIP\(', 'SKIP_WITHOUT_', '@unittest\.skip', 'skipTest\(',
+                'pytest\.mark\.skip']
+test_detection = ['getenv\("(TEST|CI|FORGE|RMMZ_TEST|SMZUGGLER_TEST)', 'FORGE_TEST', '#ifdef\s+TEST',
+                  'os\.environ.*(FORGE|CI)\b']
+assert_regex = '\b(ASSERT\w*|CHECK|assert)\(|self\.assert\w+\(|\bassert\s'
+max_file_lines = 5100              # OWNER: upstream src/shims/pixi_shim.js is 4928 lines and the
+                                   # generated shaders header 5017; lower once those are split
+max_diff_lines = 1500
+doc_check = true
+gd_strict_typing = false

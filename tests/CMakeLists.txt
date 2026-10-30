@@ -699,3 +699,11 @@ if(RMMZ_RENDER_BACKEND STREQUAL "gpu")
     endif()
     add_test(NAME gpu_render COMMAND test_gpu_render)
 endif()
+
+# smzuggler: tests added by smzuggler live in tests/smz/, each registered by its own
+# tests/smz/<name>.cmake fragment, so this file does not change per test (DEC-SETUP-009).
+file(GLOB SMZ_TEST_CMAKE CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/smz/*.cmake)
+list(SORT SMZ_TEST_CMAKE)
+foreach(smz_test_fragment ${SMZ_TEST_CMAKE})
+    include(${smz_test_fragment})
+endforeach()

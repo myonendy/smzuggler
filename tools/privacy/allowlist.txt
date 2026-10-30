@@ -1,0 +1,17 @@
+# Reviewed allow-list for GENERIC privacy rules only (spec §16, "Overrides").
+# Format: rule<TAB>path-glob<TAB>regex that must fully match the hit.
+# Deny-list hits can never be allowed. Every entry needs a reason comment.
+# Adding an entry is a reviewed change: tools/privacy/** is a protected path.
+#
+# Upstream Outsider public contact and author addresses (inherited files).
+email	AUTHORS	drtermit@gmail\.com
+email	CONTRIBUTING.md	contact@generalarcade\.com
+email	LICENSE	contact@generalarcade\.com
+email	LICENSES/COMMERCIAL.md	contact@generalarcade\.com
+email	README.md	contact@generalarcade\.com
+# Upstream test fixture uses the placeholder user "me" in a Windows path.
+home-path	tests/test_paths.h	(?:[A-Za-z]:)?(?:\\\\?|/)Users(?:\\\\?|/)me(?:\\\\?|/)
+# The scanner's own unit tests must contain one sample of each generic rule.
+home-path	tools/privacy/test_scan.py	.*
+email	tools/privacy/test_scan.py	.*
+shell-prompt	tools/privacy/test_scan.py	.*
