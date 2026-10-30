@@ -41,3 +41,22 @@ instead of sending code, or write to contact@generalarcade.com.
   passes. `tests/test_build_pipeline.py` covers the packaging tools.
 - When a change fixes a game, say which game and plugin in the commit
   message; a plugin name is often the only way to find the problem again.
+
+## Commit messages (smzuggler)
+
+smzuggler's history is read by people who were not there, so a commit
+subject must say at a glance what the commit adds or changes:
+
+- Imperative and specific, 72 characters or fewer, naming what changed and
+  where: `Add removeAllListeners and once to nw.Window shim`, not `M0-T003`,
+  `fix stuff`, `update` or `wip`.
+- No bare card IDs and no generic subjects (`wip`, `fix`, `update`,
+  `changes`, `misc`); no `forge:` prefix.
+- The card ID goes in a trailer at the end of the body: `Card: M0-T003`.
+- The body explains why, when that is not obvious from the subject.
+
+`tools/privacy/install-hooks.sh` installs a commit-msg hook that enforces
+these rules (`tools/commitmsg/check_subject.py`), and the forge
+`commit_subjects` gate checks every new commit. Subjects written by
+AgentForge itself (`M0-T003: attempt 1 by codex`) are the one known
+exception until forge can take a subject from the card; see docs/FORGE.md.

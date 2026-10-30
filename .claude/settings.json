@@ -61,6 +61,8 @@
       "Write(/tasks/**)",
       "Edit(/tools/privacy/**)",
       "Write(/tools/privacy/**)",
+      "Edit(/tools/commitmsg/**)",
+      "Write(/tools/commitmsg/**)",
       "Edit(/tools/forge/**)",
       "Write(/tools/forge/**)",
       "Edit(/.forge-samples)",

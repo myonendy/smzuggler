@@ -19,6 +19,7 @@ Rewrite `src/bindings/bind_audio.c` on jsb (core, buffers and callbacks as neede
 - [ ] `docs/js-binding.md` has a row for bind_audio (functions, buffers, callbacks used).
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment; handle-lifetime rules follow §15.8.
 - [ ] While M1 is in progress both engine modes build (`SMZ_JS_ENGINE=quickjs|v8`, from M1-T002) and the ctest suite passes in both; see DEC-SETUP-008 / SI-11 for the transitional QuickJS jsb backend.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §4.1, §9 M1 ("all 12 bindings ported").

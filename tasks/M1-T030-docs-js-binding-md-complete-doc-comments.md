@@ -16,6 +16,7 @@ Finish `docs/js-binding.md`: the full jsb API, the §15.8 V8 handle and lifetime
 - [ ] `tools/doclint/doclint.py --paths src/jsb src/bindings src/engine` reports nothing.
 - [ ] `tools/doclint/mdlinks.py` passes on the doc.
 - [ ] Every §15.8 rule is a heading with an example.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §9 M1 docs, §15.8.

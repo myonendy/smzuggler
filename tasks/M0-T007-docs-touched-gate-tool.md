@@ -16,6 +16,7 @@ Add `tools/doclint/docs_touched.py --base REV`: maps source areas to the docs th
 - [ ] `tests/tools/test_docs_touched.py` covers: mapped change with doc change passes; without fails naming the source path and expected docs; unmapped paths pass; `NO_DOC_CHANGE=1` with an empty justification fails, with a justification passes.
 - [ ] `docs/docs-map.toml` exists, covers every directory under `src/` and `tools/`, and the tool reports unmapped new directories.
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §15.3, §15.7. Docs that do not exist yet may be listed; the tool reports them as "to be created".

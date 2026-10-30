@@ -82,3 +82,10 @@ commit is authored and committed as
 `myonendy <350390780+myonendy@users.noreply.github.com>`. §16 of `docs/spec/SPEC.md`,
 `docs/spec/CHANGES.md`, the pre-commit hook and `tools/privacy/scan.py` say so. The one
 setup commit made under the earlier identity was rewritten before anything was pushed.
+
+## DEC-SETUP-013 — Commit subjects say what changed
+Owner rule (2026-10-30): imperative, specific subjects of at most 72 characters; card IDs
+go in a `Card:` trailer; no generic or `forge:` subjects (CONTRIBUTING.md). Enforced by the
+commit-msg hook and the `commit_subjects` gate (`tools/commitmsg/`). AgentForge's fixed
+`<ID>: attempt N by <vendor>` subjects cannot be configured; the gate reports them and
+docs/FORGE.md lists the forge change that would remove the exception (SI-15).

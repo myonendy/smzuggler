@@ -17,6 +17,7 @@ Add `tools/smoke/game_smoke.sh`: runs `smzuggler-rt` in control mode against `SM
 - [ ] The script refuses Steam/Proton paths and an unset `SMZUGGLER_GAME_DIR` (exit 2, clear message).
 - [ ] One real run against the test copy is attached to the card report (frame count, exit code, `game dir unchanged`).
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §5.6, §9 M0 exit. Runs on dev-laptop on battery with `power-saver` (unplugged ≥ 2 min, `powerprofilesctl get` = power-saver, battery ≥ 50%), against the test copy of the game in `SMZUGGLER_GAME_DIR`, never the Steam folder. If the agent cannot open a window or reach the game copy, it stops and reports `BLOCKED: needs dev-laptop GUI run` instead of faking results. A human adds this as a gate once it passes (DEC-SETUP-006).

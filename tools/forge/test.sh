@@ -17,11 +17,12 @@ bdir=${SMZ_BUILD_DIR:-$root/build}
 unset SMZUGGLER_GAME_DIR RMMZ_TEST_GAME_DIR
 ctest --test-dir "$bdir" --output-on-failure -j "${SMZ_JOBS:-4}" --timeout 600
 cd "$root"
-# Python tool tests: tools/privacy (setup, protected) and tests/tools (cards).
+# Python tool tests: tools/privacy and tools/commitmsg (setup, protected) and
+# tests/tools (cards).
 # Each directory is its own discovery root; tests reach the tools through
 # subprocess or a sys.path entry for the repo root.
 rc=0
-for d in tools/privacy tests/tools; do
+for d in tools/privacy tools/commitmsg tests/tools; do
     [ -d "$d" ] || continue
     python3 -m unittest discover -s "$d" -p 'test_*.py' || rc=1
 done

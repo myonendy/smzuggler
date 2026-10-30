@@ -16,6 +16,7 @@ Propose the V8 version pin (§11 Q9) and write `tools/v8/build_v8.sh`, which fet
 - [ ] `tests/tools/test_build_v8.py` runs `build_v8.sh --print-args` and asserts the pinned version, every required GN arg, and that the script never writes outside `$SMZ_DEPS_DIR` (checked by running it with a temp `SMZ_DEPS_DIR` in print mode and grepping the script for absolute paths).
 - [ ] `docs/build-v8.md` explains the pin, the args (one line of why each), the disk/time cost, and how CI gets the tarball (§9 M1 "V8 CI tarball").
 - [ ] DEC-M1-T001 records the proposed pin, why, and that the owner must approve it before M1-T002 merges.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §4.1, §9 M1, §11 Q8/Q9. Human checkpoint H1 (docs/FORGE.md): the owner approves the pin and runs the build once (hours) on dev-laptop; the card does not run the full build.

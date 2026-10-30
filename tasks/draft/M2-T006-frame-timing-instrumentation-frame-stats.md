@@ -15,6 +15,7 @@ Always-compiled frame work time (CPU + GL timer queries), present interval, miss
 ## Acceptance criteria
 - [ ] Unit tests for the summary maths
 - [ ] Overhead < 0.2 ms/frame
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 First-pass draft from the §9 row; to be split and detailed when M2 is planned. Not scheduled (tasks/draft/).

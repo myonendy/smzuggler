@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 The smzuggler contributors
+#
+# Git commit-msg hook, installed by tools/privacy/install-hooks.sh. Runs the
+# spec §16 privacy scan on the message, then the commit subject rules of
+# CONTRIBUTING.md ("Commit messages"). Either failure rejects the commit.
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+python3 "$root/tools/privacy/scan.py" --repo "$root" --msg-file "$1"
+exec python3 "$root/tools/commitmsg/check_subject.py" --msg-file "$1"

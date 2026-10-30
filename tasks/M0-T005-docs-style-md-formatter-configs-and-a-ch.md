@@ -18,6 +18,7 @@ Write `docs/style.md` from §15.6 (naming, ≤ 60-line functions, no clever macr
 - [ ] Running the tool against `upstream-main` on the current tree passes.
 - [ ] `docs/style.md` covers every bullet of §15.6 and links `docs/privacy.md` and `ARCHITECTURE.md` (link may be added by M0-T011 if it lands later).
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §15.6, §15.7. clang-format is available on dev-laptop; node/eslint are not assumed in the gates. JS formatting is limited to the ES5 rules for now; record DEC-M0-T005 for the JS tooling choice. A human wires `check_format.py` into `[gates]` after merge (DEC-SETUP-006).

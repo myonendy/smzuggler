@@ -15,6 +15,7 @@ Set the V8 microtask policy to `kExplicit` and run a checkpoint after every macr
 ## Acceptance criteria
 - [ ] A JS ordering test (in `tests/smz/test_microtasks.c`) logs the order of setTimeout, Promise.then, nextTick and rAF callbacks and asserts the Chrome/NW.js order, in v8 mode (and in quickjs mode where its existing job loop matches; differences listed in the DEC).
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment; handle-lifetime rules follow §15.8.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §4.1. Record DEC-M1-T010 with the exact order.

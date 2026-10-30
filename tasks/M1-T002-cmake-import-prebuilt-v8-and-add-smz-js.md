@@ -17,6 +17,7 @@ Add `cmake/V8.cmake` importing V8 from `SMZ_V8_DIR` (an imported static target `
 - [ ] Configure in v8 mode without `SMZ_V8_DIR` fails with the message naming the variable.
 - [ ] In v8 mode the smoke test passes and reports the pinned version.
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment; handle-lifetime rules follow §15.8.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §4.1. Human checkpoint H2: after merge, `tools/forge/build.sh` and `test.sh` are extended by a human to also build and test the v8 mode (DEC-SETUP-006).

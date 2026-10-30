@@ -20,7 +20,7 @@ GPL-3.0 licence and headers are kept; new work is GPL-3.0-or-later.
 - Touch only files matching the card's `owns` globs, plus the always-allowed paths
   `docs/**`, `CHANGELOG.md`, and **new** test files under
   `tests/**`. Anything else fails the SCOPE gate.
-- Never modify these protected paths: `AGENTS.md`, `CLAUDE.md`, `forge.toml`, `schemas/**`, `prompts/**`, `.claude/**`, `.codex/**`, `docs/spec/**`, `tasks/**`, `tools/privacy/**`, `tools/forge/**`, `.forge-samples`, `LICENSE`, `LICENSES/**`, `.gitattributes`.
+- Never modify these protected paths: `AGENTS.md`, `CLAUDE.md`, `forge.toml`, `schemas/**`, `prompts/**`, `.claude/**`, `.codex/**`, `docs/spec/**`, `tasks/**`, `tools/privacy/**`, `tools/commitmsg/**`, `tools/forge/**`, `.forge-samples`, `LICENSE`, `LICENSES/**`, `.gitattributes`.
   If one of them is wrong, say so in your final message under `SPEC/INFRA ISSUES`.
 <!-- forge:policy-lists END -->
 - If the card is ambiguous, choose the interpretation most consistent with
@@ -36,7 +36,7 @@ GPL-3.0 licence and headers are kept; new work is GPL-3.0-or-later.
 3. Implement until they pass. Run `tools/forge/build.sh` and `tools/forge/test.sh` yourself
    before finishing. Builds are offline: dependencies come from the local cache; never
    download anything and never change a dependency pin unless the card says so.
-4. Update the docs the card lists (section 5). Finish with the short report (section 8).
+4. Update the docs the card lists (section 5). Finish with the short report (section 9).
 
 ## 3. No cheating. These are detected automatically and fail the task.
 - Deleting, weakening, skipping, or disabling tests (`SKIP`, `DISABLED_`, `#if 0`, removing
@@ -96,9 +96,20 @@ A reviewer that finds any of these rejects the whole change.
 - When a command fails, read the error and fix the cause. Don't retry blindly.
 - Stop when the acceptance criteria are met and the gates pass locally.
 
-## 8. Final message format (keep it under 25 lines)
+## 8. Commit messages (CONTRIBUTING.md, "Commit messages")
+You do not commit (forge does), but every card ends with a commit subject you propose:
+- imperative and specific, 72 characters or fewer, saying what changed and where:
+  `Add removeAllListeners and once to nw.Window shim`;
+- never a bare card ID, `wip`, `fix`, `update`, `changes`, `misc`, and never `forge:`;
+- the card ID goes in a trailer (`Card: M0-T003`), not in the subject;
+- add a body line saying why when it is not obvious.
+Check it with `python3 tools/commitmsg/check_subject.py --msg-file <file>` (in a temp file).
+forge does not yet use it as the commit subject; docs/FORGE.md, "Commit subjects".
+
+## 9. Final message format (keep it under 25 lines)
 ```
 DONE: <one line>
+COMMIT SUBJECT: <subject per section 8>
 CHANGED: <files>
 TESTS: <what the new tests prove>
 INTERPRETATIONS: <assumptions, or none>

@@ -16,6 +16,7 @@ Add `jsb_callback` (a persistent handle to a JS function, created with `jsb_call
 - [ ] Tests in `tests/smz/test_jsb_callbacks.c`: call after the creating scope ended, call with arguments and return value, exception reported and the call returns an error code, free then GC releases the function (weak check), and calling a freed callback is a checked error.
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment; handle-lifetime rules follow §15.8.
 - [ ] While M1 is in progress both engine modes build (`SMZ_JS_ENGINE=quickjs|v8`, from M1-T002) and the ctest suite passes in both; see DEC-SETUP-008 / SI-11 for the transitional QuickJS jsb backend.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §4.1, §15.8.

@@ -15,6 +15,7 @@ Native `webgl2` context from `canvas.getContext('webgl2')` bound to the SDL wind
 ## Acceptance criteria
 - [ ] Conformance subset for state/buffers/VAOs passes
 - [ ] Hot calls use V8 Fast API (checked by a counter test)
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 First-pass draft from the §9 row; to be split and detailed when M2 is planned. Not scheduled (tasks/draft/).

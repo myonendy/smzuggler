@@ -18,9 +18,31 @@ smzuggler's work is split into small cards that AgentForge runs (`forge.toml` at
 |---|---|
 | `policy` | forge's built-in checks: protected files, test tampering, scope (`owns`), hollow code, test presence, file size, docs touched |
 | `privacy` | `tools/privacy/scan.py` on the whole tree, plus identity, messages and added lines of every commit since the card's base |
+| `commit_subjects` | every new non-merge commit's subject follows CONTRIBUTING.md (`tools/commitmsg/check_subject.py`) |
 | `names` | the game's names and app ID appear nowhere in `src`, `tools`, `tests`, `CMakeLists.txt`, `third_party` |
 | `build` | offline Release build with tests (`tools/forge/build.sh`) |
 | `test` | ctest plus the Python tool tests, with game paths unset (`tools/forge/test.sh`) |
+
+## Commit subjects
+AgentForge writes its own commit subjects and has no option to change them:
+`<ID>: attempt N by <vendor>`, `<ID>: uncommitted changes picked up by regate|resume`,
+`<ID>: partial work by <vendor> (stopped by usage limit)`, plus `Merge branch 'main' into
+forge/<ID>` when it syncs a task branch. Main is fast-forwarded to the task branch, so
+these land on main as they are. `regate` also reads the vendor back from the
+`attempt N by <vendor>` subject. The `commit_subjects` gate therefore counts those exact
+forms and reports them instead of failing; every other commit (humans, setup, checkpoints)
+is checked in full, and the commit-msg hook checks every local commit.
+
+To get descriptive subjects for card work, forge itself needs a change (not made here;
+forge is shared with other projects):
+1. `gitops.commit_all` takes the subject from the worker's final `COMMIT SUBJECT:` line
+   (AGENTS.md §9), falling back to the card title rewritten as an action, and adds the
+   trailers `Card: <ID>` and `Forge-Attempt: N by <vendor>`.
+2. `gitops.branch_author` reads the `Forge-Attempt:` trailer instead of the subject.
+3. `task._merge` squashes the task branch into one commit with that subject and the
+   `Card:` trailer (or merges `--no-ff` with it) instead of `--ff-only`, and `sync_main`
+   passes a message such as `Merge main into the <slug> task branch`.
+After that, run the gate with `--strict` (edit `tools/forge/commit_subjects.sh`).
 
 ## Human checkpoints
 Agents cannot change gates or `forge.toml`. A human does these when the card merges:

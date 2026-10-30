@@ -17,6 +17,7 @@ Measure Map 92 JS time per frame on V8 (warm-up 10 s, 120 s scored, 3 runs, wors
 - [ ] The attribution uses `tools/perf/attribute.py` with V8 buckets (JIT code, interpreter, GC, builtins) added to buckets.toml in this card.
 - [ ] The report passes `tools/privacy/scan.py --paths`.
 - [ ] The run's outputs (logs, perf reports, frame-time CSVs, screenshots) are packaged with `tools/share/make_bundle.py` (M0-T023) and the bundle is written without a privacy hit; the bundle path and its README.txt summary are in the card report. Nothing is posted anywhere by the card.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §6, §9 M1 exit. Runs on dev-laptop on battery with `power-saver` (unplugged ≥ 2 min, `powerprofilesctl get` = power-saver, battery ≥ 50%), against the test copy of the game in `SMZUGGLER_GAME_DIR`, never the Steam folder. If the agent cannot open a window or reach the game copy, it stops and reports `BLOCKED: needs dev-laptop GUI run` instead of faking results. A STOP verdict is a valid, successful card outcome; never tune the measurement to pass.

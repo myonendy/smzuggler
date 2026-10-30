@@ -17,6 +17,7 @@ Make smzuggler always use its own data directories (§5.3, §5.6, §13): logs in
 - [ ] With an unset or empty `XDG_*`, nothing is created relative to the working directory.
 - [ ] `docs/data-dirs.md` documents each directory, its contents and how to clear it.
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §5.3, §5.6, §13.

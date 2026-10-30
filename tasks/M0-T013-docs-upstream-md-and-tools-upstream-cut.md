@@ -17,6 +17,7 @@ Write `docs/UPSTREAM.md`: the §8.1 table as a tracker (PR, branch, status: plan
 - [ ] The script uses a temporary worktree and leaves the caller's worktree and branch unchanged.
 - [ ] `docs/UPSTREAM.md` lists U1–U14 and the UltraMode7 issue row with status `planned`.
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §8. Upstream's default branch is `master`; `upstream-main` tracks it (DEC-SETUP-001). Cutting and opening PRs is the owner's step (DEC-SETUP-005).

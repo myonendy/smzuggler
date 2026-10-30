@@ -2,9 +2,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 The smzuggler contributors
 #
-# Git hook for the spec §16 privacy scan. Installed as both `pre-commit` and
-# `commit-msg` by tools/privacy/install-hooks.sh; the name it is called by
-# decides what it scans:
+# Git hook for the spec §16 privacy scan. Installed as `pre-commit` by
+# tools/privacy/install-hooks.sh (tools/commitmsg/commit-msg is the
+# commit-msg hook and runs the message scan itself). The name it is called
+# by decides what it scans:
 #   pre-commit: the commit identity, the staged diff and the added file names;
 #   commit-msg: the commit message ($1).
 # Findings name the file and line only, never the matched text.

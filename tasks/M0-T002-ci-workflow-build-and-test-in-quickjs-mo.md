@@ -17,6 +17,7 @@ Add `.github/workflows/ci.yml` that configures, builds and runs ctest plus the P
 - [ ] The workflow pins actions by full commit SHA (checked by the same test).
 - [ ] `docs/testing.md` documents the local equivalent (`tools/forge/build.sh`, `tools/forge/test.sh`) and is linked from README.md.
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §9 M0, §15.7. CI cannot run until the owner pushes (docs/SPEC_ISSUES.md SI-6); this card is verified locally. Do not edit release.yml.

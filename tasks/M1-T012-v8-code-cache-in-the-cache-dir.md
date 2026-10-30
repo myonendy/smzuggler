@@ -15,6 +15,7 @@ Replace the `.jsc` cache in v8 mode with V8 code cache: `$XDG_CACHE_HOME/smzuggl
 ## Acceptance criteria
 - [ ] Test: first load creates the file; second load consumes it (`cachedData` accepted); changing the source, the flags or the version tag changes the key; a corrupted file is rejected and replaced; nothing is written next to the script.
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment; handle-lifetime rules follow §15.8.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §4.1, §5.6.

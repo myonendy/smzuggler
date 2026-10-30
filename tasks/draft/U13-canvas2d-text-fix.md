@@ -16,6 +16,7 @@ Draft. Once M3 has root-caused the missing HUD text (§5.5) and the cause is in 
 - [ ] Root cause documented in docs/canvas2d-text.md with file:line.
 - [ ] Golden test reproduces the failure on upstream and passes with the fix.
 - [ ] Same upstream-card rules as U1–U14.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §5.5, §8.1. Stays a draft until M3 card for the root cause lands.

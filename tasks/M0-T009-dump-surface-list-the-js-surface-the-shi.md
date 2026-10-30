@@ -17,6 +17,7 @@ Add `smzuggler-rt --dump-surface[=FILE]`: start the JS engine and run the shim l
 - [ ] `smzuggler-rt --dump-surface` runs headless (no `SDL_Init(VIDEO)`) with `SDL_VIDEODRIVER` unset and no display, and does not read or write outside the build dir.
 - [ ] `docs/shims.md` describes the load order with file and line references.
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §15.4. Put the walker in `src/smzuggler/dump_surface.c`; main.c only parses the flag.

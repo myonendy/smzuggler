@@ -15,6 +15,7 @@ GLSL ES 1.00/3.00 to the driver (rewrite only for desktop GL 3.3 core); `getExte
 ## Acceptance criteria
 - [ ] Extension list equals the recorded Chrome 117 list
 - [ ] PIXI's shader compile path succeeds
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 First-pass draft from the §9 row; to be split and detailed when M2 is planned. Not scheduled (tasks/draft/).

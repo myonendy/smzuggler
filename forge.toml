@@ -88,13 +88,16 @@ decision_index = false
 max_chars = 24000                  # OWNER: above the 16000 default; spec sections are long
 
 [gates]
-# policy (built in) -> privacy (§16; forge commits skip git hooks) -> names (§13) -> build -> test.
+# policy (built in) -> privacy (§16; forge commits skip git hooks) -> commit_subjects
+# (CONTRIBUTING.md commit rules; forge's own "<ID>: attempt N" subjects are reported, not failed,
+# because forge writes them itself, see docs/FORGE.md) -> names (§13) -> build -> test.
 # Gates added by a human after their M0 cards land (cards can't edit this file): format, doclint,
 # docs_touched, headers, compat_surface, game_smoke. See docs/FORGE.md, "Human checkpoints".
-order = ["policy", "privacy", "names", "build", "test"]
+order = ["policy", "privacy", "commit_subjects", "names", "build", "test"]
 timeout_sec = 2400                 # first build of a fresh worktree compiles every dependency
 [gates.cmd]
 privacy = "tools/forge/privacy_gate.sh"
+commit_subjects = "tools/forge/commit_subjects.sh"
 names   = "tools/forge/game_names.sh"
 build   = "tools/forge/build.sh"
 test    = "tools/forge/test.sh"
@@ -104,7 +107,7 @@ test_globs = ["tests/**"]
 source_globs = ["src/**", "tools/**", "CMakeLists.txt", "third_party/**", "packaging/**"]
 scene_globs = []
 protected = ["AGENTS.md", "CLAUDE.md", "forge.toml", "schemas/**", "prompts/**", ".claude/**",
-             ".codex/**", "docs/spec/**", "tasks/**", "tools/privacy/**", "tools/forge/**",
+             ".codex/**", "docs/spec/**", "tasks/**", "tools/privacy/**", "tools/commitmsg/**", "tools/forge/**",
              ".forge-samples", "LICENSE", "LICENSES/**", ".gitattributes"]
 always_allowed = ["docs/**", "CHANGELOG.md"]
 forbid_added = ['\bTODO\b', '\bFIXME\b', '\bXXX\b', 'UNIMPLEMENTED\(', 'not implemented',

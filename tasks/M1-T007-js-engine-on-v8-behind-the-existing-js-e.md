@@ -17,6 +17,7 @@ Add `src/engine/js_engine_v8.cc` implementing js_engine.h on V8 (built in v8 mod
 - [ ] A new test checks that an exception thrown in `foo.js` line 3 reports `foo.js:3` in the stack in both modes.
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment; handle-lifetime rules follow §15.8.
 - [ ] While M1 is in progress both engine modes build (`SMZ_JS_ENGINE=quickjs|v8`, from M1-T002) and the ctest suite passes in both; see DEC-SETUP-008 / SI-11 for the transitional QuickJS jsb backend.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §4.1.

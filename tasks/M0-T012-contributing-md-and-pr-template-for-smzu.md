@@ -16,7 +16,9 @@ Replace CONTRIBUTING.md with smzuggler's: GPL-3.0-or-later, no CLA; the §16 com
 - [ ] `docs/upstream-CONTRIBUTING.md` is byte-identical to upstream's CONTRIBUTING.md below an added note line.
 - [ ] The PR template contains every §15.7 checklist item (checked by `tests/tools/test_pr_template.py` against a list in the test).
 - [ ] `tools/doclint/mdlinks.py` passes on both files.
+- [ ] The new CONTRIBUTING.md keeps the "Commit messages" section (subject rules, `Card:` trailer, hook and `commit_subjects` gate) word for word, and the PR template asks for descriptive commit subjects.
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
-Spec §9 M0, §15.7, §16. See docs/SPEC_ISSUES.md SI-7.
+Spec §9 M0, §15.7, §16. See docs/SPEC_ISSUES.md SI-7 and DEC-SETUP-013.

@@ -16,6 +16,7 @@ Rewrite the tests that call QuickJS directly (error_handler, acceptance, file_io
 - [ ] `git grep -l 'JS_[A-Z][a-z]\|quickjs' -- tests` is empty.
 - [ ] Total assertion count in tests/ does not go down (policy TAMPER gate) and every renamed case is listed old → new in the card report.
 - [ ] All tests pass in both modes.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §4.1. `may_edit_tests` is set because these are existing tests; changes are API substitutions only. A reviewer checks each assertion still tests the same thing.

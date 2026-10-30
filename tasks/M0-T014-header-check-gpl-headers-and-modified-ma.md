@@ -17,6 +17,7 @@ Add `tools/doclint/headers.py --base REV`: for files added since REV, require `S
 - [ ] `headers.py --base upstream-main` passes on the tree at the end of this card.
 - [ ] `LICENSES/README.md` is linked from README.md.
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §12. File types without comments (JSON, PNG) are skipped and listed in the tool's docstring.

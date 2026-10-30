@@ -16,6 +16,7 @@ Add jsb buffer calls: `jsb_arg_bytes` (pointer and length of an ArrayBuffer/Type
 - [ ] Tests in `tests/smz/test_jsb_buffers.c`: views with offsets, a detached buffer throws, writes from C are visible in JS and back, the free callback runs exactly once after GC (forced with `--expose-gc` in the test isolate), in both modes.
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment; handle-lifetime rules follow §15.8.
 - [ ] While M1 is in progress both engine modes build (`SMZ_JS_ENGINE=quickjs|v8`, from M1-T002) and the ctest suite passes in both; see DEC-SETUP-008 / SI-11 for the transitional QuickJS jsb backend.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §4.1, §15.8.

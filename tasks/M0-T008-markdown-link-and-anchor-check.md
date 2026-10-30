@@ -16,6 +16,7 @@ Add `tools/doclint/mdlinks.py`: checks every relative link and `#anchor` in trac
 - [ ] `tests/tools/test_mdlinks.py` covers a good file link, a missing file, a good anchor, a missing anchor, duplicate headings (`-1` suffix), links inside code blocks being ignored, and an external link being ignored.
 - [ ] Running it on the repo passes, or each finding is fixed in this card (except under `docs/spec/`, which is read-only; findings there are listed in the card report).
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §15.7.

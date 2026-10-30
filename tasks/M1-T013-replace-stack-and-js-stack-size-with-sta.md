@@ -16,6 +16,7 @@ Remove the Windows `/STACK` link flag and `JS_STACK_SIZE` in v8 mode; pass `--st
 - [ ] Test: deep recursion throws `RangeError: Maximum call stack size exceeded` instead of crashing, in v8 mode.
 - [ ] `git grep -n 'JS_STACK_SIZE\|/STACK' -- CMakeLists.txt src` shows hits only in quickjs-mode code.
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment; handle-lifetime rules follow §15.8.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §4.1.

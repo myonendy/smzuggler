@@ -18,6 +18,7 @@ Add `src/smzuggler/log_scrub.c/.h`: `log_scrub(const char *in, char *out, size_t
 - [ ] `git grep -nE 'gethostname|getlogin|getpwuid|GetUserName|GetComputerName' -- src` is empty, or each hit is shown (by a test) not to reach a log line.
 - [ ] Existing `error_handler` tests pass unchanged.
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §16 (logger rule). Keep the function short and free of allocation in the log path.

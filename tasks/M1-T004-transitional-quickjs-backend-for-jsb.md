@@ -16,6 +16,7 @@ Add `src/jsb/jsb_quickjs.c` implementing jsb.h on QuickJS, so bindings can be po
 - [ ] `tests/smz/test_jsb_core.c` runs unchanged in quickjs mode and passes.
 - [ ] The file header and docs/js-binding.md state the removal card (M1-T027).
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment; handle-lifetime rules follow §15.8.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §4.1 says jsb has one implementation (V8). This card is a proposed deviation for the transition only (docs/SPEC_ISSUES.md SI-11); if the owner rejects it, replace M1-T014…T025 with a single big-bang port card and drop this one.

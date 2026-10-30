@@ -20,6 +20,7 @@ Introduce the §13 names as build constants without changing behaviour. Add `src
 - [ ] The `names` gate (game names in src/tools/tests) passes.
 - [ ] Upstream's `build_pipeline_structure` check in `tests/integration/test_acceptance.c` is changed only to look for `smzuggler-rt` instead of `outsider` (same paths, same number of ASSERTs); no other line of that file changes, and the acceptance test passes from a `build/` build dir.
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §13. Files changed from upstream get the §12 "modified" header line. Keep upstream-facing code paths (RMMZ_* macros) so upstream syncs stay mechanical; the constant feeds them. Record DEC-M0-T001 (target name kept vs. renamed).

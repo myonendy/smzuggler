@@ -18,6 +18,7 @@ Finish the §5.3 `process` surface not covered by U5: `process.argv`, `process.c
 - [ ] The scan is run once against the test copy; its summary (plugin names, counts) is in the card report and shows no plugin depends on `require` returning undefined, or lists those that do.
 - [ ] `docs/compat-surface.md` rows updated.
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §5.3 ("after re-scanning all 57 plugins"), docs/SPEC_ISSUES.md SI-10. This is smzuggler code, not a U-PR.

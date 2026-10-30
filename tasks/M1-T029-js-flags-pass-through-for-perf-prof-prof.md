@@ -16,6 +16,7 @@ may_edit_tests = false
 - [ ] Test: an allowed flag reaches V8 (`--trace-gc` output appears when GC is forced); an unknown flag is rejected with exit code 2; the code-cache key changes with the flags.
 - [ ] docs/perf.md documents each flag.
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment; handle-lifetime rules follow §15.8.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §4.1, §6.

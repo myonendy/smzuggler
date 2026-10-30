@@ -17,6 +17,7 @@ Add `tools/doclint/doclint.py`. For C/C++ (`.c .cc .cpp .h`) and JS files it che
 - [ ] `--changed upstream-main` passes on the current tree (no smzuggler code changed yet besides tools).
 - [ ] `--all` runs over `src/` in under 10 s and its finding count is written to `docs/doclint-baseline.md` (the D milestone burns it down).
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §15.1, §15.7. No compiler or node dependency: a careful line-based parser is enough for this codebase; document its limits in the module docstring. A human adds the gate after merge.

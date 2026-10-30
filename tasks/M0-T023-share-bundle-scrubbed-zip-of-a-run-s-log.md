@@ -26,6 +26,7 @@ The tool never uploads or posts anything.
 - [ ] README.txt lists the commit, version, machine-state block and one line per included file; the zip passes `scan.py --paths` after extraction.
 - [ ] `docs/sharing.md` explains what is collected, scrubbed and excluded, how to review a bundle before posting, and that posting is always a human step.
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §14.7, §14.8 (`--scrub-report` will reuse this in M2), §16. The tool loads the deny-list at run time only to scrub and scan; it never prints, logs or copies it (AGENTS.md §3). Game screenshots are game content (§1): the tool includes them only with `--include-screenshots`, and docs/sharing.md says to check the game's terms before posting them (docs/SPEC_ISSUES.md SI-14). `--share-bundle` in main.c is a thin wrapper; keep the logic in Python.

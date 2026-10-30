@@ -17,6 +17,7 @@ Remove QuickJS: drop `SMZ_JS_ENGINE`, `src/jsb/jsb_quickjs.c`, `src/engine/js_en
 - [ ] The full ctest suite passes on V8.
 - [ ] ARCHITECTURE.md and docs/js-binding.md no longer describe the transitional backend.
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment; handle-lifetime rules follow §15.8.
+- [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
 Spec §4.1, §9 M1. Human checkpoint H3: `tools/forge/build.sh` is switched to v8-only by a human when this merges. Also ends DEC-SETUP-003.
