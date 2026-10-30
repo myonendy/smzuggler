@@ -50,6 +50,8 @@ Windows), accepts either slash style, and preserves similarly named sibling
 paths. Console, file and callback messages, including file-open failures, pass
 through it. Keep environment changes serialized with logging. The runtime does
 not query user or host identity for diagnostics.
+Boundary regression tests also check punctuation, sibling paths and bounded
+output, including preservation of bytes beyond the destination capacity.
 
 ## Local hooks
 

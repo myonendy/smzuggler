@@ -10,6 +10,13 @@ add_executable(test_log_scrub ${CMAKE_CURRENT_LIST_DIR}/test_log_scrub.c
 target_include_directories(test_log_scrub PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(test_log_scrub PRIVATE qjs SDL3::SDL3)
 add_test(NAME log_scrub COMMAND test_log_scrub)
+add_executable(test_log_scrub_boundaries
+    ${CMAKE_CURRENT_LIST_DIR}/test_log_scrub_boundaries.c
+    ${PROJECT_SOURCE_DIR}/src/smzuggler/log_scrub.c)
+target_include_directories(test_log_scrub_boundaries PRIVATE ${PROJECT_SOURCE_DIR}/src)
+# Assertions must remain active in the Release build used by the gate.
+target_compile_options(test_log_scrub_boundaries PRIVATE -UNDEBUG)
+add_test(NAME log_scrub_boundaries COMMAND test_log_scrub_boundaries)
 # Existing upstream test targets compile error_handler directly. Supply the
 # privacy boundary to every such target without editing upstream test lists.
 get_property(smz_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
