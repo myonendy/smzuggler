@@ -13,6 +13,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Add source documentation lint with changed-line checks and a legacy baseline.
 - Harden logger scrubbing for punctuation, root homes and Windows path casing;
   register POSIX logger fixtures only on supported platforms.
 - Add explicit assertions for logger privacy path and buffer boundaries.
