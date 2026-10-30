@@ -1,7 +1,7 @@
 <!--
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
-Modified 2026-10-30: document runtime naming.
+Modified 2026-10-30: document runtime naming and format policy.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 
@@ -102,3 +102,24 @@ The CMake target remains `outsider` to keep upstream merges mechanical. Desktop
 output and installation use `SMZUGGLER_BIN`; Android retains `libmain.so` because
 SDLActivity requires it. Cache strings feed the shared names header and platform
 alias; standalone compilation uses the same defaults. This changes naming only.
+
+## DEC-M0-T005 — Changed-line formatting and dependency-free ES5 guard
+
+Use clang-format with four-space LLVM-derived layout, Linux braces, unlimited
+columns, preserved include order and single-line guards to match upstream.
+Measured with clang-format 23.1.3 against unchanged `upstream-main:src/main.c`:
+396 source lines, 2 removed and 5 added. Residuals are one preprocessor-split call's
+closing parenthesis and expansion of one compact multi-statement conditional.
+No upstream sources were reformatted. Changed-line diagnostics filter formatter
+replacements against Git's new-side lines; deleted lines and untracked files are
+outside the check. A base revision is mandatory and invalid revisions fail loudly.
+
+For now use a Python tokenizer for ES5 syntax instead of adding Node, eslint or
+prettier dependencies to offline gates. Check whole changed shared shim files;
+`--paths` selects explicit repository-relative globs for other shared locations.
+The checker is deliberately not a complete JavaScript grammar validator; regex
+recognition uses expression context. All 13 upstream shim files pass the guard.
+Full JS formatting and jsdoc tooling remain future work under §15.6/§15.7.
+A human wires the commands into gates after merge (DEC-SETUP-006).
+`ARCHITECTURE.md` is absent at this card's baseline; the style guide links its
+intended location for the architecture documentation card to supply.

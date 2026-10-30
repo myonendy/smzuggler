@@ -1,7 +1,7 @@
 <!--
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
-Modified 2026-10-30: document runtime naming and CI coverage.
+Modified 2026-10-30: document runtime naming, CI coverage and format checks.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
@@ -13,6 +13,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Added code style guidance, upstream-aligned clang-format and changed-file ES5 checks.
 - Added SHA-pinned Linux, Windows and macOS QuickJS CI and local testing guidance.
 - Added configurable smzuggler identity and the smzuggler-rt executable name.
 - Handle new branches, tags and unavailable old push tips in CI subject checks.
