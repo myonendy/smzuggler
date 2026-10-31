@@ -2,6 +2,7 @@
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
 Modified 2026-10-30: document runtime naming and format policy.
+Modified 2026-10-31: record the share-bundle last-run path.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 
@@ -270,3 +271,10 @@ The cumulative `git diff upstream-main -- tests/` also shows earlier functional
 changes (fragment registration, DEC-SETUP-009; the `smzuggler-rt` executable
 name, M0-T001). This card adds only comment lines to those files; assertions and
 the ASSERT count are unchanged.
+
+## DEC-M0-T023 — Share bundle last-run path and fail-closed binaries
+`--share-bundle` has no run directory, so the packager treats the newest
+directory under `$XDG_STATE_HOME/smzuggler-rt/runs/` (or `~/.local/state/...`
+when that variable is unset) as the last run. `scan.py` skips NUL binaries;
+the packager still searches them for deny-list terms and refuses to write the
+zip on a hit, printing only the file and `chunk`, never the matched text.
