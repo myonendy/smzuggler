@@ -6,7 +6,8 @@
 
 # Code style
 
-Follow [the architecture](../ARCHITECTURE.md) and [privacy rules](privacy.md).
+Follow the module map in `ARCHITECTURE.md` (card M0-T011 adds it) and the
+[privacy rules](privacy.md).
 Use C11; use C++ only where V8 requires it. Keep one concept per file and prefer
 plain loops and structs. Do not use template metaprogramming beyond V8 API needs.
 Functions have a 60-line limit; an exceptional longer function needs a comment

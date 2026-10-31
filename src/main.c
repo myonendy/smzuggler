@@ -3,12 +3,14 @@
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-10-30: use the configurable runtime identity.
+ * Modified 2026-10-31: dispatch headless surface inventory before startup.
  *
  * Runtime entry point; owns startup and shutdown on the main thread.
  * See docs/DECISIONS.md (DEC-M0-T001) for identity ownership.
  */
 
 #include "platform/platform.h"
+#include "smzuggler/dump_surface.h"
 #include "engine/js_engine.h"
 #include "engine/game_loop.h"
 #include "engine/script_loader.h"
@@ -105,9 +107,16 @@ int main(int argc, char *argv[])
     int watchdog_ms = 0;
     int perf_every = 0;
     bool control_mode = false;
+    bool dump_requested = false;
+    const char *dump_path = NULL;
 
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--game") == 0 && i + 1 < argc) {
+        if (strcmp(argv[i], "--dump-surface") == 0) {
+            dump_requested = true;
+        } else if (strncmp(argv[i], "--dump-surface=", 15) == 0) {
+            dump_requested = true;
+            dump_path = argv[i] + 15;
+        } else if (strcmp(argv[i], "--game") == 0 && i + 1 < argc) {
             game_dir = argv[++i];
         } else if (strcmp(argv[i], "--shims") == 0 && i + 1 < argc) {
             shim_dir = argv[++i];
@@ -143,6 +152,11 @@ int main(int argc, char *argv[])
             /* Positional argument: treat as game directory. */
             game_dir = argv[i];
         }
+    }
+
+    if (dump_requested) {
+        if (strcmp(shim_dir, "src/shims") == 0) shim_dir = SMZ_SURFACE_SHIM_DIR;
+        return dump_surface_run(dump_path, shim_dir);
     }
 
     /* No explicit paths: look for a packaged layout next to the executable
