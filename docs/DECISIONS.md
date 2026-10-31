@@ -250,15 +250,16 @@ gain our copyright line and a dated Modified note naming the earlier smzuggler
 change; upstream copyright and SPDX lines are untouched. `CONTRIBUTING.md`
 already passes and is unchanged. No checker exemption changes.
 
+`docs/upstream-CONTRIBUTING.md` (under `docs/**`, not protected) had packed
+SPDX, copyright and note into one comment line, which the checker, reading one
+item per line, rejected. Its comment now has one item per line, and
+`tests/tools/test_pr_template.py::test_upstream_bytes` skips the whole leading
+comment block (up to the first `-->` line), checks the SPDX and copyright lines
+in it, and still compares every remaining byte with upstream `CONTRIBUTING.md`.
+That test lies outside this card's `owns`; the reviewer required the edit.
+
 `python3 tools/doclint/headers.py --base upstream-main` (2026-10-31) exits 1
-with 264 problems in 132 files. One file is not protected and not owned:
-`docs/upstream-CONTRIBUTING.md` (needs one SPDX line; missing our copyright
-line). Its header packs SPDX, copyright and note into one comment line, and
-the checker reads one item per line. Splitting the comment fixes the check but
-fails `tests/tools/test_pr_template.py::test_upstream_bytes`, which requires a
-single note line followed by upstream's bytes, so the file is left as is; a
-card owning that test must allow a multi-line note. The other 131 files are
-protected (forge.toml `protected`, which includes `LICENSES/**`): `.gitattributes`, `AGENTS.md`, `CLAUDE.md`,
+with 262 problems in 131 files, all under forge.toml `protected` (which includes `LICENSES/**`): `.gitattributes`, `AGENTS.md`, `CLAUDE.md`,
 `forge.toml`, `LICENSES/README.md`, `.claude/agents/investigator.md`,
 `.claude/hooks/guard.sh`, `.codex/config.toml`, `docs/spec/{CHANGES,README,SPEC,
 V8_MZ_HOST_SPEC_v0.2}.md`, `prompts/{auditor,planner,reviewer,worker}.md`,

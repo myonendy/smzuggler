@@ -35,12 +35,14 @@ class ContributionContracts(unittest.TestCase):
         self.assertIn('descriptive commit subjects', template)
 
     def test_upstream_bytes(self):
-        """Keep U-PR instructions byte-exact after the single fork note line."""
+        """Keep U-PR instructions byte-exact after the fork note comment block."""
         upstream = subprocess.check_output(
             ['git', 'show', 'f789f46:CONTRIBUTING.md'], cwd=ROOT)
         preserved = (ROOT / 'docs/upstream-CONTRIBUTING.md').read_bytes()
-        note, body = preserved.split(b'\n', 1)
-        self.assertIn(b'SPDX-License-Identifier: GPL-3.0-or-later', note)
+        self.assertTrue(preserved.startswith(b'<!--\n'))
+        note, body = preserved.split(b'\n-->\n', 1)
+        self.assertIn(b'\nSPDX-License-Identifier: GPL-3.0-or-later\n', note)
+        self.assertIn(b'\nCopyright (C) 2026 The smzuggler contributors\n', note)
         self.assertEqual(body, upstream)
 
     def test_commit_rules_preserved(self):
