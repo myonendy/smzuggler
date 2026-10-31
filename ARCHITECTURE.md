@@ -223,7 +223,6 @@ changes together.
 | `tools/evaluator/scenarios/` | Evaluation scenario definitions; upstream. |
 | `tools/forge/` | Offline worker build/test and policy gate entry points; fork. |
 | `tools/format/` | Formatting and ES5 checks; fork. |
-| `tools/perf/` | `perf script` attribution into the §6.1 buckets; fork. |
 | `tools/privacy/` | Repository privacy scanning and tests; fork. |
 
 ## Where do I start?
