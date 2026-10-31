@@ -1,0 +1,108 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 The smzuggler contributors
+# Documentation obligations for the read-only gate in tools/doclint/docs_touched.py.
+# This is repository tooling, outside browser/NW.js emulation; keep paths relative.
+# Run: python3 tools/doclint/docs_touched.py --base REV (Python 3.11+).
+# Each matching area requires ANY listed doc to change; matching areas accumulate.
+# ** includes nested directories; * follows Python fnmatch (also matches slashes).
+# Root files are listed explicitly so new directories cannot match accidentally.
+# Missing target docs are allowed and reported as "to be created".
+# Unmapped src/tools directories fail even with an exemption; add a rule here.
+# New top-level src directories additionally require ARCHITECTURE.md.
+# CI alone sets NO_DOC_CHANGE=1 from its no-doc-change PR label.
+# When PR_BODY is present it must contain a non-empty line of the form:
+# No-doc-change justification: explain why documentation is unaffected
+# HTML comments do not count as a reason. Without PR_BODY, CI owns validation.
+
+[[areas]]
+path = 'src/audio/**'
+docs = ['docs/audio.md']
+
+[[areas]]
+path = 'src/bindings/**'
+docs = ['docs/js-binding.md']
+
+[[areas]]
+path = 'src/effects/**'
+docs = ['docs/effects.md']
+
+[[areas]]
+path = 'src/engine/**'
+docs = ['docs/js-binding.md']
+
+[[areas]]
+path = 'src/input/**'
+docs = ['docs/input.md']
+
+[[areas]]
+path = 'src/io/**'
+docs = ['docs/saves.md']
+
+[[areas]]
+path = 'src/platform/**'
+docs = ['docs/build.md']
+
+[[areas]]
+path = 'src/rendering/**'
+docs = ['docs/webgl.md']
+
+[[areas]]
+path = 'src/shims/**'
+docs = ['docs/shims.md', 'docs/compat-surface.md']
+
+[[areas]]
+path = 'src/smzuggler/**'
+docs = ['docs/privacy.md']
+
+[[areas]]
+path = 'src/video/**'
+docs = ['docs/video.md']
+
+[[areas]]
+path = 'tools/commitmsg/**'
+docs = ['docs/FORGE.md']
+
+[[areas]]
+path = 'tools/doclint/**'
+docs = ['docs/doclint-baseline.md', 'docs/docs-map.toml']
+
+[[areas]]
+path = 'tools/evaluator/**'
+docs = ['docs/testing.md']
+
+[[areas]]
+path = 'tools/forge/**'
+docs = ['docs/FORGE.md']
+
+[[areas]]
+path = 'tools/format/**'
+docs = ['docs/style.md']
+
+[[areas]]
+path = 'tools/privacy/**'
+docs = ['docs/privacy.md']
+
+[[areas]]
+path = 'src/main.c'
+docs = ['ARCHITECTURE.md']
+
+[[areas]]
+path = 'tools/build_game.py'
+docs = ['docs/build.md', 'docs/testing.md']
+
+[[areas]]
+path = 'tools/compare_backends.py'
+docs = ['docs/build.md', 'docs/testing.md']
+
+[[areas]]
+path = 'tools/compile_shaders.py'
+docs = ['docs/build.md', 'docs/testing.md']
+
+[[areas]]
+path = 'tools/resource_converter.py'
+docs = ['docs/build.md', 'docs/testing.md']
+
+[[areas]]
+path = 'tools/visual_eval.py'
+docs = ['docs/build.md', 'docs/testing.md']
+
