@@ -196,6 +196,19 @@ class HeadersTests(unittest.TestCase):
         self.write('src/offer.c', UPSTREAM + 'int offer;\n')
         self.assert_passes('--upstream')
 
+    def test_upstream_mode_rejects_unrelated_copyright(self):
+        """An added offer must name upstream's canonical copyright holder."""
+        unrelated = UPSTREAM.replace('General Arcade (Pte. Ltd.)', 'Unrelated Project')
+        self.write('src/offer.c', unrelated + 'int offer;\n')
+        self.assert_fails('src/offer.c', 'canonical upstream copyright/SPDX', '--upstream')
+
+    def test_upstream_mode_rejects_substituted_spdx(self):
+        """An added offer must retain upstream's complete licence expression."""
+        substituted = UPSTREAM.replace('GPL-3.0-or-later OR '
+                                       'LicenseRef-GeneralArcade-Commercial', 'MIT')
+        self.write('src/offer.c', substituted + 'int offer;\n')
+        self.assert_fails('src/offer.c', 'canonical upstream copyright/SPDX', '--upstream')
+
     def test_upstream_mode_rejects_header_edits(self):
         """In --upstream mode, reject a changed upstream header or a note."""
         self.write('src/up.c', UPSTREAM.replace('(Pte. Ltd.)', 'Ltd') + MARK)

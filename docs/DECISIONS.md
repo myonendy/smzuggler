@@ -167,6 +167,10 @@ A rename that git detects (`--find-renames`, default 50% similarity) is checked
 as a change against the source path's base header, so a moved Outsider file
 keeps upstream's copyright and SPDX lines and adds ours and a dated note.
 Untracked files cannot be paired with a source and count as added.
+In `--upstream` mode, added files must carry exactly the canonical General Arcade
+copyright and complete dual-license SPDX expression, in upstream order. An
+unrelated holder or substituted licence expression fails even if both kinds of
+line are present; existing offers retain their base header unchanged.
 
 The complete comparison against `upstream-main` exposes missing headers in
 protected infrastructure, task cards, specification documents, and existing tests.

@@ -13,6 +13,8 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Require the canonical General Arcade copyright and complete SPDX expression on
+  added upstream-offer files; reject unrelated holders and substituted licences.
 - Require licensing headers on prose and configuration and reject invalid UTF-8
   in checked files instead of silently treating source files as binary.
 - Check renamed upstream files in `headers.py` against their source header so a

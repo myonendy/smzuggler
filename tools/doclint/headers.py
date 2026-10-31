@@ -16,8 +16,9 @@ Default mode, for smzuggler branches:
   * a changed upstream file keeps every base copyright and SPDX line verbatim and
     adds the smzuggler copyright line and one more `Modified YYYY-MM-DD: why` note.
 `--upstream` mode, for up/ branches: a changed file keeps its base header lines
-exactly, an added file carries a copyright and SPDX line, and neither has the
-smzuggler copyright line or a Modified note (docs/DECISIONS.md DEC-SETUP-005).
+exactly, an added file carries the canonical General Arcade copyright and SPDX
+expression, and neither has the smzuggler copyright line or a Modified note
+(docs/DECISIONS.md DEC-SETUP-005).
 
 Only the first HEAD_LINES lines are read as the header. All regular files are
 checked, including prose, configuration and extensionless scripts, except these
@@ -39,6 +40,10 @@ HEAD_LINES = 40
 SMZ_COPYRIGHT = 'Copyright (C) 2026 The smzuggler contributors'
 SMZ_SPDX = 'GPL-3.0-or-later'
 COMMERCIAL = 'LicenseRef-GeneralArcade-Commercial'
+UPSTREAM_LINES = [
+    'Copyright (c) 2026 General Arcade (Pte. Ltd.)',
+    f'SPDX-License-Identifier: {SMZ_SPDX} OR {COMMERCIAL}',
+]
 SKIPPED_SUFFIXES = {
     '.json', '.jsonl', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp',
     '.wav', '.ogg', '.mp3', '.flac', '.opus', '.mp4', '.webm', '.avi',
@@ -160,8 +165,8 @@ def check_upstream_mode(base_lines, lines):
     if modified_notes(lines) != (modified_notes(base_lines) if base_lines else []):
         problems.append('upstream offer must not add a smzuggler Modified note')
     if base_lines is None:
-        if not spdx_values(lines) or not any(map(COPYRIGHT_RE.match, lines)):
-            problems.append('added file needs upstream copyright and SPDX lines')
+        if licence_lines(lines) != UPSTREAM_LINES:
+            problems.append('added file needs canonical upstream copyright/SPDX lines')
     elif licence_lines(lines) != licence_lines(base_lines):
         problems.append('upstream copyright/SPDX lines must stay untouched')
     return problems
