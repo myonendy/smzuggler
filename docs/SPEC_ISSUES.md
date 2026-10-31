@@ -1,3 +1,9 @@
+<!--
+SPDX-License-Identifier: GPL-3.0-or-later
+Copyright (C) 2026 The smzuggler contributors
+Contributor reference; follow the architecture and policy in ARCHITECTURE.md.
+-->
+
 # Spec issues
 
 Open questions and contradictions found in `docs/spec/SPEC.md` (v0.5.1) while setting up.

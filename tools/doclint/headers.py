@@ -19,12 +19,11 @@ Default mode, for smzuggler branches:
 exactly, an added file carries a copyright and SPDX line, and neither has the
 smzuggler copyright line or a Modified note (docs/DECISIONS.md DEC-SETUP-005).
 
-Only the first HEAD_LINES lines are read as the header. Checked files are source
-and build scripts: CHECKED_SUFFIXES, `CMakeLists.txt`, and extensionless files
-starting with `#!`. Everything else is skipped because it has no comment syntax
-(JSON, PNG and other images, audio, fonts, `*.rmmzsave`) or is prose and
-configuration covered as a whole by LICENSES/README.md (Markdown, plain text,
-TOML, YAML, `.gitignore`, `.gitattributes`). Deleted files are ignored.
+Only the first HEAD_LINES lines are read as the header. All regular files are
+checked, including prose, configuration and extensionless scripts, except these
+formats without comment syntax: JSON/JSONL, PNG/JPEG/GIF/WebP/ICO/BMP, audio/video,
+fonts, PDF, archives and RPG Maker saves (SKIPPED_SUFFIXES). Deleted files and
+symlinks are ignored. Checked files must decode as UTF-8; invalid bytes are errors.
 Exit status: 0 clean, 1 header violations, 2 usage or git errors.
 """
 
@@ -39,10 +38,11 @@ HEAD_LINES = 40
 SMZ_COPYRIGHT = 'Copyright (C) 2026 The smzuggler contributors'
 SMZ_SPDX = 'GPL-3.0-or-later'
 COMMERCIAL = 'LicenseRef-GeneralArcade-Commercial'
-CHECKED_SUFFIXES = {
-    '.c', '.h', '.cc', '.cpp', '.cxx', '.hpp', '.hh', '.m', '.mm', '.js', '.mjs',
-    '.cjs', '.py', '.sh', '.bash', '.cmake', '.hlsl', '.glsl', '.vert', '.frag',
-    '.comp', '.metal'}
+SKIPPED_SUFFIXES = {
+    '.json', '.jsonl', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp',
+    '.wav', '.ogg', '.mp3', '.flac', '.opus', '.mp4', '.webm', '.avi',
+    '.ttf', '.otf', '.woff', '.woff2', '.pdf', '.zip', '.gz', '.xz', '.7z',
+    '.rmmzsave', '.rpgsave'}
 COMMENT_MARK = re.compile(r'^\s*(?:<!--|-->|/\*+|\*+/|\*+|//+|#+)?\s*')
 SPDX_RE = re.compile(r'^SPDX-License-Identifier:\s*(.+?)\s*(?:\*/|-->)?$')
 COPYRIGHT_RE = re.compile(r'^Copyright \(c\)', re.IGNORECASE)
@@ -74,19 +74,16 @@ def changed_files(root, base):
     return sorted(added), sorted(modified)
 
 
-def is_checked(path, text):
-    """Say whether PATH, whose current content is TEXT, is a type we check."""
-    name = Path(path).name
-    suffix = Path(path).suffix.lower()
-    if name == 'CMakeLists.txt' or suffix in CHECKED_SUFFIXES:
-        return True
-    return suffix == '' and text.startswith('#!')
+def is_checked(path):
+    """Check all paths except explicit formats that cannot carry comments."""
+    return Path(path).suffix.lower() not in SKIPPED_SUFFIXES
 
 
 def header(text):
     """Return the comment-stripped first HEAD_LINES lines of TEXT, in order."""
     lines = text.splitlines()[:HEAD_LINES]
-    return [COMMENT_MARK.sub('', line, count=1).rstrip() for line in lines]
+    return [re.sub(r'\s*(?:\*/|-->)\s*$', '',
+                   COMMENT_MARK.sub('', line, count=1)).rstrip() for line in lines]
 
 
 def licence_lines(lines):
@@ -159,21 +156,15 @@ def check_upstream_mode(base_lines, lines):
     return problems
 
 
-def read_text(path):
-    """Read PATH as text, or None when it is binary or not a regular file."""
-    if path.is_symlink() or not path.is_file():
-        return None
-    try:
-        return path.read_text(encoding='utf-8')
-    except UnicodeDecodeError:
-        return None
-
-
 def check_file(root, base, path, is_new, upstream):
     """Return the header problems of one changed PATH; skipped types give []."""
-    text = read_text(root / path)
-    if text is None or not is_checked(path, text):
+    target = root / path
+    if not is_checked(path) or target.is_symlink() or not target.is_file():
         return []
+    try:
+        text = target.read_text(encoding='utf-8')
+    except UnicodeDecodeError:
+        return ['invalid UTF-8 in checked file; cannot validate licensing header']
     lines = header(text)
     base_lines = None
     if not is_new:

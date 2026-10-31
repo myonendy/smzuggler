@@ -154,18 +154,18 @@ excluding tests or changing the measured upstream style to hide the failures.
 
 ## DEC-M0-T014 — Header gate scope and what counts as a modification
 
-`tools/doclint/headers.py` checks source and build scripts (C, C++, Objective-C,
-JavaScript, Python, shell, CMake, shader sources, and extensionless `#!` scripts).
-It skips files without comment syntax (JSON, images, audio, fonts, saves) and
-prose or configuration files (Markdown, plain text, TOML, YAML, `.gitignore`,
-`.gitattributes`). Those are covered as a whole by `LICENSES/README.md`, and many
-are protected forge files (`tasks/**`, `prompts/**`, `forge.toml`) that agents
-cannot re-head. A changed file whose base header names only smzuggler is held to
-the new-file rule, so later cards need no `Modified` note on our own files. A
-changed upstream file needs one more valid dated `Modified YYYY-MM-DD:` note than
-its base had, so each later change is dated (GPLv3 section 5a), not only the first.
-Upstream lines must survive verbatim but may move within the first 40 lines.
-Three changed files still fail against `upstream-main`, and this card cannot fix
-them: `.claude/hooks/guard.sh` is protected, and `tests/CMakeLists.txt` and
-`tests/integration/test_acceptance.c` are existing tests outside this card's
-`owns`. They are left visible rather than excluded.
+`tools/doclint/headers.py` checks all regular changed files, including Markdown,
+TOML, YAML, and extensionless configuration. Only explicit formats without comment
+syntax are skipped; its module docstring and `SKIPPED_SUFFIXES` list them. Checked
+files must be UTF-8: decoding failures produce a licensing error rather than a
+binary-file exemption. Symlinks and deletions are ignored.
+A changed file whose base header names only smzuggler follows the new-file rule.
+Changed upstream files retain their copyright and SPDX lines and require an
+additional dated modification note. Header lines may move within the first 40
+lines; comment delimiters do not form part of the licensing text.
+
+The complete comparison against `upstream-main` exposes missing headers in
+protected infrastructure, task cards, specification documents, and existing tests.
+These paths cannot receive header-only fixes within this card's ownership rules.
+The orchestrator must resolve that scope conflict before the full-tree acceptance
+criterion can pass. No path exemptions hide these violations.

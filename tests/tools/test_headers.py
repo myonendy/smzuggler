@@ -138,12 +138,34 @@ class HeadersTests(unittest.TestCase):
         self.assert_passes()
 
     def test_skipped_types_and_deletions(self):
-        """Ignore comment-less and prose files, and deleted upstream files."""
+        """Ignore comment-less files and deleted upstream files."""
         self.write('data/map.json', '{"no": "header"}\n')
-        self.write('docs/notes.md', 'No header here.\n')
         (self.root / 'img.png').write_bytes(b'\x89PNG\r\n\x1a\n\x00\xff')
         (self.root / 'src/up.c').unlink()
         self.assert_passes()
+
+    def test_prose_and_configuration_require_headers(self):
+        """Prevent prose and configuration from bypassing the CLI header rules."""
+        for path in ('docs/notes.md', 'config.toml', 'config.yaml', '.gitignore'):
+            self.write(path, 'missing licensing lines\n')
+            self.assert_fails(path, 'SPDX-License-Identifier')
+
+    def test_prose_and_configuration_headers_pass(self):
+        """Accept native HTML and hash comments without including their delimiters."""
+        self.write('docs/notes.md', '<!-- SPDX-License-Identifier: '
+                   f'GPL-3.0-or-later -->\n<!-- {SMZ_LINE} -->\n# Notes\n')
+        for path in ('config.toml', 'config.yaml', '.gitignore'):
+            self.write(path, f'# SPDX-License-Identifier: GPL-3.0-or-later\n'
+                       f'# {SMZ_LINE}\n')
+        self.assert_passes()
+
+    def test_undecodable_source_fails(self):
+        """Reject invalid UTF-8 even when a source header otherwise looks valid."""
+        for path in ('src/added.c', 'src/up.c', 'tools/run.py'):
+            target = self.root / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(NEW.encode() + b'\xff')
+            self.assert_fails(path, 'invalid UTF-8')
 
     def test_upstream_mode_rejects_smzuggler_line(self):
         """In --upstream mode, our copyright line or note must not appear."""

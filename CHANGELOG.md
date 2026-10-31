@@ -6,8 +6,6 @@ Modified 2026-10-30: document runtime naming, CI coverage and format checks.
 Modified 2026-10-31: record Markdown parser corrections.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
-<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-<!-- Copyright (C) 2026 The smzuggler contributors -->
 <!-- Records project changes for release review; keep entries free of private data. -->
 
 # Changelog
@@ -15,6 +13,8 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Require licensing headers on prose and configuration and reject invalid UTF-8
+  in checked files instead of silently treating source files as binary.
 - Add `tools/doclint/headers.py --base REV` to check spec section 12 licence headers
   and dated `Modified` notes; restore Outsider's header lines in `CMakeLists.txt`.
 - Add the architecture guide and checks for source references and directory coverage.
