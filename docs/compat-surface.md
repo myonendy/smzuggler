@@ -590,8 +590,8 @@ known missing rows therefore remain visible as full-check failures until fixed.
 | `nw.App` | stub | `src/shims/storage_shim.js` | `-` | No-op / fixed compatibility response; no host semantics. |
 | `nw.App.argv` | stub | `src/shims/storage_shim.js` | `-` | No-op / fixed compatibility response; no host semantics. |
 | `nw.App.argv.length` | stub | `src/shims/storage_shim.js` | `-` | No-op / fixed compatibility response; no host semantics. |
-| `nw.App.quit` | stub | `src/shims/storage_shim.js` | `-` | No-op / fixed compatibility response; no host semantics. |
-| `nw.App.quit.prototype.constructor` | stub | `src/shims/storage_shim.js` | `-` | No-op / fixed compatibility response; no host semantics. |
+| `nw.App.quit` | partial | `src/shims/storage_shim.js` | `tests/smz/test_dump_surface.c` | Calls native quit; no close-event handshake (§5.2); inventory test only. |
+| `nw.App.quit.prototype.constructor` | partial | `src/shims/storage_shim.js` | `tests/smz/test_dump_surface.c` | Calls native quit; no close-event handshake (§5.2); inventory test only. |
 | `nw.Window` | stub | `src/shims/storage_shim.js` | `-` | No-op / fixed compatibility response; no host semantics. |
 | `nw.Window.get` | stub | `src/shims/storage_shim.js` | `-` | Returns an instance with no-op events/window controls (§5.2). |
 | `nw.Window.get.prototype.constructor` | stub | `src/shims/storage_shim.js` | `-` | Returns an instance with no-op events/window controls (§5.2). |

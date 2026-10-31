@@ -18,7 +18,6 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
-
 - Add the offline compatibility-surface checker and inventory for smaller shims.
 - Add smzuggler contribution rules, preserved upstream guidance and a tested PR checklist.
 - Add the upstream offer tracker and isolated, offline branch extraction helper.
