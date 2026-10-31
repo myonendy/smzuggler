@@ -15,6 +15,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Add the architecture guide and checks for source references and directory coverage.
 - Ignore indented Markdown examples, check multiline link destinations, and
   decode heading entities while preserving literal code-span text in mdlinks.
 - Add an offline Markdown link and anchor check (`tools/doclint/mdlinks.py`)
