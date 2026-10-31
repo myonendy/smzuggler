@@ -1,7 +1,7 @@
 <!--
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
-Modified 2026-10-30: document runtime naming.
+Modified 2026-10-30: document runtime naming and format policy.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 
@@ -103,6 +103,28 @@ output and installation use `SMZUGGLER_BIN`; Android retains `libmain.so` becaus
 SDLActivity requires it. Cache strings feed the shared names header and platform
 alias; standalone compilation uses the same defaults. This changes naming only.
 
+## DEC-M0-T005 — Changed-line formatting and dependency-free ES5 guard
+
+Use clang-format with four-space LLVM-derived layout, Linux braces, unlimited
+columns, preserved include order and single-line guards to match upstream.
+Measured with clang-format 23.1.3 against unchanged `upstream-main:src/main.c`:
+396 source lines, 2 removed and 5 added. Residuals are one preprocessor-split call's
+closing parenthesis and expansion of one compact multi-statement conditional.
+No upstream sources were reformatted. Changed-line diagnostics filter formatter
+replacements against Git's new-side lines; deleted lines and untracked files are
+outside the check. A base revision is mandatory and invalid revisions fail loudly.
+
+For now use a Python tokenizer for ES5 syntax instead of adding Node, eslint or
+prettier dependencies to offline gates. Check whole changed shared shim files;
+`--paths` selects explicit repository-relative globs for other shared locations.
+The checker is deliberately not a complete JavaScript grammar validator; regex
+recognition uses expression context, including logical operators and unary
+keywords; regression fixtures prevent regex contents becoming syntax diagnostics.
+All 13 upstream shim files pass the guard.
+Full JS formatting and jsdoc tooling remain future work under §15.6/§15.7.
+A human wires the commands into gates after merge (DEC-SETUP-006).
+`ARCHITECTURE.md` is absent at this card's baseline; the style guide links its
+intended location for the architecture documentation card to supply.
 ## DEC-M0-T004 — Filter diagnostics before sink dispatch
 The engine filters the formatted message once before console, file and callback
 output, so callback consumers cannot bypass the privacy boundary. File-open
@@ -112,3 +134,11 @@ The test fragment attaches the filter source to existing test targets that compi
 `error_handler.c` directly; this keeps upstream test definitions unchanged.
 User and host identity lookup APIs are absent from `src`; diagnostics must not add
 such identity sources. See [privacy.md](privacy.md).
+
+## DEC-M0-T005b — Inherited format violations remain visible
+
+Validation after merging the logger card reports `tests/smz/test_log_scrub.c:17`
+and `:42` against `upstream-main`: compact multi-statement and nested conditional
+lines expand under clang-format. These existing tests are outside this card’s
+ownership and cannot be edited here. Keep diagnostics visible rather than
+excluding tests or changing the measured upstream style to hide the failures.

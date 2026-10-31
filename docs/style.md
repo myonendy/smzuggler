@@ -1,0 +1,95 @@
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Copyright (C) 2026 The smzuggler contributors -->
+<!-- Maintainer style contract for tools and runtime code. This prevents review
+     churn; see ../ARCHITECTURE.md for subsystem boundaries. No runtime resources
+     are owned here; keep examples independent of game material. -->
+
+# Code style
+
+Follow [the architecture](../ARCHITECTURE.md) and [privacy rules](privacy.md).
+Use C11; use C++ only where V8 requires it. Keep one concept per file and prefer
+plain loops and structs. Do not use template metaprogramming beyond V8 API needs.
+Functions have a 60-line limit; an exceptional longer function needs a comment
+explaining why splitting it would obscure its contract.
+
+C functions and variables use `snake_case` with module prefixes such as `jsb_`,
+`webgl_`, `audio_`, `video_` and `saves_`. Types use `PascalCase`, constants use
+`UPPER_SNAKE`. Put units in names: `_ms`, `_px`, `_bytes`, `_hz`.
+Avoid abbreviations except this glossary: GL (OpenGL), VAO (vertex array object),
+FBO (framebuffer object), UBO (uniform buffer object), rAF (requestAnimationFrame),
+CE (common event), JS (JavaScript), API (application programming interface),
+NW.js (the upstream desktop JavaScript runtime).
+
+Control flow must stay visible. Macros are only for constants or documented
+X-macro tables without hidden control flow. Function-like macros must never hide
+`return`, `goto`, `break`, loops or allocations. Check errors where they occur;
+make cleanup and each failure path explicit, with enough context to diagnose the
+failure. Do not suppress warnings to disguise errors.
+
+## Automatic checks
+
+`.clang-format` follows upstream's C layout. Run
+`python3 tools/format/check_format.py --base REV` from the repository. It invokes
+clang-format only for new-side changed lines in tracked C/C++ sources and headers,
+including staged and unstaged changes. Commit newly added files or stage them
+first. It reports `file:line` for replacements intersecting changed lines, never
+for untouched legacy lines even if clang-format expands a syntax range. It does
+not rewrite files. Exit codes are 0 (clean), 1 (violations), 2 (tool failure).
+Dependencies are the installed clang-format, Git and Python standard library.
+
+Shared/upstream shims stay ES5. smzuggler-only shims may use ES2020 on V8, with the
+same documentation requirements. Run
+`python3 tools/format/es5_check.py --base REV [--paths 'src/shims/*.js']`.
+Paths are repository-relative glob patterns; defaults cover shared shims. This
+checks whole changed files to catch multiline constructs. It rejects let/const,
+classes, arrows, templates, destructuring, default/rest parameters, spread and
+for-of. Strings, comments and common regex literals are tokenized separately.
+This is a focused syntax guard, not a full JavaScript parser or formatter; regex
+versus division uses expression context, including logical operators and unary
+keywords such as `typeof` and `void`. Full eslint/prettier formatting and
+jsdoc lint remain the intended tooling when dependencies are available. No Node
+or downloaded packages are required for this milestone (DEC-M0-T005).
+
+## Headers and comments
+
+Every file starts with SPDX and copyright followed by a purpose/why header,
+its subsystem documentation link, and threading, ownership and ordering rules.
+New files use `GPL-3.0-or-later` and
+`Copyright (C) 2026 The smzuggler contributors`. Preserve upstream copyright and
+SPDX lines in modified upstream files, add that contributor line and a dated
+`Modified YYYY-MM-DD: reason` note. Upstream-offer U cards retain upstream's
+headers without our line, as required by their assignment policy.
+
+Every function, including static helpers and shim methods, gets a doc comment:
+why it exists; parameters with units and ranges; return value; pointer retention
+and who frees results; calling thread; and error behavior. Trivial functions may
+use one line. Public types document ownership, units and threading too. Binding
+and shim comments name the implemented web/NW.js/Node API, compat-table ID,
+authoritative reference link and deviations. Explain surprises rather than
+repeating code, and fix comments with behavior changes.
+
+```c
+/* SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 The smzuggler contributors
+ * Audio timing conversion keeps scheduling units consistent.
+ * See docs/audio.md; pure values only, no ownership or ordering constraints.
+ */
+/** Convert nonnegative elapsed_ms to seconds for audio scheduling.
+ * May run on any thread; returns a value, retains nothing and cannot fail.
+ */
+static double audio_seconds(double elapsed_ms)
+{
+    return elapsed_ms / 1000.0;
+}
+```
+
+Each directory under `src/` has a module README describing purpose, entry points,
+data flow, resource owners, tests and compat-table links. Generated WebGL entry
+points must come from a readable documented script in `tools/`; commit the output
+with a “generated by …, do not edit” header and review it like normal code.
+
+Docs change with behavior in the same PR, including subsystem docs, module README
+or compat rows. Header/doc lint, compat checks, link checks and docs-touched checks
+support review; a reviewer must agree to any `no-doc-change` exception. The PR
+checklist covers why, docs, compat rows, tests, upstream eligibility and privacy.
+Fresh milestone readers turn every unanswered question into a documentation fix.

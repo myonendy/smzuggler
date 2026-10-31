@@ -1,7 +1,7 @@
 <!--
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
-Modified 2026-10-30: document runtime naming and CI coverage.
+Modified 2026-10-30: document runtime naming, CI coverage and format checks.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
@@ -15,6 +15,8 @@ All notable changes to smzuggler. Outsider's own history is in its git log.
 ## Unreleased
 - Check documentation on compact C/C++ definitions independently in doclint.
 - Add source documentation lint with changed-line checks and a legacy baseline.
+- Recognize ES5 regex literals after logical operators and unary keywords.
+- Added code style guidance, upstream-aligned clang-format and changed-file ES5 checks.
 - Harden logger scrubbing for punctuation, root homes and Windows path casing;
   register POSIX logger fixtures only on supported platforms.
 - Add explicit assertions for logger privacy path and buffer boundaries.
