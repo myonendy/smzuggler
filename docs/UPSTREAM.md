@@ -52,6 +52,11 @@ fully disconnected FetchContent using `SMZ_DEPS_DIR` (default
 `~/.cache/smzuggler-dev/deps`), builds and runs ctest. The default only extracts;
 the owner must build/test with QuickJS before opening. No pushes occur.
 
+Supply commits in dependency order. Every intermediate commit is checked, so
+removing a forbidden path or header in a later commit cannot hide it in the
+offer's history. A replay conflict leaves no destination branch; resolve the
+candidate on the fork and retry with the corrected commit sequence.
+
 Keep each offer independent, one concern, ideally under 200 changed lines, with
 its own test and explanation. U4 waits for U3; U10 waits for U9. Use ES5 shims,
 upstream C style and upstream headers, with no smzuggler copyright or V8/real-PIXI
