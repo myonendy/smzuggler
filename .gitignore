@@ -1,3 +1,5 @@
+# Copyright (C) 2026 The smzuggler contributors
+# Modified 2026-10-31: ignore forge worktrees, saves, fixtures and perf output.
 # Build output
 build/
 build-*/

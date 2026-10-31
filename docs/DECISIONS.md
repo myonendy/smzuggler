@@ -72,10 +72,13 @@ Python tool tests live in `tests/tools/` (run by `tools/forge/test.sh`). U cards
 upstream's existing test files in upstream's style (`may_edit_tests = true`, additions only)
 so their patches apply upstream unchanged.
 
-## DEC-SETUP-010 — Claude is review-only
-Claude may review code (`agents.review_pool`) and is never a worker, fallback worker,
-planner or auditor. `allow_overage = false`: a Claude run that reaches paid overage is
-stopped. Caps in `forge.toml` are conservative placeholders for the owner to set.
+## DEC-SETUP-010 — Claude works and reviews, never on overage
+Until 2026-10-31 Claude was review-only. From 2026-10-31 (owner) Claude is a worker
+alongside Codex (`workers = ["codex", "claude"]`) and reviews (`review_pool`). Grok is the
+last-resort fallback worker, used only when Codex and Claude are both cooling
+(`fallback_workers = ["codex", "claude", "grok"]`). Planner and auditor stay Codex.
+`allow_overage = false`: a Claude run that reaches paid overage is stopped. Caps in
+`forge.toml` are conservative placeholders for the owner to set.
 
 ## DEC-SETUP-011 — Build gate uses build/; the binary rename edits one upstream assertion
 Upstream's acceptance test (`build_pipeline_structure` in `tests/integration/test_acceptance.c`)
@@ -151,3 +154,119 @@ and `:42` against `upstream-main`: compact multi-statement and nested conditiona
 lines expand under clang-format. These existing tests are outside this card’s
 ownership and cannot be edited here. Keep diagnostics visible rather than
 excluding tests or changing the measured upstream style to hide the failures.
+
+## DEC-M0-T014 — Header gate scope and what counts as a modification
+
+`tools/doclint/headers.py` checks all regular changed files, including Markdown,
+TOML, YAML, and extensionless configuration. Only explicit formats without comment
+syntax are skipped; its module docstring and `SKIPPED_SUFFIXES` list them. Checked
+files must be UTF-8: decoding failures produce a licensing error rather than a
+binary-file exemption. Symlinks and deletions are ignored.
+A changed file whose base header names only smzuggler follows the new-file rule.
+Changed upstream files retain their copyright and SPDX lines and require an
+additional dated modification note. Header lines may move within the first 40
+lines; comment delimiters do not form part of the licensing text.
+A rename that git detects (`--find-renames`, default 50% similarity) is checked
+as a change against the source path's base header, so a moved Outsider file
+keeps upstream's copyright and SPDX lines and adds ours and a dated note.
+Untracked files cannot be paired with a source and count as added.
+In `--upstream` mode, added files must carry exactly the canonical General Arcade
+copyright and complete dual-license SPDX expression, in upstream order. An
+unrelated holder or substituted licence expression fails even if both kinds of
+line are present; existing offers retain their base header unchanged.
+
+Verbatim licence texts (`LICENSE`, `LICENSES/*.txt`) are skipped by explicit
+path, because a licence text must be distributed unaltered; project-written prose
+such as `LICENSES/README.md` is still checked.
+
+Following DEC-M0-T014-SCOPE, the full-tree run (`headers.py --base upstream-main`,
+2026-10-31) is clean for every file this card owns, adds or changes, and reports
+262 problems in 131 files outside `owns`, left for draft card M0-T014b. No
+exemption list hides them and no check was relaxed.
+- Outside `owns`, fixable by M0-T014b: `.gitignore`, `CONTRIBUTING.md`,
+  `tests/CMakeLists.txt`, `tests/integration/test_acceptance.c` (each changed
+  upstream file lacks our copyright line and a dated Modified note).
+- Protected, for a human (no SPDX or smzuggler copyright line unless noted):
+  `.gitattributes` (upstream file: our line and Modified note missing),
+  `AGENTS.md`, `CLAUDE.md`, `forge.toml`, `LICENSES/README.md`,
+  `.claude/agents/investigator.md`, `.claude/hooks/guard.sh`,
+  `.codex/config.toml`, `docs/spec/CHANGES.md`, `docs/spec/README.md`,
+  `docs/spec/SPEC.md`, `docs/spec/V8_MZ_HOST_SPEC_v0.2.md`,
+  `prompts/auditor.md`, `prompts/planner.md`, `prompts/reviewer.md`,
+  `prompts/worker.md`, `tools/privacy/allowlist.txt`, and 110 task cards under
+  `tasks/` (`tasks/*.md` and `tasks/draft/*.md`).
+## DEC-M0-T013 — Upstream extraction uses exact paths and atomic publication
+
+The tracker expands abbreviated §8.1 filenames to their upstream-tree paths and
+includes the existing test files allowed by DEC-SETUP-005. U13's provisional shim
+path is canvas2d_shim.js; revisit the row if root-cause analysis needs another
+file, rather than permitting every shim. Mixed-path commits are rejected whole,
+not filtered: silently discarding part of a fix could produce an invalid offer.
+The helper replays in a detached temporary worktree and publishes the local topic
+branch only after validation and optional offline QuickJS build/ctest succeed.
+## DEC-M0-T009b — What counts as a dump "member"
+Spec §15.4 defines the surface as "every global and prototype member the shims install".
+Intrinsic function properties (`length`, `name`, and `prototype` as a row of its own) are not
+APIs, and the members of instances reached from `document` (`document.body.*` and so on) repeat
+`HTMLElement.prototype`. The dump leaves both out. Nothing a shim installs on a global,
+constructor, prototype or namespace is dropped, `_`-prefixed members included. No test or gate
+gets weaker: the existing dump test is unchanged, a new test pins the exclusions, and the
+compat-surface check stays exact table-vs-dump equality.
+
+## DEC-M0-T010-SPLIT — Seed the compat table in three cards
+Even after DEC-M0-T009b the table has about 2,000 rows, more than one card's 1,500-line SIZE
+cap, so the table is seeded per shim file. M0-T010a adds the checker (with `--shim`) and the
+small shims. M0-T010b adds dom_shim.js. M0-T010 adds pixi_shim.js, and the full check with no
+`--shim` must pass there. M0-T010b and M0-T010 are data-only (`tests_required = false`): the
+checker run in each report is their test, and the `compat_surface` gate takes over after
+M0-T010. `max_diff_lines` is unchanged.
+
+## DEC-SETUP-014 — Upstream contact address in docs/upstream-CONTRIBUTING.md
+`docs/upstream-CONTRIBUTING.md` must be byte-identical to upstream's CONTRIBUTING.md (M0-T012,
+SI-7), and that file contains Outsider's public company address.
+That address is already allow-listed for the inherited CONTRIBUTING.md, LICENSE and README.md.
+The allow-list gets the same exact-match entry for the preserved copy. It is a generic-rule
+override for one public, non-personal address in one file. Deny-list rules are untouched, and
+the scan still flags any other email.
+
+## DEC-M0-T014-SCOPE — Header check: full-tree pass moves to M0-T014b
+M0-T014 blocked after four attempts because "`headers.py --base upstream-main` passes on the
+tree" required header edits to files outside its `owns`, some of them protected (AGENTS.md,
+forge.toml, tasks/**, tools/forge/** and so on) and some upstream tests. M0-T014 now has to be
+clean only for the files it owns, adds or changes, and must list every remaining violation;
+verbatim licence texts are skipped by explicit path. No exemption list is added and no check is
+relaxed: the full-tree pass is still required, by draft card M0-T014b plus a human for the
+protected files, before `headers.py` becomes a gate.
+
+## DEC-SETUP-015 — Cards that add a src/ or tools/ directory own ARCHITECTURE.md
+`tests/tools/test_architecture_refs.py::test_directory_map` requires an ARCHITECTURE.md row for
+every directory under `src/` and `tools/`. Cards that create one (M0-T013, M0-T016, M0-T017,
+M0-T019, M0-T020, M0-T023, M1-T001, M1-T003) own ARCHITECTURE.md, limited to adding that row.
+
+## DEC-M0-T014b — Remaining section 12 notices outside M0-T014's owns
+
+`.gitignore`, `tests/CMakeLists.txt` and `tests/integration/test_acceptance.c`
+gain our copyright line and a dated Modified note naming the earlier smzuggler
+change; upstream copyright and SPDX lines are untouched. `CONTRIBUTING.md`
+already passes and is unchanged. No checker exemption changes.
+
+`docs/upstream-CONTRIBUTING.md` (under `docs/**`, not protected) had packed
+SPDX, copyright and note into one comment line, which the checker, reading one
+item per line, rejected. Its comment now has one item per line, and
+`tests/tools/test_pr_template.py::test_upstream_bytes` skips the whole leading
+comment block (up to the first `-->` line), checks the SPDX and copyright lines
+in it, and still compares every remaining byte with upstream `CONTRIBUTING.md`.
+That test lies outside this card's `owns`; the reviewer required the edit.
+
+`python3 tools/doclint/headers.py --base upstream-main` (2026-10-31) exits 1
+with 262 problems in 131 files, all under forge.toml `protected` (which includes `LICENSES/**`): `.gitattributes`, `AGENTS.md`, `CLAUDE.md`,
+`forge.toml`, `LICENSES/README.md`, `.claude/agents/investigator.md`,
+`.claude/hooks/guard.sh`, `.codex/config.toml`, `docs/spec/{CHANGES,README,SPEC,
+V8_MZ_HOST_SPEC_v0.2}.md`, `prompts/{auditor,planner,reviewer,worker}.md`,
+`tools/privacy/allowlist.txt`, and the task cards under `tasks/` and
+`tasks/draft/`. A human adds those headers and confirms the run exits 0.
+
+The cumulative `git diff upstream-main -- tests/` also shows earlier functional
+changes (fragment registration, DEC-SETUP-009; the `smzuggler-rt` executable
+name, M0-T001). This card adds only comment lines to those files; assertions and
+the ASSERT count are unchanged.
