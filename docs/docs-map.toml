@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 The smzuggler contributors
+# Modified 2026-10-31: map tools/share to docs/sharing.md.
 # Documentation obligations for the read-only gate in tools/doclint/docs_touched.py.
 # This is repository tooling, outside browser/NW.js emulation; keep paths relative.
 # Run: python3 tools/doclint/docs_touched.py --base REV (Python 3.11+).
@@ -85,6 +86,10 @@ docs = ['docs/perf.md']
 [[areas]]
 path = 'tools/privacy/**'
 docs = ['docs/privacy.md']
+
+[[areas]]
+path = 'tools/share/**'
+docs = ['docs/sharing.md']
 
 [[areas]]
 path = 'src/main.c'

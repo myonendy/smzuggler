@@ -4,6 +4,7 @@
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-10-30: use the configurable runtime identity.
  * Modified 2026-10-31: dispatch headless surface inventory before startup.
+ * Modified 2026-10-31: dispatch --share-bundle to the packager.
  *
  * Runtime entry point; owns startup and shutdown on the main thread.
  * See docs/DECISIONS.md (DEC-M0-T001) for identity ownership.
@@ -50,6 +51,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(_WIN32)
+#include <direct.h>
+#include <process.h>
+#define smz_getcwd _getcwd
+#else
+#include <unistd.h>
+#include <sys/wait.h>
+#define smz_getcwd getcwd
+#endif
 
 #ifndef RMMZ_DEFAULT_WIDTH
 #define RMMZ_DEFAULT_WIDTH 816
@@ -72,6 +82,115 @@ static void fatal_error(const char *fmt, ...)
 
     error_handler_log(LOG_ERROR, "%s", msg);
     platform_show_error_dialog(APP_TITLE, msg);
+}
+
+/** True when DIR contains the packager; copies its path into OUT (caller-owned). */
+static bool share_try_script(const char *dir, char *out, size_t n)
+{
+    int k = snprintf(out, n, "%s/tools/share/make_bundle.py", dir);
+    if (k > 0 && (size_t)k < n && file_io_exists(out)) return true;
+    k = snprintf(out, n, "%s/share/make_bundle.py", dir);
+    return k > 0 && (size_t)k < n && file_io_exists(out);
+}
+
+/** Strip a trailing slash so parent walking does not stall on SDL_GetBasePath. */
+static void share_trim(char *dir)
+{
+    size_t n = strlen(dir);
+    while (n > 1 && (dir[n - 1] == '/' || dir[n - 1] == '\\'))
+        dir[--n] = '\0';
+}
+
+/** Walk START and its parents looking for the packager; OUT is caller-owned. */
+static bool share_walk(const char *start, char *out, size_t n)
+{
+    char dir[1024];
+    if (!start || !start[0]) return false;
+    snprintf(dir, sizeof(dir), "%s", start);
+    share_trim(dir);
+    for (int i = 0; i < 8; i++) {
+        char *slash;
+        if (share_try_script(dir, out, n)) return true;
+        slash = strrchr(dir, '/');
+#ifdef _WIN32
+        {
+            char *alt = strrchr(dir, '\\');
+            if (!slash || (alt && alt > slash)) slash = alt;
+        }
+#endif
+        if (!slash || slash == dir) break;
+        *slash = '\0';
+        if (!dir[0]) break;
+    }
+    return false;
+}
+
+/** Locate make_bundle.py from the executable, argv0 or cwd; OUT is caller-owned. */
+static bool share_find(const char *argv0, char *out, size_t n)
+{
+    const char *base = SDL_GetBasePath();
+    char cwd[1024];
+    if (base && share_walk(base, out, n)) return true;
+    if (smz_getcwd(cwd, sizeof(cwd)) && share_walk(cwd, out, n)) return true;
+    if (argv0 && strpbrk(argv0, "/\\")) {
+        char *slash;
+        snprintf(cwd, sizeof(cwd), "%s", argv0);
+        share_trim(cwd);
+        slash = strrchr(cwd, '/');
+#ifdef _WIN32
+        {
+            char *alt = strrchr(cwd, '\\');
+            if (!slash || (alt && alt > slash)) slash = alt;
+        }
+#endif
+        if (slash) {
+            *slash = '\0';
+            if (share_walk(cwd, out, n)) return true;
+        }
+    }
+    return false;
+}
+
+/** Run ARGS as python3 and return its exit status; 127 if the spawn itself fails. */
+static int share_spawn(char *const *args)
+{
+#ifdef _WIN32
+    int rc = _spawnvp(_P_WAIT, args[0], args);
+    return rc < 0 ? 127 : rc;
+#else
+    pid_t pid = fork();
+    int status = 0;
+    if (pid < 0) return 127;
+    if (pid == 0) {
+        execvp(args[0], args);
+        _exit(127);
+    }
+    if (waitpid(pid, &status, 0) < 0) return 127;
+    if (WIFEXITED(status)) return WEXITSTATUS(status);
+    return 1;
+#endif
+}
+
+/** Dispatch --share-bundle to the Python packager for the last state-dir run.
+ * out_path may be NULL (default zip name). argv0 locates the source tree.
+ * The calling thread owns the strings; this function does not keep them. */
+static int share_bundle_run(const char *out_path, const char *argv0)
+{
+    char script[1024];
+    const char *out;
+    char *args[6];
+    if (!share_find(argv0, script, sizeof(script))) {
+        fprintf(stderr, "share-bundle: tools/share/make_bundle.py not found\n");
+        return 1;
+    }
+    out = (out_path && out_path[0]) ? out_path : "share-bundle.zip";
+    args[0] = "python3";
+    args[1] = script;
+    args[2] = "--last-run";
+    args[3] = "-o";
+    args[4] = (char *)out;
+    args[5] = NULL;
+    return share_spawn(args);
 }
 
 /* If a directory exists at "<exe dir>/<name>", copy its path into out.
@@ -109,6 +228,8 @@ int main(int argc, char *argv[])
     bool control_mode = false;
     bool dump_requested = false;
     const char *dump_path = NULL;
+    bool share_requested = false;
+    const char *share_path = NULL;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--dump-surface") == 0) {
@@ -116,6 +237,11 @@ int main(int argc, char *argv[])
         } else if (strncmp(argv[i], "--dump-surface=", 15) == 0) {
             dump_requested = true;
             dump_path = argv[i] + 15;
+        } else if (strcmp(argv[i], "--share-bundle") == 0) {
+            share_requested = true;
+        } else if (strncmp(argv[i], "--share-bundle=", 15) == 0) {
+            share_requested = true;
+            share_path = argv[i] + 15;
         } else if (strcmp(argv[i], "--game") == 0 && i + 1 < argc) {
             game_dir = argv[++i];
         } else if (strcmp(argv[i], "--shims") == 0 && i + 1 < argc) {
@@ -152,6 +278,10 @@ int main(int argc, char *argv[])
             /* Positional argument: treat as game directory. */
             game_dir = argv[i];
         }
+    }
+
+    if (share_requested) {
+        return share_bundle_run(share_path, argv[0]);
     }
 
     if (dump_requested) {
