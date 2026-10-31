@@ -15,6 +15,8 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Add `tools/doclint/headers.py --base REV` to check spec section 12 licence headers
+  and dated `Modified` notes; restore Outsider's header lines in `CMakeLists.txt`.
 - Add the architecture guide and checks for source references and directory coverage.
 - Add headless `--dump-surface[=FILE]` shim inventory with sorted source attribution.
 - Ignore indented Markdown examples, check multiline link destinations, and

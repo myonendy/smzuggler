@@ -1,7 +1,9 @@
-# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (c) 2026 General Arcade (Pte. Ltd.)
+# SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
 # Copyright (C) 2026 The smzuggler contributors
 # Modified 2026-10-30: configure runtime identity and diagnostic privacy.
 # Modified 2026-10-31: build and stage the headless shim inventory.
+# Modified 2026-10-31: restore Outsider's copyright and SPDX lines (spec section 12).
 # Build orchestration; see docs/DECISIONS.md (DEC-M0-T001).
 
 cmake_minimum_required(VERSION 3.20)

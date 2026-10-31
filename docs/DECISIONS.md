@@ -151,3 +151,21 @@ and `:42` against `upstream-main`: compact multi-statement and nested conditiona
 lines expand under clang-format. These existing tests are outside this card’s
 ownership and cannot be edited here. Keep diagnostics visible rather than
 excluding tests or changing the measured upstream style to hide the failures.
+
+## DEC-M0-T014 — Header gate scope and what counts as a modification
+
+`tools/doclint/headers.py` checks source and build scripts (C, C++, Objective-C,
+JavaScript, Python, shell, CMake, shader sources, and extensionless `#!` scripts).
+It skips files without comment syntax (JSON, images, audio, fonts, saves) and
+prose or configuration files (Markdown, plain text, TOML, YAML, `.gitignore`,
+`.gitattributes`). Those are covered as a whole by `LICENSES/README.md`, and many
+are protected forge files (`tasks/**`, `prompts/**`, `forge.toml`) that agents
+cannot re-head. A changed file whose base header names only smzuggler is held to
+the new-file rule, so later cards need no `Modified` note on our own files. A
+changed upstream file needs one more valid dated `Modified YYYY-MM-DD:` note than
+its base had, so each later change is dated (GPLv3 section 5a), not only the first.
+Upstream lines must survive verbatim but may move within the first 40 lines.
+Three changed files still fail against `upstream-main`, and this card cannot fix
+them: `.claude/hooks/guard.sh` is protected, and `tests/CMakeLists.txt` and
+`tests/integration/test_acceptance.c` are existing tests outside this card's
+`owns`. They are left visible rather than excluded.
