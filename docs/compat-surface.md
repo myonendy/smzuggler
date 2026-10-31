@@ -1,6 +1,7 @@
 <!--
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
+Modified 2026-10-31: seed dom_shim.js inventory rows.
 Compatibility inventory for browser, NW.js and Node replacements.
 See ../ARCHITECTURE.md for service ownership. Keep exact runtime names and
 shim attribution; statuses describe implementation, not conformance certification.
@@ -8,10 +9,10 @@ shim attribution; statuses describe implementation, not conformance certificatio
 
 # Compatibility surface
 
-`dom_shim.js` is not seeded yet (M0-T010b); `pixi_shim.js` is not seeded
-except for the required known gaps (M0-T010). Post-core/control shims currently
-install no members in the game-free dump. Names include aliases, internal
-members and constructor back-references retained by DEC-M0-T009b.
+`pixi_shim.js` is not seeded except for the required known gaps (M0-T010).
+Post-core/control shims currently install no members in the game-free dump.
+Names include aliases, internal members and constructor back-references
+retained by DEC-M0-T009b.
 
 This card uses its required five columns and `real`/`partial`/`stub`/`missing`
 statuses, rather than the older §15.4 column and status vocabulary.
@@ -27,11 +28,23 @@ Run `python3 tools/doclint/compat_check.py build/surface.tsv --shim FILE ...`
 from the repository root. FILE accepts loader basenames or repository paths.
 The checker compares exact (name, shim) pairs, including stub/missing rows;
 known missing rows therefore remain visible as full-check failures until fixed.
+The dump member `name` (`window.name`) is listed; the checker currently
+skips any row whose first cell equals the header label `name`.
 
 | name | status | shim file | test | notes |
 | --- | --- | --- | --- | --- |
 | `Array.prototype.contains` | partial | `src/shims/plugin_compat.js` | `tests/smz/test_dump_surface.c` | Compatibility polyfill; inventory test only. |
 | `Array.prototype.contains.prototype.constructor` | partial | `src/shims/plugin_compat.js` | `tests/smz/test_dump_surface.c` | Compatibility polyfill; inventory test only. |
+| `Audio` | stub | `src/shims/dom_shim.js` | `-` | Alias of HTMLAudioElement; no decoder or mixer. |
+| `Audio.prototype.canPlayType` | stub | `src/shims/dom_shim.js` | `-` | Fixed probably for ogg/wav/mp3; ignores the build decoder (U11). |
+| `Audio.prototype.canPlayType.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Fixed probably for ogg/wav/mp3; ignores the build decoder (U11). |
+| `Audio.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Alias of HTMLAudioElement; no decoder or mixer. |
+| `Audio.prototype.load` | stub | `src/shims/dom_shim.js` | `-` | No-op; no media fetch. |
+| `Audio.prototype.load.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op; no media fetch. |
+| `Audio.prototype.pause` | stub | `src/shims/dom_shim.js` | `-` | No-op; nothing is playing. |
+| `Audio.prototype.pause.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op; nothing is playing. |
+| `Audio.prototype.play` | stub | `src/shims/dom_shim.js` | `-` | Resolves immediately without audio output. |
+| `Audio.prototype.play.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Resolves immediately without audio output. |
 | `AudioBuffer` | partial | `src/shims/webaudio_shim.js` | `tests/test_webaudio.c` | Native mixer subset; automation and graph semantics limited. |
 | `AudioBuffer.prototype.constructor` | partial | `src/shims/webaudio_shim.js` | `tests/test_webaudio.c` | Native mixer subset; automation and graph semantics limited. |
 | `AudioBuffer.prototype.getChannelData` | partial | `src/shims/webaudio_shim.js` | `tests/test_webaudio.c` | Native mixer subset; automation and graph semantics limited. |
@@ -105,9 +118,41 @@ known missing rows therefore remain visible as full-check failures until fixed.
 | `AudioParam.prototype.setTargetAtTime.prototype.constructor` | partial | `src/shims/webaudio_shim.js` | `tests/test_webaudio.c` | Native mixer subset; automation and graph semantics limited. |
 | `AudioParam.prototype.setValueAtTime` | partial | `src/shims/webaudio_shim.js` | `tests/test_webaudio.c` | Native mixer subset; automation and graph semantics limited. |
 | `AudioParam.prototype.setValueAtTime.prototype.constructor` | partial | `src/shims/webaudio_shim.js` | `tests/test_webaudio.c` | Native mixer subset; automation and graph semantics limited. |
+| `Blob` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | In-memory parts and size; no backing file. |
+| `Blob.prototype.arrayBuffer` | stub | `src/shims/dom_shim.js` | `-` | Resolves to a zeroed buffer of this.size. |
+| `Blob.prototype.arrayBuffer.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Resolves to a zeroed buffer of this.size. |
+| `Blob.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | In-memory parts and size; no backing file. |
+| `Blob.prototype.slice` | stub | `src/shims/dom_shim.js` | `-` | Returns an empty Blob; bytes are not copied. |
+| `Blob.prototype.slice.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Returns an empty Blob; bytes are not copied. |
+| `Blob.prototype.text` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Concatenates string parts only; binary parts are skipped. |
+| `Blob.prototype.text.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Concatenates string parts only; binary parts are skipped. |
 | `CSS` | stub | `src/shims/plugin_compat.js` | `-` | No-op / fixed compatibility response; no host semantics. |
 | `CSS.supports` | stub | `src/shims/plugin_compat.js` | `-` | No-op / fixed compatibility response; no host semantics. |
 | `CSS.supports.prototype.constructor` | stub | `src/shims/plugin_compat.js` | `-` | No-op / fixed compatibility response; no host semantics. |
+| `CSSStyleDeclaration` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | CamelCase property bag; no cascade or computed values. |
+| `CSSStyleDeclaration.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | CamelCase property bag; no cascade or computed values. |
+| `CSSStyleDeclaration.prototype.getPropertyValue` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Looks up the camelCase field; missing names are empty. |
+| `CSSStyleDeclaration.prototype.getPropertyValue.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Looks up the camelCase field; missing names are empty. |
+| `CSSStyleDeclaration.prototype.setProperty` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Writes the camelCase field; no shorthand parsing. |
+| `CSSStyleDeclaration.prototype.setProperty.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Writes the camelCase field; no shorthand parsing. |
+| `ErrorEvent` | partial | `src/shims/dom_shim.js` | `tests/test_error_handler.c` | Wraps Event with message, filename, lineno, colno and error. |
+| `ErrorEvent.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_error_handler.c` | Wraps Event with message, filename, lineno, colno and error. |
+| `Event` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | type/bubbles/cancelable/target; no phase or composed path. |
+| `Event.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | type/bubbles/cancelable/target; no phase or composed path. |
+| `Event.prototype.preventDefault` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Sets defaultPrevented when cancelable. |
+| `Event.prototype.preventDefault.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Sets defaultPrevented when cancelable. |
+| `Event.prototype.stopImmediatePropagation` | stub | `src/shims/dom_shim.js` | `-` | No-op; remaining listeners still run. |
+| `Event.prototype.stopImmediatePropagation.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op; remaining listeners still run. |
+| `Event.prototype.stopPropagation` | stub | `src/shims/dom_shim.js` | `-` | No-op; the shim does not bubble. |
+| `Event.prototype.stopPropagation.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op; the shim does not bubble. |
+| `EventTarget` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Own listener map; no capture or bubbling. |
+| `EventTarget.prototype.addEventListener` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Deduped listeners; capture/once/passive ignored. |
+| `EventTarget.prototype.addEventListener.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Deduped listeners; capture/once/passive ignored. |
+| `EventTarget.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Own listener map; no capture or bubbling. |
+| `EventTarget.prototype.dispatchEvent` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Calls listeners and the on* handler; no parent propagation. |
+| `EventTarget.prototype.dispatchEvent.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Calls listeners and the on* handler; no parent propagation. |
+| `EventTarget.prototype.removeEventListener` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Removes one matching listener; options ignored. |
+| `EventTarget.prototype.removeEventListener.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Removes one matching listener; options ignored. |
 | `FontFace` | partial | `src/shims/font_shim.js` | `tests/test_font.c` | Native font loading; simplified family parsing and set semantics. |
 | `FontFace.prototype._loadFromBuffer` | partial | `src/shims/font_shim.js` | `tests/test_font.c` | Native font loading; simplified family parsing and set semantics. |
 | `FontFace.prototype._loadFromBuffer.prototype.constructor` | partial | `src/shims/font_shim.js` | `tests/test_font.c` | Native font loading; simplified family parsing and set semantics. |
@@ -147,14 +192,115 @@ known missing rows therefore remain visible as full-check failures until fixed.
 | `GainNode.prototype._applyParam` | partial | `src/shims/webaudio_shim.js` | `tests/test_webaudio.c` | Native mixer subset; automation and graph semantics limited. |
 | `GainNode.prototype._applyParam.prototype.constructor` | partial | `src/shims/webaudio_shim.js` | `tests/test_webaudio.c` | Native mixer subset; automation and graph semantics limited. |
 | `GainNode.prototype.constructor` | partial | `src/shims/webaudio_shim.js` | `tests/test_webaudio.c` | Native mixer subset; automation and graph semantics limited. |
+| `HTMLAudioElement` | stub | `src/shims/dom_shim.js` | `-` | AUDIO element stub; MZ playback uses WebAudio. |
+| `HTMLAudioElement.prototype.canPlayType` | stub | `src/shims/dom_shim.js` | `-` | Fixed probably for ogg/wav/mp3; ignores the build decoder (U11). |
+| `HTMLAudioElement.prototype.canPlayType.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Fixed probably for ogg/wav/mp3; ignores the build decoder (U11). |
+| `HTMLAudioElement.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | AUDIO element stub; MZ playback uses WebAudio. |
+| `HTMLAudioElement.prototype.load` | stub | `src/shims/dom_shim.js` | `-` | No-op; no media fetch. |
+| `HTMLAudioElement.prototype.load.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op; no media fetch. |
+| `HTMLAudioElement.prototype.pause` | stub | `src/shims/dom_shim.js` | `-` | No-op; nothing is playing. |
+| `HTMLAudioElement.prototype.pause.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op; nothing is playing. |
+| `HTMLAudioElement.prototype.play` | stub | `src/shims/dom_shim.js` | `-` | Resolves immediately without audio output. |
+| `HTMLAudioElement.prototype.play.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Resolves immediately without audio output. |
+| `HTMLCanvasElement` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Canvas element; 2d context comes from canvas2d_shim when loaded. |
+| `HTMLCanvasElement.prototype._destroyNativeContext` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Frees the native 2d handle on the current context. |
+| `HTMLCanvasElement.prototype._destroyNativeContext.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Frees the native 2d handle on the current context. |
+| `HTMLCanvasElement.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Canvas element; 2d context comes from canvas2d_shim when loaded. |
+| `HTMLCanvasElement.prototype.getContext` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | 2d via native or stub context; webgl is a parameter stub. |
+| `HTMLCanvasElement.prototype.getContext.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | 2d via native or stub context; webgl is a parameter stub. |
+| `HTMLCanvasElement.prototype.height` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Resizes the native 2d surface when a handle exists. |
+| `HTMLCanvasElement.prototype.toBlob` | stub | `src/shims/dom_shim.js` | `-` | Callback with an empty PNG Blob. |
+| `HTMLCanvasElement.prototype.toBlob.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Callback with an empty PNG Blob. |
+| `HTMLCanvasElement.prototype.toDataURL` | stub | `src/shims/dom_shim.js` | `-` | Empty data:image/png;base64, string. |
+| `HTMLCanvasElement.prototype.toDataURL.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Empty data:image/png;base64, string. |
+| `HTMLCanvasElement.prototype.transferControlToOffscreen` | stub | `src/shims/dom_shim.js` | `-` | Returns this; no OffscreenCanvas. |
+| `HTMLCanvasElement.prototype.transferControlToOffscreen.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Returns this; no OffscreenCanvas. |
+| `HTMLCanvasElement.prototype.width` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Resizes the native 2d surface when a handle exists. |
+| `HTMLElement` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | In-memory element; no layout, CSSOM or live NodeList. |
+| `HTMLElement.prototype.appendChild` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Reparents and runs an inserted script when connected. |
+| `HTMLElement.prototype.appendChild.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Reparents and runs an inserted script when connected. |
 | `HTMLElement.prototype.blur` | partial | `src/shims/dom_overlay.js` | `tests/smz/test_dump_surface.c` | Overlay layout/input subset; inventory test only. |
 | `HTMLElement.prototype.blur.prototype.constructor` | partial | `src/shims/dom_overlay.js` | `tests/smz/test_dump_surface.c` | Overlay layout/input subset; inventory test only. |
 | `HTMLElement.prototype.click` | partial | `src/shims/dom_overlay.js` | `tests/smz/test_dump_surface.c` | Overlay layout/input subset; inventory test only. |
 | `HTMLElement.prototype.click.prototype.constructor` | partial | `src/shims/dom_overlay.js` | `tests/smz/test_dump_surface.c` | Overlay layout/input subset; inventory test only. |
+| `HTMLElement.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | In-memory element; no layout, CSSOM or live NodeList. |
 | `HTMLElement.prototype.elements` | partial | `src/shims/dom_overlay.js` | `tests/smz/test_dump_surface.c` | Overlay layout/input subset; inventory test only. |
+| `HTMLElement.prototype.firstChild` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | First of childNodes; no text-node splitting. |
 | `HTMLElement.prototype.focus` | partial | `src/shims/dom_overlay.js` | `tests/smz/test_dump_surface.c` | Overlay layout/input subset; inventory test only. |
 | `HTMLElement.prototype.focus.prototype.constructor` | partial | `src/shims/dom_overlay.js` | `tests/smz/test_dump_surface.c` | Overlay layout/input subset; inventory test only. |
+| `HTMLElement.prototype.getAttribute` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | id/class plus an attributes map; no namespace. |
+| `HTMLElement.prototype.getAttribute.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | id/class plus an attributes map; no namespace. |
+| `HTMLElement.prototype.getBoundingClientRect` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Origin 0,0 with offsetWidth/offsetHeight; no layout. |
+| `HTMLElement.prototype.getBoundingClientRect.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Origin 0,0 with offsetWidth/offsetHeight; no layout. |
+| `HTMLElement.prototype.getElementsByTagName` | stub | `src/shims/dom_shim.js` | `-` | Always []; subtree queries are U2. |
+| `HTMLElement.prototype.getElementsByTagName.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Always []; subtree queries are U2. |
+| `HTMLElement.prototype.hasAttribute` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | id/class plus an attributes map; no namespace. |
+| `HTMLElement.prototype.hasAttribute.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | id/class plus an attributes map; no namespace. |
+| `HTMLElement.prototype.innerHTML` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Stored string; setter clears children without parsing. |
 | `HTMLElement.prototype.innerText` | partial | `src/shims/dom_overlay.js` | `tests/smz/test_dump_surface.c` | Overlay layout/input subset; inventory test only. |
+| `HTMLElement.prototype.insertAdjacentElement` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | beforebegin/afterbegin/beforeend/afterend on the in-memory tree. |
+| `HTMLElement.prototype.insertAdjacentElement.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | beforebegin/afterbegin/beforeend/afterend on the in-memory tree. |
+| `HTMLElement.prototype.insertAdjacentHTML` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Wraps the string in a SPAN; markup is not parsed. |
+| `HTMLElement.prototype.insertAdjacentHTML.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Wraps the string in a SPAN; markup is not parsed. |
+| `HTMLElement.prototype.insertBefore` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Reparents before a sibling; runs inserted scripts. |
+| `HTMLElement.prototype.insertBefore.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Reparents before a sibling; runs inserted scripts. |
+| `HTMLElement.prototype.lastChild` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Last of childNodes; no text-node splitting. |
+| `HTMLElement.prototype.mozRequestFullScreen` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Alias of requestFullscreen. |
+| `HTMLElement.prototype.mozRequestFullScreen.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Alias of requestFullscreen. |
+| `HTMLElement.prototype.querySelector` | stub | `src/shims/dom_shim.js` | `-` | Always null; subtree selectors are U2. |
+| `HTMLElement.prototype.querySelector.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Always null; subtree selectors are U2. |
+| `HTMLElement.prototype.querySelectorAll` | stub | `src/shims/dom_shim.js` | `-` | Always []; subtree selectors are U2. |
+| `HTMLElement.prototype.querySelectorAll.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Always []; subtree selectors are U2. |
+| `HTMLElement.prototype.remove` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | removeChild on parentNode when present. |
+| `HTMLElement.prototype.remove.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | removeChild on parentNode when present. |
+| `HTMLElement.prototype.removeAttribute` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Deletes from the attributes map. |
+| `HTMLElement.prototype.removeAttribute.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Deletes from the attributes map. |
+| `HTMLElement.prototype.removeChild` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Unlinks and drops the element from the registry. |
+| `HTMLElement.prototype.removeChild.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Unlinks and drops the element from the registry. |
+| `HTMLElement.prototype.requestFullScreen` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Alias of requestFullscreen. |
+| `HTMLElement.prototype.requestFullScreen.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Alias of requestFullscreen. |
+| `HTMLElement.prototype.requestFullscreen` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Native setFullscreen and records fullscreenElement. |
+| `HTMLElement.prototype.requestFullscreen.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Native setFullscreen and records fullscreenElement. |
+| `HTMLElement.prototype.setAttribute` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | id/class plus an attributes map; no namespace. |
+| `HTMLElement.prototype.setAttribute.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | id/class plus an attributes map; no namespace. |
+| `HTMLElement.prototype.textContent` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Alias of the innerHTML string. |
+| `HTMLElement.prototype.webkitRequestFullScreen` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Alias of requestFullscreen. |
+| `HTMLElement.prototype.webkitRequestFullScreen.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Alias of requestFullscreen. |
+| `HTMLElement.prototype.webkitRequestFullscreen` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Alias of requestFullscreen. |
+| `HTMLElement.prototype.webkitRequestFullscreen.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Alias of requestFullscreen. |
+| `HTMLImageElement` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | IMG element; native decode on src, blob: and data: URLs. |
+| `HTMLImageElement.prototype._releaseNativeImage` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Frees native pixels and GL texture; in-flight loads abort. |
+| `HTMLImageElement.prototype._releaseNativeImage.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Frees native pixels and GL texture; in-flight loads abort. |
+| `HTMLImageElement.prototype.complete` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | True after load or error. |
+| `HTMLImageElement.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | IMG element; native decode on src, blob: and data: URLs. |
+| `HTMLImageElement.prototype.decode` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Promise that resolves on load and rejects on error. |
+| `HTMLImageElement.prototype.decode.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Promise that resolves on load and rejects on error. |
+| `HTMLImageElement.prototype.height` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Intrinsic size after load; writable display size. |
+| `HTMLImageElement.prototype.naturalHeight` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Native decode height; 0 until load. |
+| `HTMLImageElement.prototype.naturalWidth` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Native decode width; 0 until load. |
+| `HTMLImageElement.prototype.src` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Loads via native image, blob: store or data: URL. |
+| `HTMLImageElement.prototype.width` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Intrinsic size after load; writable display size. |
+| `HTMLVideoElement` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | VIDEO element backed by the native MPEG-1 player. |
+| `HTMLVideoElement.prototype._closeNative` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Closes the native handle and drops the active list. |
+| `HTMLVideoElement.prototype._closeNative.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Closes the native handle and drops the active list. |
+| `HTMLVideoElement.prototype._dispatchLoadedOnce` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Fires loadedmetadata/loadeddata/canplay once. |
+| `HTMLVideoElement.prototype._dispatchLoadedOnce.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Fires loadedmetadata/loadeddata/canplay once. |
+| `HTMLVideoElement.prototype._finishAsync` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Delayed loadeddata then ended so wait-mode does not hang. |
+| `HTMLVideoElement.prototype._finishAsync.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Delayed loadeddata then ended so wait-mode does not hang. |
+| `HTMLVideoElement.prototype._openNative` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Tries .mpg then original src; false when unplayable. |
+| `HTMLVideoElement.prototype._openNative.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Tries .mpg then original src; false when unplayable. |
+| `HTMLVideoElement.prototype.canPlayType` | stub | `src/shims/dom_shim.js` | `-` | maybe for webm/mp4/ogg when the player exists; not Chrome 117 (U11). |
+| `HTMLVideoElement.prototype.canPlayType.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | maybe for webm/mp4/ogg when the player exists; not Chrome 117 (U11). |
+| `HTMLVideoElement.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | VIDEO element backed by the native MPEG-1 player. |
+| `HTMLVideoElement.prototype.load` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Opens native or schedules the missing-file ended path. |
+| `HTMLVideoElement.prototype.load.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Opens native or schedules the missing-file ended path. |
+| `HTMLVideoElement.prototype.loop` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Forwarded to the native player when open. |
+| `HTMLVideoElement.prototype.pause` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Pauses the native handle and fires pause. |
+| `HTMLVideoElement.prototype.pause.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Pauses the native handle and fires pause. |
+| `HTMLVideoElement.prototype.play` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Opens .mpg (or src); missing files finish after a delay. |
+| `HTMLVideoElement.prototype.play.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Opens .mpg (or src); missing files finish after a delay. |
+| `HTMLVideoElement.prototype.src` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Closes the native handle and resets ended/paused. |
+| `HTMLVideoElement.prototype.volume` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Forwarded to the native player when open. |
 | `Html5Audio` | stub | `src/shims/webaudio_shim.js` | `-` | No-op / fixed compatibility response; no host semantics. |
 | `Html5Audio._audioElement` | stub | `src/shims/webaudio_shim.js` | `-` | No-op / fixed compatibility response; no host semantics. |
 | `Html5Audio._hasError` | stub | `src/shims/webaudio_shim.js` | `-` | No-op / fixed compatibility response; no host semantics. |
@@ -191,6 +337,26 @@ known missing rows therefore remain visible as full-check failures until fixed.
 | `Html5Audio.stop.prototype.constructor` | stub | `src/shims/webaudio_shim.js` | `-` | No-op / fixed compatibility response; no host semantics. |
 | `Html5Audio.url` | stub | `src/shims/webaudio_shim.js` | `-` | No-op / fixed compatibility response; no host semantics. |
 | `Html5Audio.volume` | stub | `src/shims/webaudio_shim.js` | `-` | No-op / fixed compatibility response; no host semantics. |
+| `Image` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Alias of HTMLImageElement; native decode on src. |
+| `Image.prototype._releaseNativeImage` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Frees native pixels and GL texture; in-flight loads abort. |
+| `Image.prototype._releaseNativeImage.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Frees native pixels and GL texture; in-flight loads abort. |
+| `Image.prototype.complete` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | True after load or error. |
+| `Image.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Alias of HTMLImageElement; native decode on src. |
+| `Image.prototype.decode` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Promise that resolves on load and rejects on error. |
+| `Image.prototype.decode.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Promise that resolves on load and rejects on error. |
+| `Image.prototype.height` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Intrinsic size after load; writable display size. |
+| `Image.prototype.naturalHeight` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Native decode height; 0 until load. |
+| `Image.prototype.naturalWidth` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Native decode width; 0 until load. |
+| `Image.prototype.src` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Loads via native image, blob: store or data: URL. |
+| `Image.prototype.width` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Intrinsic size after load; writable display size. |
+| `KeyboardEvent` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | key/code/keyCode plus modifiers; no composition. |
+| `KeyboardEvent.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | key/code/keyCode plus modifiers; no composition. |
+| `KeyboardEvent.prototype.getModifierState` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Shift/Control/Alt/Meta only. |
+| `KeyboardEvent.prototype.getModifierState.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Shift/Control/Alt/Meta only. |
+| `MouseEvent` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | client/page/screen coordinates and button; no relatedTarget. |
+| `MouseEvent.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | client/page/screen coordinates and button; no relatedTarget. |
+| `MouseEvent.prototype.getModifierState` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Shift/Control/Alt/Meta only. |
+| `MouseEvent.prototype.getModifierState.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Shift/Control/Alt/Meta only. |
 | `MutationObserver` | stub | `src/shims/plugin_compat.js` | `-` | No-op / fixed compatibility response; no host semantics. |
 | `MutationObserver.prototype.constructor` | stub | `src/shims/plugin_compat.js` | `-` | No-op / fixed compatibility response; no host semantics. |
 | `MutationObserver.prototype.disconnect` | stub | `src/shims/plugin_compat.js` | `-` | No-op / fixed compatibility response; no host semantics. |
@@ -280,6 +446,8 @@ known missing rows therefore remain visible as full-check failures until fixed.
 | `PannerNode.prototype.setOrientation.prototype.constructor` | stub | `src/shims/webaudio_shim.js` | - | No native effect; empty result or simulated state only. |
 | `PannerNode.prototype.setPosition` | partial | `src/shims/webaudio_shim.js` | `tests/test_webaudio.c` | Native mixer subset; automation and graph semantics limited. |
 | `PannerNode.prototype.setPosition.prototype.constructor` | partial | `src/shims/webaudio_shim.js` | `tests/test_webaudio.c` | Native mixer subset; automation and graph semantics limited. |
+| `PromiseRejectionEvent` | partial | `src/shims/dom_shim.js` | `tests/test_error_handler.c` | Wraps Event with reason and promise. |
+| `PromiseRejectionEvent.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_error_handler.c` | Wraps Event with reason and promise. |
 | `RegExp.$&` | partial | `src/shims/plugin_compat.js` | `tests/smz/test_dump_surface.c` | Compatibility polyfill; inventory test only. |
 | `RegExp.$'` | partial | `src/shims/plugin_compat.js` | `tests/smz/test_dump_surface.c` | Compatibility polyfill; inventory test only. |
 | `RegExp.$+` | partial | `src/shims/plugin_compat.js` | `tests/smz/test_dump_surface.c` | Compatibility polyfill; inventory test only. |
@@ -309,6 +477,13 @@ known missing rows therefore remain visible as full-check failures until fixed.
 | `ResizeObserver.prototype.observe.prototype.constructor` | stub | `src/shims/plugin_compat.js` | `-` | No-op / fixed compatibility response; no host semantics. |
 | `ResizeObserver.prototype.unobserve` | stub | `src/shims/plugin_compat.js` | `-` | No-op / fixed compatibility response; no host semantics. |
 | `ResizeObserver.prototype.unobserve.prototype.constructor` | stub | `src/shims/plugin_compat.js` | `-` | No-op / fixed compatibility response; no host semantics. |
+| `URL` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | createObjectURL/revokeObjectURL over an in-memory map. |
+| `URL.createObjectURL` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | blob:internal/N id stored until revoke. |
+| `URL.createObjectURL.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | blob:internal/N id stored until revoke. |
+| `URL.revokeObjectURL` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Deletes the blob:internal id. |
+| `URL.revokeObjectURL.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Deletes the blob:internal id. |
+| `WheelEvent` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | MouseEvent plus deltaX/Y/Z and deltaMode. |
+| `WheelEvent.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | MouseEvent plus deltaX/Y/Z and deltaMode. |
 | `XMLHttpRequest` | partial | `src/shims/xhr_shim.js` | `tests/test_xhr.c` | File-backed XHR subset; synthetic HTTP headers. |
 | `XMLHttpRequest.DONE` | partial | `src/shims/xhr_shim.js` | `tests/test_xhr.c` | File-backed XHR subset; synthetic HTTP headers. |
 | `XMLHttpRequest.HEADERS_RECEIVED` | partial | `src/shims/xhr_shim.js` | `tests/test_xhr.c` | File-backed XHR subset; synthetic HTTP headers. |
@@ -458,6 +633,16 @@ known missing rows therefore remain visible as full-check failures until fixed.
 | `_____WB$wombat$assign$function_____.prototype.constructor` | partial | `src/shims/plugin_compat.js` | `tests/smz/test_dump_surface.c` | Compatibility polyfill; inventory test only. |
 | `__dom_flushAnimationFrames` | partial | `src/shims/dom_overlay.js` | `tests/smz/test_dump_surface.c` | Overlay layout/input subset; inventory test only. |
 | `__dom_flushAnimationFrames.prototype.constructor` | partial | `src/shims/dom_overlay.js` | `tests/smz/test_dump_surface.c` | Overlay layout/input subset; inventory test only. |
+| `__dom_flushInputEvents` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Polls native input into Keyboard/Mouse/Wheel events on document. |
+| `__dom_flushInputEvents.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Polls native input into Keyboard/Mouse/Wheel events on document. |
+| `__dom_flushTimers` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Runs due setTimeout/setInterval callbacks once per frame. |
+| `__dom_flushTimers.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Runs due setTimeout/setInterval callbacks once per frame. |
+| `__dom_getElementRegistryLength` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Count of created elements still in the registry. |
+| `__dom_getElementRegistryLength.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Count of created elements still in the registry. |
+| `__dom_initDisplayInfo` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Copies native display size and scale into screen/devicePixelRatio. |
+| `__dom_initDisplayInfo.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Copies native display size and scale into screen/devicePixelRatio. |
+| `__dom_noteScriptLoaded` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Marks a path so a later script src does not re-eval. |
+| `__dom_noteScriptLoaded.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Marks a path so a later script src does not re-eval. |
 | `__dom_overlay` | partial | `src/shims/dom_overlay.js` | `tests/smz/test_dump_surface.c` | Overlay layout/input subset; inventory test only. |
 | `__dom_overlay.canvas` | partial | `src/shims/dom_overlay.js` | `tests/smz/test_dump_surface.c` | Overlay layout/input subset; inventory test only. |
 | `__dom_overlay.ctx` | partial | `src/shims/dom_overlay.js` | `tests/smz/test_dump_surface.c` | Overlay layout/input subset; inventory test only. |
@@ -485,6 +670,22 @@ known missing rows therefore remain visible as full-check failures until fixed.
 | `__dom_overlay.texture` | partial | `src/shims/dom_overlay.js` | `tests/smz/test_dump_surface.c` | Overlay layout/input subset; inventory test only. |
 | `__dom_overlay.updateLayouts` | partial | `src/shims/dom_overlay.js` | `tests/smz/test_dump_surface.c` | Overlay layout/input subset; inventory test only. |
 | `__dom_overlay.updateLayouts.prototype.constructor` | partial | `src/shims/dom_overlay.js` | `tests/smz/test_dump_surface.c` | Overlay layout/input subset; inventory test only. |
+| `__dom_removeFromElementRegistry` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Drops an element so GC can reclaim it. |
+| `__dom_removeFromElementRegistry.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Drops an element so GC can reclaim it. |
+| `__dom_setCurrentScript` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Installs document.currentScript for plugin eval. |
+| `__dom_setCurrentScript.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Installs document.currentScript for plugin eval. |
+| `__dom_setWindowSize` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Updates inner/outer size, letterbox viewport and fires resize. |
+| `__dom_setWindowSize.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Updates inner/outer size, letterbox viewport and fires resize. |
+| `__dom_updateGamepads` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Pushes native pads into the navigator shim. |
+| `__dom_updateGamepads.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Pushes native pads into the navigator shim. |
+| `__dom_updateVideos` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Mirrors native MPEG-1 time/ended and visibility from opacity. |
+| `__dom_updateVideos.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Mirrors native MPEG-1 time/ended and visibility from opacity. |
+| `__error_handler_autoSave` | partial | `src/shims/dom_shim.js` | `tests/test_error_handler.c` | DataManager.saveGame(0) when the MZ objects exist. |
+| `__error_handler_autoSave.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_error_handler.c` | DataManager.saveGame(0) when the MZ objects exist. |
+| `__error_handler_dispatch` | partial | `src/shims/dom_shim.js` | `tests/test_error_handler.c` | window.onerror then an error Event. |
+| `__error_handler_dispatch.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_error_handler.c` | window.onerror then an error Event. |
+| `__error_handler_dispatchRejection` | partial | `src/shims/dom_shim.js` | `tests/test_error_handler.c` | onunhandledrejection then unhandledrejection Event. |
+| `__error_handler_dispatchRejection.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_error_handler.c` | onunhandledrejection then unhandledrejection Event. |
 | `__fontFaceSet` | partial | `src/shims/font_shim.js` | `tests/test_font.c` | Native font loading; simplified family parsing and set semantics. |
 | `__fontFaceSet._fonts` | partial | `src/shims/font_shim.js` | `tests/test_font.c` | Native font loading; simplified family parsing and set semantics. |
 | `__fontFaceSet._fonts.length` | partial | `src/shims/font_shim.js` | `tests/test_font.c` | Native font loading; simplified family parsing and set semantics. |
@@ -500,6 +701,55 @@ known missing rows therefore remain visible as full-check failures until fixed.
 | `__parseColor.prototype.constructor` | partial | `src/shims/canvas2d_shim.js` | `tests/test_canvas2d.c` | Native Canvas2D subset; approximated paths and gradients. |
 | `__parseFont` | partial | `src/shims/canvas2d_shim.js` | `tests/test_canvas2d.c` | Native Canvas2D subset; approximated paths and gradients. |
 | `__parseFont.prototype.constructor` | partial | `src/shims/canvas2d_shim.js` | `tests/test_canvas2d.c` | Native Canvas2D subset; approximated paths and gradients. |
+| `_listeners` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Internal map for window addEventListener. |
+| `addEventListener` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Window listener list; capture/once/passive ignored. |
+| `addEventListener.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Window listener list; capture/once/passive ignored. |
+| `alert` | stub | `src/shims/dom_shim.js` | `-` | Logs [alert] to console. |
+| `alert.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Logs [alert] to console. |
+| `atob` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | JS base64; uses native __atob when present. |
+| `atob.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | JS base64; uses native __atob when present. |
+| `blur` | stub | `src/shims/dom_shim.js` | `-` | No-op; the SDL window is not focused from JS. |
+| `blur.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op; the SDL window is not focused from JS. |
+| `btoa` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | JS base64; uses native __btoa when present. |
+| `btoa.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | JS base64; uses native __btoa when present. |
+| `cancelAnimationFrame` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Drops a pending rAF callback. |
+| `cancelAnimationFrame.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Drops a pending rAF callback. |
+| `clearInterval` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Marks the interval cleared. |
+| `clearInterval.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Marks the interval cleared. |
+| `clearTimeout` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Marks the timeout cleared. |
+| `clearTimeout.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Marks the timeout cleared. |
+| `close` | stub | `src/shims/dom_shim.js` | `-` | No-op; does not quit the process. |
+| `close.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op; does not quit the process. |
+| `confirm` | stub | `src/shims/dom_shim.js` | `-` | Always returns true. |
+| `confirm.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Always returns true. |
+| `devicePixelRatio` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Defaults to 1; overwritten from native display scale. |
+| `dispatchEvent` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Window listeners plus the on* handler; no bubbling. |
+| `dispatchEvent.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Window listeners plus the on* handler; no bubbling. |
+| `document` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Minimal Document; readyState complete, no browsing context. |
+| `document._listeners` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Internal map for document events. |
+| `document.addEventListener` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Document listener list; input events land here. |
+| `document.addEventListener.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Document listener list; input events land here. |
+| `document.body` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Pre-created BODY; instance members are not dumped (DEC-M0-T009b). |
+| `document.cancelFullScreen` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Alias of exitFullscreen. |
+| `document.cancelFullScreen.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Alias of exitFullscreen. |
+| `document.createDocumentFragment` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | HTMLElement with nodeType 11. |
+| `document.createDocumentFragment.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | HTMLElement with nodeType 11. |
+| `document.createElement` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | canvas/img/video/audio or generic HTMLElement. |
+| `document.createElement.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | canvas/img/video/audio or generic HTMLElement. |
+| `document.createElementNS` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Ignores the namespace and delegates to createElement. |
+| `document.createElementNS.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Ignores the namespace and delegates to createElement. |
+| `document.createEvent` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | new Event(type); typed event interfaces are ignored. |
+| `document.createEvent.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | new Event(type); typed event interfaces are ignored. |
+| `document.createTextNode` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | HTMLElement with nodeType 3 holding the text. |
+| `document.createTextNode.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | HTMLElement with nodeType 3 holding the text. |
+| `document.currentScript` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Plugin path during eval; null at rest. |
+| `document.dispatchEvent` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Calls document listeners; no parent propagation. |
+| `document.dispatchEvent.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Calls document listeners; no parent propagation. |
+| `document.documentElement` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Pre-created HTML element; instance members are not dumped. |
+| `document.exitFullscreen` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Clears fullscreen flags and calls native setFullscreen(false). |
+| `document.exitFullscreen.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Clears fullscreen flags and calls native setFullscreen(false). |
+| `document.exitPointerLock` | stub | `src/shims/dom_shim.js` | `-` | No-op; pointer lock is not implemented. |
+| `document.exitPointerLock.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op; pointer lock is not implemented. |
 | `document.fonts` | partial | `src/shims/font_shim.js` | `tests/test_font.c` | Native font loading; simplified family parsing and set semantics. |
 | `document.fonts._fonts` | partial | `src/shims/font_shim.js` | `tests/test_font.c` | Native font loading; simplified family parsing and set semantics. |
 | `document.fonts._fonts.length` | partial | `src/shims/font_shim.js` | `tests/test_font.c` | Native font loading; simplified family parsing and set semantics. |
@@ -507,12 +757,50 @@ known missing rows therefore remain visible as full-check failures until fixed.
 | `document.fonts._readyResolve` | partial | `src/shims/font_shim.js` | `tests/test_font.c` | Native font loading; simplified family parsing and set semantics. |
 | `document.fonts.ready` | partial | `src/shims/font_shim.js` | `tests/test_font.c` | Native font loading; simplified family parsing and set semantics. |
 | `document.fonts.status` | partial | `src/shims/font_shim.js` | `tests/test_font.c` | Native font loading; simplified family parsing and set semantics. |
+| `document.fullScreenElement` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Set by requestFullscreen; null after exit. |
+| `document.fullscreenElement` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Set by requestFullscreen; null after exit. |
+| `document.getComputedStyle` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Alias of window.getComputedStyle. |
+| `document.getComputedStyle.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Alias of window.getComputedStyle. |
+| `document.getElementById` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Scans the created-element registry. |
+| `document.getElementById.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Scans the created-element registry. |
+| `document.getElementsByClassName` | stub | `src/shims/dom_shim.js` | `-` | Always []; class queries are U2. |
+| `document.getElementsByClassName.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Always []; class queries are U2. |
+| `document.getElementsByTagName` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Registry scan; head/body/html are missing (U1). |
+| `document.getElementsByTagName.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Registry scan; head/body/html are missing (U1). |
+| `document.head` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Pre-created HEAD; omitted from getElementsByTagName (U1). |
+| `document.hidden` | stub | `src/shims/dom_shim.js` | `-` | Always false. |
+| `document.mozCancelFullScreen` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Alias of exitFullscreen. |
+| `document.mozCancelFullScreen.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Alias of exitFullscreen. |
+| `document.mozFullScreen` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Boolean alias of fullscreen state. |
+| `document.nodeType` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | 9 (DOCUMENT_NODE). |
+| `document.querySelector` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | body/html/head or #id; no class/compound selectors (U2). |
+| `document.querySelector.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | body/html/head or #id; no class/compound selectors (U2). |
+| `document.querySelectorAll` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Wraps querySelector in a one-element array. |
+| `document.querySelectorAll.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Wraps querySelector in a one-element array. |
+| `document.readyState` | stub | `src/shims/dom_shim.js` | `-` | Always complete; no loading lifecycle. |
+| `document.removeEventListener` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Removes one document listener. |
+| `document.removeEventListener.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Removes one document listener. |
+| `document.title` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Forwards to native setWindowTitle. |
+| `document.visibilityState` | stub | `src/shims/dom_shim.js` | `-` | Always visible. |
+| `document.webkitCancelFullScreen` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Alias of exitFullscreen. |
+| `document.webkitCancelFullScreen.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Alias of exitFullscreen. |
+| `document.webkitExitFullscreen` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Alias of exitFullscreen. |
+| `document.webkitExitFullscreen.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Alias of exitFullscreen. |
+| `document.webkitFullscreenElement` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Set by requestFullscreen; null after exit. |
 | `effekseer` | partial | `src/shims/effekseer_shim.js` | `tests/smz/test_dump_surface.c` | Native effects adapter namespace; inventory test only. |
 | `fetch` | partial | `src/shims/plugin_compat.js` | `tests/smz/test_dump_surface.c` | Compatibility polyfill; inventory test only. |
 | `fetch.prototype.constructor` | partial | `src/shims/plugin_compat.js` | `tests/smz/test_dump_surface.c` | Compatibility polyfill; inventory test only. |
+| `focus` | stub | `src/shims/dom_shim.js` | `-` | No-op; the SDL window is not focused from JS. |
+| `focus.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op; the SDL window is not focused from JS. |
+| `getComputedStyle` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Returns el.style or a fresh CSSStyleDeclaration. |
+| `getComputedStyle.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Returns el.style or a fresh CSSStyleDeclaration. |
+| `getSelection` | stub | `src/shims/dom_shim.js` | `-` | Dummy with no-op removeAllRanges/addRange. |
+| `getSelection.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Dummy with no-op removeAllRanges/addRange. |
 | `indexedDB` | stub | `src/shims/storage_shim.js` | `-` | No-op / fixed compatibility response; no host semantics. |
 | `indexedDB.open` | stub | `src/shims/storage_shim.js` | `-` | No-op / fixed compatibility response; no host semantics. |
 | `indexedDB.open.prototype.constructor` | stub | `src/shims/storage_shim.js` | `-` | No-op / fixed compatibility response; no host semantics. |
+| `innerHeight` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Logical window height; updated by __dom_setWindowSize. |
+| `innerWidth` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Logical window width; updated by __dom_setWindowSize. |
 | `localStorage` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | File-backed storage / limited Node and NW.js compatibility. |
 | `localStorage.clear` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | File-backed storage / limited Node and NW.js compatibility. |
 | `localStorage.clear.prototype.constructor` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | File-backed storage / limited Node and NW.js compatibility. |
@@ -538,6 +826,29 @@ known missing rows therefore remain visible as full-check failures until fixed.
 | `localforage.removeItem.prototype.constructor` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | File-backed storage / limited Node and NW.js compatibility. |
 | `localforage.setItem` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | File-backed storage / limited Node and NW.js compatibility. |
 | `localforage.setItem.prototype.constructor` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | File-backed storage / limited Node and NW.js compatibility. |
+| `location` | stub | `src/shims/dom_shim.js` | `-` | Fixed file:///game/index.html; no navigation. |
+| `location.assign` | stub | `src/shims/dom_shim.js` | `-` | No-op; the page is not replaced. |
+| `location.assign.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op; the page is not replaced. |
+| `location.hash` | stub | `src/shims/dom_shim.js` | `-` | Always empty; no fragment navigation. |
+| `location.host` | stub | `src/shims/dom_shim.js` | `-` | Always empty on the file URL. |
+| `location.hostname` | stub | `src/shims/dom_shim.js` | `-` | Always empty on the file URL. |
+| `location.href` | stub | `src/shims/dom_shim.js` | `-` | Hard-coded file:///game/index.html. |
+| `location.origin` | stub | `src/shims/dom_shim.js` | `-` | Hard-coded file://. |
+| `location.pathname` | stub | `src/shims/dom_shim.js` | `-` | Hard-coded /game/index.html. |
+| `location.port` | stub | `src/shims/dom_shim.js` | `-` | Always empty. |
+| `location.protocol` | stub | `src/shims/dom_shim.js` | `-` | Hard-coded file:. |
+| `location.reload` | stub | `src/shims/dom_shim.js` | `-` | No-op; the page is not reloaded. |
+| `location.reload.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op; the page is not reloaded. |
+| `location.replace` | stub | `src/shims/dom_shim.js` | `-` | No-op; the page is not replaced. |
+| `location.replace.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op; the page is not replaced. |
+| `location.search` | stub | `src/shims/dom_shim.js` | `-` | Always empty; no query string. |
+| `matchMedia` | stub | `src/shims/dom_shim.js` | `-` | matches is always false. |
+| `matchMedia.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | matches is always false. |
+| `moveBy` | stub | `src/shims/dom_shim.js` | `-` | No-op; window position is not changed from JS. |
+| `moveBy.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op; window position is not changed from JS. |
+| `moveTo` | stub | `src/shims/dom_shim.js` | `-` | No-op; window position is not changed from JS. |
+| `moveTo.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op; window position is not changed from JS. |
+| `name` | stub | `src/shims/dom_shim.js` | `-` | Empty string so a bare name read is not a ReferenceError. |
 | `navigator` | stub | `src/shims/navigator_shim.js` | `-` | Fixed identity/capability response; no browser service. |
 | `navigator.appCodeName` | stub | `src/shims/navigator_shim.js` | `-` | Fixed identity/capability response; no browser service. |
 | `navigator.appName` | stub | `src/shims/navigator_shim.js` | `-` | Fixed identity/capability response; no browser service. |
@@ -595,6 +906,31 @@ known missing rows therefore remain visible as full-check failures until fixed.
 | `nw.Window` | stub | `src/shims/storage_shim.js` | `-` | No-op / fixed compatibility response; no host semantics. |
 | `nw.Window.get` | stub | `src/shims/storage_shim.js` | `-` | Returns an instance with no-op events/window controls (§5.2). |
 | `nw.Window.get.prototype.constructor` | stub | `src/shims/storage_shim.js` | `-` | Returns an instance with no-op events/window controls (§5.2). |
+| `onerror` | partial | `src/shims/dom_shim.js` | `tests/test_error_handler.c` | Host exceptions call this with the browser arity. |
+| `onunhandledrejection` | partial | `src/shims/dom_shim.js` | `tests/test_error_handler.c` | Host rejections call this with a reason object. |
+| `open` | stub | `src/shims/dom_shim.js` | `-` | Always returns null; no second window. |
+| `open.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Always returns null; no second window. |
+| `outerHeight` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Logical window height; updated by __dom_setWindowSize. |
+| `outerWidth` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Logical window width; updated by __dom_setWindowSize. |
+| `performance` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | now() is the timer clock; the timeline is empty. |
+| `performance.clearMarks` | stub | `src/shims/dom_shim.js` | `-` | No-op; no performance timeline. |
+| `performance.clearMarks.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op; no performance timeline. |
+| `performance.clearMeasures` | stub | `src/shims/dom_shim.js` | `-` | No-op; no performance timeline. |
+| `performance.clearMeasures.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op; no performance timeline. |
+| `performance.getEntries` | stub | `src/shims/dom_shim.js` | `-` | Always []; no performance timeline. |
+| `performance.getEntries.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Always []; no performance timeline. |
+| `performance.getEntriesByName` | stub | `src/shims/dom_shim.js` | `-` | Always []; no performance timeline. |
+| `performance.getEntriesByName.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Always []; no performance timeline. |
+| `performance.getEntriesByType` | stub | `src/shims/dom_shim.js` | `-` | Always []; no performance timeline. |
+| `performance.getEntriesByType.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Always []; no performance timeline. |
+| `performance.mark` | stub | `src/shims/dom_shim.js` | `-` | No-op; no performance timeline. |
+| `performance.mark.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op; no performance timeline. |
+| `performance.measure` | stub | `src/shims/dom_shim.js` | `-` | No-op; no performance timeline. |
+| `performance.measure.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op; no performance timeline. |
+| `performance.now` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Milliseconds since shim load, same clock as timers. |
+| `performance.now.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Milliseconds since shim load, same clock as timers. |
+| `print` | stub | `src/shims/dom_shim.js` | `-` | No-op. |
+| `print.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op. |
 | `process` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | File-backed storage / limited Node and NW.js compatibility. |
 | `process.argv` | stub | `src/shims/storage_shim.js` | `-` | No-op / fixed compatibility response; no host semantics. |
 | `process.argv.length` | stub | `src/shims/storage_shim.js` | `-` | No-op / fixed compatibility response; no host semantics. |
@@ -606,8 +942,39 @@ known missing rows therefore remain visible as full-check failures until fixed.
 | `process.mainModule` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | File-backed storage / limited Node and NW.js compatibility. |
 | `process.mainModule.filename` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | File-backed storage / limited Node and NW.js compatibility. |
 | `process.platform` | stub | `src/shims/storage_shim.js` | `-` | Hard-coded linux; does not report host OS (§5.3). |
+| `prompt` | stub | `src/shims/dom_shim.js` | `-` | Always returns null. |
+| `prompt.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Always returns null. |
+| `removeEventListener` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Removes one window listener. |
+| `removeEventListener.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Removes one window listener. |
+| `requestAnimationFrame` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Queued until the game loop flushes the frame. |
+| `requestAnimationFrame.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Queued until the game loop flushes the frame. |
 | `require` | partial | `src/shims/plugin_compat.js` | `tests/smz/test_dump_surface.c` | Compatibility polyfill; inventory test only. |
 | `require.prototype.constructor` | partial | `src/shims/plugin_compat.js` | `tests/smz/test_dump_surface.c` | Compatibility polyfill; inventory test only. |
+| `resizeBy` | stub | `src/shims/dom_shim.js` | `-` | No-op; window size is not changed from JS. |
+| `resizeBy.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op; window size is not changed from JS. |
+| `resizeTo` | stub | `src/shims/dom_shim.js` | `-` | No-op; window size is not changed from JS. |
+| `resizeTo.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op; window size is not changed from JS. |
+| `screen` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Size from window, then native display; no monitor list. |
+| `screen.availHeight` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Copied from window then native display size. |
+| `screen.availWidth` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Copied from window then native display size. |
+| `screen.colorDepth` | stub | `src/shims/dom_shim.js` | `-` | Hard-coded 32. |
+| `screen.height` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Copied from window then native display size. |
+| `screen.orientation` | stub | `src/shims/dom_shim.js` | `-` | Fixed landscape-primary; no change events. |
+| `screen.orientation.addEventListener` | stub | `src/shims/dom_shim.js` | `-` | No-op; orientation never changes. |
+| `screen.orientation.addEventListener.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op; orientation never changes. |
+| `screen.orientation.angle` | stub | `src/shims/dom_shim.js` | `-` | Always 0. |
+| `screen.orientation.removeEventListener` | stub | `src/shims/dom_shim.js` | `-` | No-op; orientation never changes. |
+| `screen.orientation.removeEventListener.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op; orientation never changes. |
+| `screen.orientation.type` | stub | `src/shims/dom_shim.js` | `-` | Always landscape-primary. |
+| `screen.pixelDepth` | stub | `src/shims/dom_shim.js` | `-` | Hard-coded 32. |
+| `screen.width` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Copied from window then native display size. |
+| `scrollTo` | stub | `src/shims/dom_shim.js` | `-` | No-op; there is no document scroll offset. |
+| `scrollTo.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op; there is no document scroll offset. |
+| `self` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Alias of window/globalThis. |
+| `setInterval` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Queued until __dom_flushTimers; delay is frame-based. |
+| `setInterval.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Queued until __dom_flushTimers; delay is frame-based. |
+| `setTimeout` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Queued until __dom_flushTimers; delay is frame-based. |
+| `setTimeout.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Queued until __dom_flushTimers; delay is frame-based. |
 | `webkitAudioContext` | partial | `src/shims/webaudio_shim.js` | `tests/test_webaudio.c` | Native mixer subset; automation and graph semantics limited. |
 | `webkitAudioContext.prototype.close` | stub | `src/shims/webaudio_shim.js` | - | No native effect; empty result or simulated state only. |
 | `webkitAudioContext.prototype.close.prototype.constructor` | stub | `src/shims/webaudio_shim.js` | - | No native effect; empty result or simulated state only. |
@@ -645,6 +1012,7 @@ known missing rows therefore remain visible as full-check failures until fixed.
 | `webkitAudioContext.prototype.resume.prototype.constructor` | stub | `src/shims/webaudio_shim.js` | - | No native effect; empty result or simulated state only. |
 | `webkitAudioContext.prototype.suspend` | stub | `src/shims/webaudio_shim.js` | - | No native effect; empty result or simulated state only. |
 | `webkitAudioContext.prototype.suspend.prototype.constructor` | stub | `src/shims/webaudio_shim.js` | - | No native effect; empty result or simulated state only. |
+| `window` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Alias of globalThis. |
 | `PIXI.Geometry` | stub | `src/shims/pixi_shim.js` | - | Stores attributes only; no native mesh draw path (§4.2). |
 | `PIXI.Buffer` | stub | `src/shims/pixi_shim.js` | - | Stores buffer data only; no native vertex buffer (§4.2). |
 | `PIXI.Program` | stub | `src/shims/pixi_shim.js` | - | Stores shader strings only; no program compilation (§4.2). |
