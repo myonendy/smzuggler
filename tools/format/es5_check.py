@@ -10,7 +10,7 @@ import sys
 
 from changed import changed
 
-TOKEN = re.compile(r'''\s+|//[^\n]*|/\*[\s\S]*?\*/|'(?:\\[\s\S]|[^'\\])*'|"(?:\\[\s\S]|[^"\\])*"|[A-Za-z_$][\w$]*|\d+(?:\.\d+)?|=>|\.\.\.|===|!==|==|!=|[^\s]''')
+TOKEN = re.compile(r'''\s+|//[^\n]*|/\*[\s\S]*?\*/|'(?:\\[\s\S]|[^'\\])*'|"(?:\\[\s\S]|[^"\\])*"|[A-Za-z_$][\w$]*|\d+(?:\.\d+)?|&&|\|\||=>|\.\.\.|===|!==|==|!=|[^\s]''')
 REGEX = re.compile(r'/((?:\\.|\[(?:\\.|[^\]\\])*\]|[^/\n\\])*)/[a-z]*')
 
 
@@ -26,7 +26,8 @@ def tokens(source):
         match = TOKEN.match(source, offset)
         word = match.group()
         token_line = line
-        if word == '/' and previous in ('', '=', '(', '[', ',', ':', 'return', '!', '&&', '||'):
+        if word == '/' and previous in ('', '=', '(', '[', ',', ':', 'return', 'throw', 'typeof', 'void',
+                                        'delete', '!', '~', '?', '&&', '||'):
             literal = REGEX.match(source, offset)
             if literal:
                 line += literal.group().count('\n')

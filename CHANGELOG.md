@@ -13,6 +13,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Recognize ES5 regex literals after logical operators and unary keywords.
 - Added code style guidance, upstream-aligned clang-format and changed-file ES5 checks.
 - Harden logger scrubbing for punctuation, root homes and Windows path casing;
   register POSIX logger fixtures only on supported platforms.

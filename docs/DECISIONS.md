@@ -118,7 +118,9 @@ For now use a Python tokenizer for ES5 syntax instead of adding Node, eslint or
 prettier dependencies to offline gates. Check whole changed shared shim files;
 `--paths` selects explicit repository-relative globs for other shared locations.
 The checker is deliberately not a complete JavaScript grammar validator; regex
-recognition uses expression context. All 13 upstream shim files pass the guard.
+recognition uses expression context, including logical operators and unary
+keywords; regression fixtures prevent regex contents becoming syntax diagnostics.
+All 13 upstream shim files pass the guard.
 Full JS formatting and jsdoc tooling remain future work under §15.6/§15.7.
 A human wires the commands into gates after merge (DEC-SETUP-006).
 `ARCHITECTURE.md` is absent at this card's baseline; the style guide links its
@@ -132,3 +134,11 @@ The test fragment attaches the filter source to existing test targets that compi
 `error_handler.c` directly; this keeps upstream test definitions unchanged.
 User and host identity lookup APIs are absent from `src`; diagnostics must not add
 such identity sources. See [privacy.md](privacy.md).
+
+## DEC-M0-T005b — Inherited format violations remain visible
+
+Validation after merging the logger card reports `tests/smz/test_log_scrub.c:17`
+and `:42` against `upstream-main`: compact multi-statement and nested conditional
+lines expand under clang-format. These existing tests are outside this card’s
+ownership and cannot be edited here. Keep diagnostics visible rather than
+excluding tests or changing the measured upstream style to hide the failures.

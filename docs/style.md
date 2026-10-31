@@ -45,7 +45,8 @@ checks whole changed files to catch multiline constructs. It rejects let/const,
 classes, arrows, templates, destructuring, default/rest parameters, spread and
 for-of. Strings, comments and common regex literals are tokenized separately.
 This is a focused syntax guard, not a full JavaScript parser or formatter; regex
-versus division uses expression context. Full eslint/prettier formatting and
+versus division uses expression context, including logical operators and unary
+keywords such as `typeof` and `void`. Full eslint/prettier formatting and
 jsdoc lint remain the intended tooling when dependencies are available. No Node
 or downloaded packages are required for this milestone (DEC-M0-T005).
 
