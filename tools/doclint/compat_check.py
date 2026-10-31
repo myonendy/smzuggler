@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 The smzuggler contributors
+# Modified 2026-10-31: skip only the five-column header, not a member named name.
 """Check documented browser/NW.js inventory against an offline runtime dump.
 
 See ARCHITECTURE.md and docs/compat-surface.md. Paths are repository-relative;
@@ -31,7 +32,7 @@ def table_rows(path):
         if not line.startswith('|'):
             continue
         fields = [cell(part) for part in line.strip().strip('|').split('|')]
-        if fields[0].lower() == 'name' or set(fields[0]) <= set('-: '):
+        if fields == ['name', 'status', 'shim file', 'test', 'notes'] or set(fields[0]) <= set('-: '):
             continue
         if len(fields) != 5 or fields[1] not in {'real', 'partial', 'stub', 'missing'}:
             raise ValueError(f'{path}:{number}: invalid compatibility row')
