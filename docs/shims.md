@@ -24,6 +24,23 @@ walked, including non-enumerable properties; getters are never invoked.
 Global aliases and ancestor references are listed but not recursively expanded,
 preventing cycles. Values and function bodies are never printed.
 
+The dump lists API members only, as spec §15.4 defines the surface ("every
+global and prototype member the shims install"; DEC-M0-T009b). Two kinds of row
+are left out because they are not APIs:
+
+- a function's intrinsic `length`, `name` and `prototype` properties. Members
+  of `X.prototype` are still walked and keep their `X.prototype.member` name;
+  only the bare `X.prototype` row is dropped.
+- the members of DOM element instances reached from `document` (an object with
+  an own string `tagName`), such as `document.body.*`, `document.head.*` and
+  `document.documentElement.*`. They repeat `HTMLElement.prototype`.
+  `document.body`, `document.head` and `document.documentElement` keep one row
+  each.
+
+Everything a shim installs on a global, constructor, prototype or namespace is
+listed, `_`-prefixed members included. This cut the dump from 6,124 to about
+2,000 lines. `tests/smz/test_dump_surface_members.c` pins both exclusions.
+
 The pre-core list is defined in
 [src/engine/script_loader.c:245](../src/engine/script_loader.c#L245), and evaluated
 by [script_loader_load_shims:260](../src/engine/script_loader.c#L260):

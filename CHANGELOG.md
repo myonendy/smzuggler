@@ -4,6 +4,7 @@ Copyright (C) 2026 The smzuggler contributors
 Modified 2026-10-31: add docs-touched gate release entry.
 Modified 2026-10-30: document runtime naming, CI coverage and format checks.
 Modified 2026-10-31: record Markdown parser corrections.
+Modified 2026-10-31: record the API-members-only surface dump.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
@@ -17,6 +18,8 @@ All notable changes to smzuggler. Outsider's own history is in its git log.
 ## Unreleased
 - Add the architecture guide and checks for source references and directory coverage.
 - Add headless `--dump-surface[=FILE]` shim inventory with sorted source attribution.
+- Limit `--dump-surface` to API members: drop intrinsic function `length`,
+  `name` and `prototype` rows and members of DOM elements under `document`.
 - Ignore indented Markdown examples, check multiline link destinations, and
   decode heading entities while preserving literal code-span text in mdlinks.
 - Add an offline Markdown link and anchor check (`tools/doclint/mdlinks.py`)
