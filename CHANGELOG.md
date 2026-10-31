@@ -6,6 +6,7 @@ Modified 2026-10-31: record contribution guide and PR checklist.
 Modified 2026-10-30: document runtime naming, CI coverage and format checks.
 Modified 2026-10-31: record Markdown parser corrections.
 Modified 2026-10-31: record the API-members-only surface dump.
+Modified 2026-10-31: record the smaller-shim compatibility inventory.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
@@ -17,6 +18,8 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+
+- Add the offline compatibility-surface checker and inventory for smaller shims.
 - Add smzuggler contribution rules, preserved upstream guidance and a tested PR checklist.
 - Add the upstream offer tracker and isolated, offline branch extraction helper.
 - Document upstream extraction ordering and verify atomic multi-commit replay.
