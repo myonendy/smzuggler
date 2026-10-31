@@ -19,6 +19,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Verify literal `name` compatibility rows through the checker CLI, including stale-row rejection.
 - Recognize only the complete compatibility-table header, preserving the DOM `name` member.
 - Add compatibility-surface rows for every dump member credited to `dom_shim.js`.
 - Add `tools/perf/binsize.py`, which reports stripped `smzuggler-rt`, shared-library

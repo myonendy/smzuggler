@@ -28,6 +28,9 @@ Run `python3 tools/doclint/compat_check.py build/surface.tsv --shim FILE ...`
 from the repository root. FILE accepts loader basenames or repository paths.
 The checker compares exact (name, shim) pairs, including stub/missing rows;
 known missing rows therefore remain visible as full-check failures until fixed.
+The literal `name` member participates in matching; only the complete five-cell
+header is metadata. `tests/tools/test_compat_name_cli.py` checks both a matching
+dump and rejection of a stale `name` row through the CLI.
 
 | name | status | shim file | test | notes |
 | --- | --- | --- | --- | --- |
