@@ -151,3 +151,42 @@ and `:42` against `upstream-main`: compact multi-statement and nested conditiona
 lines expand under clang-format. These existing tests are outside this card’s
 ownership and cannot be edited here. Keep diagnostics visible rather than
 excluding tests or changing the measured upstream style to hide the failures.
+
+## DEC-M0-T009b — What counts as a dump "member"
+Spec §15.4 defines the surface as "every global and prototype member the shims install".
+Intrinsic function properties (`length`, `name`, and `prototype` as a row of its own) are not
+APIs, and the members of instances reached from `document` (`document.body.*` and so on) repeat
+`HTMLElement.prototype`. The dump leaves both out. Nothing a shim installs on a global,
+constructor, prototype or namespace is dropped, `_`-prefixed members included. No test or gate
+gets weaker: the existing dump test is unchanged, a new test pins the exclusions, and the
+compat-surface check stays exact table-vs-dump equality.
+
+## DEC-M0-T010-SPLIT — Seed the compat table in three cards
+Even after DEC-M0-T009b the table has about 2,000 rows, more than one card's 1,500-line SIZE
+cap, so the table is seeded per shim file. M0-T010a adds the checker (with `--shim`) and the
+small shims. M0-T010b adds dom_shim.js. M0-T010 adds pixi_shim.js, and the full check with no
+`--shim` must pass there. M0-T010b and M0-T010 are data-only (`tests_required = false`): the
+checker run in each report is their test, and the `compat_surface` gate takes over after
+M0-T010. `max_diff_lines` is unchanged.
+
+## DEC-SETUP-014 — Upstream contact address in docs/upstream-CONTRIBUTING.md
+`docs/upstream-CONTRIBUTING.md` must be byte-identical to upstream's CONTRIBUTING.md (M0-T012,
+SI-7), and that file contains Outsider's public company address.
+That address is already allow-listed for the inherited CONTRIBUTING.md, LICENSE and README.md.
+The allow-list gets the same exact-match entry for the preserved copy. It is a generic-rule
+override for one public, non-personal address in one file. Deny-list rules are untouched, and
+the scan still flags any other email.
+
+## DEC-M0-T014-SCOPE — Header check: full-tree pass moves to M0-T014b
+M0-T014 blocked after four attempts because "`headers.py --base upstream-main` passes on the
+tree" required header edits to files outside its `owns`, some of them protected (AGENTS.md,
+forge.toml, tasks/**, tools/forge/** and so on) and some upstream tests. M0-T014 now has to be
+clean only for the files it owns, adds or changes, and must list every remaining violation;
+verbatim licence texts are skipped by explicit path. No exemption list is added and no check is
+relaxed: the full-tree pass is still required, by draft card M0-T014b plus a human for the
+protected files, before `headers.py` becomes a gate.
+
+## DEC-SETUP-015 — Cards that add a src/ or tools/ directory own ARCHITECTURE.md
+`tests/tools/test_architecture_refs.py::test_directory_map` requires an ARCHITECTURE.md row for
+every directory under `src/` and `tools/`. Cards that create one (M0-T013, M0-T016, M0-T017,
+M0-T019, M0-T020, M0-T023, M1-T001, M1-T003) own ARCHITECTURE.md, limited to adding that row.
