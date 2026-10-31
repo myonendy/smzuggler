@@ -135,6 +135,15 @@ The test fragment attaches the filter source to existing test targets that compi
 User and host identity lookup APIs are absent from `src`; diagnostics must not add
 such identity sources. See [privacy.md](privacy.md).
 
+## DEC-M0-T009 — Observe shims in an isolated engine
+The surface dump uses the loader's combined shim list and snapshots own property
+descriptors after each evaluation. It records additions and replacements without
+calling getters, constructing browser objects, or initializing devices. The native
+file binding is part of the host baseline and temporarily resolves paths inside
+the selected shim directory, so storage startup cannot probe a game or the caller's
+working directory. The prior file root is restored for in-process callers.
+Build configuration stages shims inside the build tree for the default CLI path.
+Post-core patches run without game classes and retain their ordinary guards.
 ## DEC-M0-T005b — Inherited format violations remain visible
 
 Validation after merging the logger card reports `tests/smz/test_log_scrub.c:17`

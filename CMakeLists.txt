@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 The smzuggler contributors
 # Modified 2026-10-30: configure runtime identity and diagnostic privacy.
+# Modified 2026-10-31: build and stage the headless shim inventory.
 # Build orchestration; see docs/DECISIONS.md (DEC-M0-T001).
 
 cmake_minimum_required(VERSION 3.20)
@@ -150,6 +151,10 @@ else()
     )
 endif()
 
+file(COPY src/shims/ DESTINATION "${PROJECT_BINARY_DIR}/shims"
+    FILES_MATCHING PATTERN "*.js")
+add_compile_definitions(SMZ_SURFACE_SHIM_DIR="${PROJECT_BINARY_DIR}/shims")
+
 # Main runtime sources
 set(RMMZ_RUNTIME_SOURCES
     src/main.c
@@ -160,6 +165,7 @@ set(RMMZ_RUNTIME_SOURCES
     src/engine/js_engine.c
     src/engine/game_loop.c
     src/engine/error_handler.c
+    src/smzuggler/dump_surface.c
     src/smzuggler/log_scrub.c
     src/engine/script_loader.c
     src/io/file_io.c
