@@ -82,7 +82,7 @@ def identity_names() -> list[str]:
 def home_variants(home: str) -> list[str]:
     """Return slash-style variants of HOME so both POSIX and Windows logs match.
 
-    Trailing separators are stripped so `/tmp/run/home/foo` becomes `~/foo`.
+    Trailing separators are stripped before replacing the home prefix with `~`.
     Shorter duplicates are dropped. The caller still owns `home`.
     """
     stripped = home.rstrip('/\\')
