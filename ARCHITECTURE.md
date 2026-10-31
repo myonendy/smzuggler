@@ -224,6 +224,7 @@ changes together.
 | `tools/forge/` | Offline worker build/test and policy gate entry points; fork. |
 | `tools/format/` | Formatting and ES5 checks; fork. |
 | `tools/privacy/` | Repository privacy scanning and tests; fork. |
+| `tools/upstream/` | Cutting `up/*` upstream PR branches from `upstream-main`; fork. |
 
 ## Where do I start?
 
