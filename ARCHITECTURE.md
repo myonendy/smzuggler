@@ -223,6 +223,7 @@ changes together.
 | `tools/evaluator/scenarios/` | Evaluation scenario definitions; upstream. |
 | `tools/forge/` | Offline worker build/test and policy gate entry points; fork. |
 | `tools/format/` | Formatting and ES5 checks; fork. |
+| `tools/perf/` | Offline perf call-graph attribution and bucket rules; fork. |
 | `tools/privacy/` | Repository privacy scanning and tests; fork. |
 | `tools/upstream/` | Isolated, offline upstream offer extraction; fork. |
 

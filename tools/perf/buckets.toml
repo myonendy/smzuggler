@@ -1,0 +1,152 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 The smzuggler contributors
+#
+# Attribution rules for tools/perf/attribute.py (spec section 6.1).
+# Why: the M0 profile must split a frame into interpreter, GC, shim and game
+# JS, Canvas2D, renderer/GPU submit, audio, video and the rest before any V8
+# work starts; keeping the rules here lets them be tuned without code changes.
+# Documented in docs/perf.md, "Bucket rules".
+#
+# Rules a reader must not break:
+# - Rules are tried in file order and the first match wins, so put specific
+#   rules (GC) before broad ones (the interpreter).
+# - `dso` is a list of basenames, compared exactly or as fnmatch globs; it is
+#   never a full path, because the tool strips paths before matching.
+# - `symbol` is a Python regex searched in the symbol without its +0x offset.
+#   Paths inside a symbol (V8 JIT script URLs) are still present when rules
+#   run, and are stripped only in the reports.
+# - A rule with both keys needs both to match.
+# - `fold = true` frames count towards their bucket's total but pass self time
+#   to the nearest caller that a non-folded rule claims. A folded rule with
+#   bucket = "" claims no bucket at all (kernel and unresolved frames).
+# - Never name a game, its files or its plugins here (AGENTS.md section 4).
+
+fallback = "other"
+
+[[bucket]]
+id = "quickjs"
+label = "QuickJS interpreter"
+
+[[bucket]]
+id = "gc"
+label = "GC"
+
+[[bucket]]
+id = "shim_js"
+label = "shim JS"
+
+[[bucket]]
+id = "game_js"
+label = "game JS"
+
+[[bucket]]
+id = "canvas2d"
+label = "Canvas2D"
+
+[[bucket]]
+id = "renderer"
+label = "renderer/GPU submit"
+
+[[bucket]]
+id = "audio"
+label = "audio"
+
+[[bucket]]
+id = "video"
+label = "video"
+
+[[bucket]]
+id = "other"
+label = "libc/other"
+
+# Kernel frames: time spent in syscalls belongs to whoever made the call.
+[[rule]]
+dso = ["[kernel.kallsyms]", "[vdso]", "[vsyscall]"]
+bucket = ""
+fold = true
+
+# Garbage collection, QuickJS and V8 names. Before the interpreter rule.
+[[rule]]
+symbol = '^(JS_RunGC|__JS_FreeValueRT|gc_decref|gc_scan|gc_free_cycles|free_cycles|mark_children|free_gc_object|free_zero_refcount|js_trigger_gc)\b'
+bucket = "gc"
+
+[[rule]]
+symbol = '^v8::internal::(Heap|Scavenger|MarkCompact|MinorMarkCompact|ConcurrentMarking|IncrementalMarking|GCTracer|MemoryAllocator|Sweeper)'
+bucket = "gc"
+
+# JIT frames from V8 --perf-prof / --perf-basic-prof (perf-<pid>.map or
+# jitted-<pid>-<n>.so). Shim scripts first; every other script is game JS.
+[[rule]]
+dso = ["perf-*.map", "jitted-*.so"]
+symbol = '(_shim\.js|/shims/)'
+bucket = "shim_js"
+
+[[rule]]
+dso = ["perf-*.map", "jitted-*.so"]
+symbol = '^(Builtin|BytecodeHandler|Stub|RegExp):'
+bucket = "quickjs"
+
+[[rule]]
+dso = ["perf-*.map", "jitted-*.so"]
+bucket = "game_js"
+
+# The QuickJS interpreter, its runtime and V8's own interpreter/compiler.
+[[rule]]
+dso = ["libquickjs*"]
+bucket = "quickjs"
+
+[[rule]]
+symbol = '^(JS_|__JS_|js_|lre_|lre_exec|unicode_|dbuf_)'
+bucket = "quickjs"
+
+[[rule]]
+symbol = '^(v8::|Builtins_)'
+bucket = "quickjs"
+
+# Canvas2D raster and text.
+[[rule]]
+dso = ["libfreetype*", "libharfbuzz*"]
+bucket = "canvas2d"
+
+[[rule]]
+symbol = '^(canvas2d_|font_manager_|stbtt_|FT_|hb_)'
+bucket = "canvas2d"
+
+# Renderer, texture upload and GPU submit, including the GPU driver.
+[[rule]]
+dso = ["libGL*", "libEGL*", "libGLES*", "libvulkan*", "*_dri.so", "libnvidia*", "libdrm*", "libgallium*", "libLLVM*"]
+bucket = "renderer"
+
+[[rule]]
+symbol = '^(renderer_|sprite_batch_|gpu_|filter_|filters_|tilemap_|image_upload|glsl_|SDL_.*GPU|gl[A-Z])'
+bucket = "renderer"
+
+# Audio mixing and decode.
+[[rule]]
+dso = ["libvorbis*", "libogg*", "libopus*", "libasound*", "libpulse*", "libpipewire*"]
+bucket = "audio"
+
+[[rule]]
+symbol = '^(audio_|SoLoud::|soloud|stb_vorbis|vorbis_|ogg_|opus_)'
+bucket = "audio"
+
+# Video decode and playback.
+[[rule]]
+dso = ["libvpx*"]
+bucket = "video"
+
+[[rule]]
+symbol = '^(video_|vpx_|nestegg_|plm_)'
+bucket = "video"
+
+# libc and friends: counted in the total, self time goes to the caller.
+[[rule]]
+dso = ["libc.so*", "libc-*", "libm.so*", "libstdc++*", "libgcc_s*", "ld-linux*", "libpthread*"]
+bucket = "other"
+fold = true
+
+# Unresolved frames in any DSO no rule above claimed.
+[[rule]]
+symbol = '^\[unknown\]$'
+bucket = ""
+fold = true

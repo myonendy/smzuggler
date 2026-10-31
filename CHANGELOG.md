@@ -5,6 +5,7 @@ Modified 2026-10-31: add docs-touched gate release entry.
 Modified 2026-10-31: record contribution guide and PR checklist.
 Modified 2026-10-30: document runtime naming, CI coverage and format checks.
 Modified 2026-10-31: record Markdown parser corrections.
+Modified 2026-10-31: add the perf attribution tool entry.
 Modified 2026-10-31: record the API-members-only surface dump.
 Modified 2026-10-31: record the smaller-shim compatibility inventory.
 Project documentation; identity decisions are in docs/DECISIONS.md.
@@ -17,6 +18,7 @@ All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
 - Add the offline compatibility-surface checker and inventory for smaller shims.
+- Add `tools/perf/attribute.py`, which splits `perf script` samples into the §6.1 buckets.
 - Add §12 copyright lines and dated Modified notes to `.gitignore`,
   `tests/CMakeLists.txt` and `tests/integration/test_acceptance.c`; put the
   `docs/upstream-CONTRIBUTING.md` header items on separate lines.
