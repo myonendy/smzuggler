@@ -38,8 +38,9 @@ are left out because they are not APIs:
   each.
 
 Everything a shim installs on a global, constructor, prototype or namespace is
-listed, `_`-prefixed members included. This cut the dump from 6,124 to about
-2,000 lines. `tests/smz/test_dump_surface_members.c` pins both exclusions.
+listed, `_`-prefixed members included. The runtime dump measured with
+`./build/smzuggler-rt --dump-surface | wc -l` on 2026-10-31 has 2,003 lines,
+down from 6,124. `tests/smz/test_dump_surface_members.c` pins both exclusions.
 
 The pre-core list is defined in
 [src/engine/script_loader.c:245](../src/engine/script_loader.c#L245), and evaluated
