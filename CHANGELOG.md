@@ -1,6 +1,7 @@
 <!--
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
+Modified 2026-10-31: add docs-touched gate release entry.
 Modified 2026-10-30: document runtime naming, CI coverage and format checks.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
@@ -13,6 +14,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Add a docs-touched gate with subsystem mappings and justified CI exemptions.
 - Check documentation on compact C/C++ definitions independently in doclint.
 - Add source documentation lint with changed-line checks and a legacy baseline.
 - Recognize ES5 regex literals after logical operators and unary keywords.
