@@ -31,7 +31,7 @@ def table_rows(path):
         if not line.startswith('|'):
             continue
         fields = [cell(part) for part in line.strip().strip('|').split('|')]
-        if fields[0].lower() == 'name' or set(fields[0]) <= set('-: '):
+        if fields == ['name', 'status', 'shim file', 'test', 'notes'] or set(fields[0]) <= set('-: '):
             continue
         if len(fields) != 5 or fields[1] not in {'real', 'partial', 'stub', 'missing'}:
             raise ValueError(f'{path}:{number}: invalid compatibility row')

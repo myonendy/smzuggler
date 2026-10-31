@@ -19,6 +19,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Recognize only the complete compatibility-table header, preserving the DOM `name` member.
 - Add compatibility-surface rows for every dump member credited to `dom_shim.js`.
 - Add `tools/perf/binsize.py`, which reports stripped `smzuggler-rt`, shared-library
   and shim sizes and a per-dependency archive breakdown, and record the M0 size baseline.
