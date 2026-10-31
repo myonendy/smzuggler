@@ -2,7 +2,6 @@
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
 Modified 2026-10-31: seed dom_shim.js inventory rows.
-Modified 2026-10-31: drop the dump-member name skip caveat.
 Compatibility inventory for browser, NW.js and Node replacements.
 See ../ARCHITECTURE.md for service ownership. Keep exact runtime names and
 shim attribution; statuses describe implementation, not conformance certification.
@@ -29,6 +28,9 @@ Run `python3 tools/doclint/compat_check.py build/surface.tsv --shim FILE ...`
 from the repository root. FILE accepts loader basenames or repository paths.
 The checker compares exact (name, shim) pairs, including stub/missing rows;
 known missing rows therefore remain visible as full-check failures until fixed.
+The checker also skips the literal DOM member `name` as a header; its row is
+retained below, but the scoped check reports it missing until the checker is
+corrected in a task that owns `tools/doclint/compat_check.py`.
 
 | name | status | shim file | test | notes |
 | --- | --- | --- | --- | --- |
