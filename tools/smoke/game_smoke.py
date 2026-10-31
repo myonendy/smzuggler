@@ -6,6 +6,7 @@
 The driver owns scratch storage and never relays child diagnostics. All runtime
 filesystem mounts are read-only except scratch; no unsafe fallback is allowed.
 """
+import errno
 import hashlib
 import json
 import os
@@ -14,6 +15,18 @@ import shutil
 import subprocess
 import sys
 import tempfile
+
+# Startup (window, GL context, script load) needs a fixed allowance; frames
+# then get four times their 60 fps duration to cover slow power-saver clocks.
+BASE_TIMEOUT_SECONDS = 60
+TIMEOUT_MARGIN = 4
+
+# Exact Steam directory names; Proton is matched as a substring because its
+# install directories are named like "Proton 8.0" or "Proton - Experimental".
+STEAM_PARTS = {'steam', '.steam', 'steamapps', 'steamlibrary', 'compatdata', 'pfx'}
+
+# Where a failing run's log is kept, relative to the caller's XDG_STATE_HOME.
+FAILURE_LOG = Path('smzuggler-rt/smoke/runtime.log')
 
 
 def tree(root):
@@ -43,42 +56,66 @@ def tree(root):
     return result
 
 
+def steam_path(parts):
+    """Return True when any path component names a Steam or Proton location.
+
+    Checked on both the given and the resolved path so a symlinked test copy
+    cannot hide a Steam library behind a harmless-looking name.
+    """
+    return any(p.lower() in STEAM_PARTS or 'proton' in p.lower() for p in parts)
+
+
 def configuration(args):
     """Validate caller arguments before launching; return owned paths and frames.
 
-    Called only on the driver thread; invalid/unavailable setup raises ValueError.
-    Frame counts are positive signed 32-bit integers, defaulting to 120.
+    Called only on the driver thread; invalid/unavailable setup raises ValueError
+    with a path-free message. Frames are positive signed 32-bit ints, default 120.
     """
     raw = os.environ.get('SMZUGGLER_GAME_DIR')
     if not raw:
         raise ValueError('SMZUGGLER_GAME_DIR must name a local test copy')
     game = Path(raw).resolve(strict=True)
-    forbidden = {'steam', '.steam', 'steamapps', 'compatdata', 'pfx'}
-    if any(p.lower() in forbidden or p.lower().startswith('steam')
-           or 'proton' in p.lower()
-           for p in (*Path(raw).parts, *game.parts)):
+    if steam_path((*Path(raw).parts, *game.parts)):
         raise ValueError('Steam/Proton paths are refused; use a test copy')
     if not game.is_dir():
-        raise ValueError('game directory is unavailable')
-    frames = int(args[0]) if len(args) == 1 else 120
-    if len(args) > 1 or not 1 <= frames <= 2147483647:
-        raise ValueError('usage: game_smoke.sh [positive frame count]')
+        raise ValueError('SMZUGGLER_GAME_DIR is not a directory')
+    usage = 'usage: game_smoke.sh [positive frame count]'
+    if len(args) > 1 or (args and not args[0].isdigit()):
+        raise ValueError(usage)
+    frames = int(args[0]) if args else 120
+    if not 1 <= frames <= 2147483647:
+        raise ValueError(usage)
     runtime = shutil.which(os.environ.get('SMZUGGLER_RUNTIME', 'smzuggler-rt'))
+    if not runtime:
+        raise ValueError('runtime not found; put smzuggler-rt on PATH '
+                         'or set SMZUGGLER_RUNTIME')
     bwrap = shutil.which('bwrap')
-    if not runtime or not bwrap:
-        raise ValueError('runtime and bwrap are required for write containment')
+    if not bwrap:
+        raise ValueError('bwrap (bubblewrap) is required for write containment')
     return game, str(Path(runtime).resolve()), bwrap, frames
 
 
-def execute(game, runtime, bwrap, frames, scratch):
-    """Run once with owned scratch and a live control pipe; return child status.
+def session_env(scratch):
+    """Build the child environment: host display sockets, scratch XDG/HOME dirs.
 
-    No child streams escape scratch. A 120-second timeout fails the smoke run.
-    The caller owns cleanup; this function retains no resources after return.
+    XDG_RUNTIME_DIR moves to scratch, so Wayland and PulseAudio sockets are
+    passed as absolute paths into the host runtime dir (readable on the
+    read-only bind; connecting to a socket is not a filesystem write).
+    Creates the scratch subdirectories; returns a new dict the caller owns.
     """
     env = {key: os.environ[key] for key in
-           ('PATH', 'DISPLAY', 'WAYLAND_DISPLAY', 'XAUTHORITY', 'LANG')
-           if key in os.environ}
+           ('PATH', 'DISPLAY', 'WAYLAND_DISPLAY', 'XAUTHORITY', 'LANG',
+            'PULSE_SERVER') if key in os.environ}
+    host_runtime = os.environ.get('XDG_RUNTIME_DIR')
+    wayland = env.get('WAYLAND_DISPLAY')
+    if wayland and not os.path.isabs(wayland):
+        if host_runtime:
+            env['WAYLAND_DISPLAY'] = os.path.join(host_runtime, wayland)
+        else:
+            del env['WAYLAND_DISPLAY']
+    pulse = os.path.join(host_runtime or '', 'pulse', 'native')
+    if 'PULSE_SERVER' not in env and host_runtime and os.path.exists(pulse):
+        env['PULSE_SERVER'] = 'unix:' + pulse
     authority = Path.home() / '.Xauthority'
     if 'XAUTHORITY' not in env and authority.is_file():
         env['XAUTHORITY'] = str(authority)
@@ -87,11 +124,23 @@ def execute(game, runtime, bwrap, frames, scratch):
         target = scratch / key.lower()
         target.mkdir(mode=0o700)
         env[key] = str(target)
+    return env
+
+
+def execute(game, runtime, bwrap, frames, scratch):
+    """Run once with owned scratch and a live control pipe; return child status.
+
+    No child streams escape scratch (they go to scratch/runtime.log). The wall
+    timeout scales with frames; expiry kills the child and returns 124.
+    The caller owns cleanup; this function retains no resources after return.
+    """
+    env = session_env(scratch)
     command = [bwrap, '--ro-bind', '/', '/', '--bind', str(scratch), str(scratch),
                '--ro-bind', str(game), str(game), '--unshare-pid', '--unshare-net',
                '--die-with-parent', '--cap-drop', 'ALL', '--chdir', str(scratch),
                '--', runtime, '--game', str(game), '--control', '--frames', str(frames),
                '--shims', str(Path(__file__).resolve().parents[2] / 'src/shims')]
+    timeout = BASE_TIMEOUT_SECONDS + TIMEOUT_MARGIN * frames / 60
     with (scratch / 'runtime.log').open('wb') as log:
         with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=log,
                               stderr=log, env=env) as child:
@@ -101,46 +150,87 @@ def execute(game, runtime, bwrap, frames, scratch):
             except BrokenPipeError:
                 pass
             try:
-                return child.wait(timeout=120)
+                return child.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
                 child.kill()
                 child.wait()
                 return 124
 
 
+def keep_log(scratch):
+    """Copy a failing run's log under the caller's XDG_STATE_HOME.
+
+    The log may hold absolute paths, so it is kept on disk only and its
+    location is printed relative to $XDG_STATE_HOME. Never raises: a log that
+    cannot be kept is reported, and the run still fails on its own status.
+    """
+    state = os.environ.get('XDG_STATE_HOME') or str(Path.home() / '.local/state')
+    target = Path(state) / FAILURE_LOG
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(scratch / 'runtime.log', target)
+        print(f'runtime log kept at $XDG_STATE_HOME/{FAILURE_LOG.as_posix()}')
+    except OSError as error:
+        print(f'runtime log not kept ({os_reason(error)})')
+
+
+def os_reason(error):
+    """Name an OSError by type and errno only; its text may contain paths."""
+    code = errno.errorcode.get(error.errno, 'no errno')
+    return f'{type(error).__name__} {code}'
+
+
+def report(before, after, frames, status):
+    """Print both relative listings and the verdict; return the CLI status.
+
+    Returns 1 if the tree changed or the runtime failed, otherwise 0.
+    """
+    for name in sorted(before.keys() | after.keys()):
+        print('before', before.get(name, 'absent'), json.dumps(name))
+        print('after ', after.get(name, 'absent'), json.dumps(name))
+    print(f'frames: {frames}; exit code: {status}')
+    if before != after:
+        print('game dir changed')
+        return 1
+    print('game dir unchanged')
+    return 0 if status == 0 else 1
+
+
 def main(args):
     """Return CLI status: 2 for setup, 1 for failed smoke, 0 for unchanged success.
 
-    Only relative tree entries and fixed diagnostics are printed on this thread.
-    Temporary manifests/logs are owned and removed by the driver on every exit.
+    Only relative tree entries and path-free diagnostics are printed on this
+    thread. Temporary manifests/logs are removed on exit; a failing run's log
+    is kept under XDG_STATE_HOME first.
     """
     try:
         game, runtime, bwrap, frames = configuration(args)
         before = tree(game)
-    except (ValueError, OSError):
-        print('smoke: invalid setup; set SMZUGGLER_GAME_DIR to a test copy; '
-              'Steam/Proton paths refused; runtime and bwrap required', file=sys.stderr)
+    except ValueError as error:
+        print(f'smoke: {error}', file=sys.stderr)
+        return 2
+    except OSError as error:
+        print(f'smoke: cannot read SMZUGGLER_GAME_DIR ({os_reason(error)})',
+              file=sys.stderr)
         return 2
     try:
         with tempfile.TemporaryDirectory(prefix='smz-smoke-') as directory:
             scratch = Path(directory)
             if scratch.is_relative_to(game):
-                raise ValueError('scratch must be outside game')
+                raise ValueError('scratch directory must be outside the game dir')
             (scratch / 'before.json').write_text(json.dumps(before, sort_keys=True))
             status = execute(game, runtime, bwrap, frames, scratch)
             after = tree(game)
             (scratch / 'after.json').write_text(json.dumps(after, sort_keys=True))
-            for name in sorted(before.keys() | after.keys()):
-                print('before', before.get(name, 'absent'), json.dumps(name))
-                print('after ', after.get(name, 'absent'), json.dumps(name))
-            print(f'frames: {frames}; exit code: {status}')
-            if before != after:
-                print('game dir changed')
-                return 1
-            print('game dir unchanged')
-            return 0 if status == 0 else 1
-    except (OSError, ValueError):
-        print('smoke: containment or tree verification failed', file=sys.stderr)
+            result = report(before, after, frames, status)
+            if result != 0:
+                keep_log(scratch)
+            return result
+    except ValueError as error:
+        print(f'smoke: {error}', file=sys.stderr)
+        return 1
+    except OSError as error:
+        print(f'smoke: smoke run failed ({os_reason(error)})', file=sys.stderr)
         return 1
 
 
