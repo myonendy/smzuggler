@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 The smzuggler contributors
+# Modified 2026-10-31: handle indented code, multiline links and heading entities.
 """Check relative links and #anchors in Markdown files, offline.
 
 Why: spec section 15.7 makes a Markdown link check part of the docs gate, so a
 renamed file or heading cannot silently break README, ARCHITECTURE, docs/ or a
 module README. Anchors follow GitHub's heading slugs (github-slugger): lower
 case, punctuation dropped, spaces become hyphens, repeats get -1, -2, ...
-External links (any URL scheme, or //host) are never fetched. Fenced code
-blocks and inline code spans are ignored; indented code blocks are not
-recognized. Anchors are only checked when the target is a Markdown file.
+External links (any URL scheme, or //host) are never fetched. Fenced and
+indented code blocks and inline code spans are ignored. Anchors are only
+checked when the target is a Markdown file. See docs/style.md for gate usage.
 With no paths it checks every git-tracked *.md file of the repository.
 Reads files only; exit 0 when clean, 1 with file:line per broken link, 2 on
 usage errors.
 """
 
 import argparse
+from html import unescape
 from pathlib import Path
 import re
 import subprocess
@@ -35,17 +37,20 @@ SCHEME = re.compile(r'^[A-Za-z][A-Za-z0-9+.-]*:')
 
 
 def code_lines(lines):
-    """Return a set of line indexes inside fenced code blocks, fences included.
+    """Return line indexes inside fenced or indented code blocks.
 
     Why: links and headings shown as examples in code must not be checked or
     turned into anchors. An unclosed fence runs to the end of the file, as on
-    GitHub.
+    GitHub. Indentation uses four-column tab stops; indented code cannot
+    interrupt a paragraph, so continuation lines remain available to links.
     """
     inside, opener, result = False, '', set()
+    paragraph, indented = False, False
     for index, line in enumerate(lines):
         match = FENCE.match(line)
         if not inside and match:
             inside, opener = True, match.group(1)
+            paragraph, indented = False, False
             result.add(index)
         elif inside:
             result.add(index)
@@ -53,6 +58,16 @@ def code_lines(lines):
                     and len(match.group(1)) >= len(opener)
                     and not line.strip()[len(match.group(1)):].strip()):
                 inside = False
+        elif line.strip():
+            expanded = line.expandtabs(4)
+            if expanded.startswith('    ') and (indented or not paragraph):
+                result.add(index)
+                indented = True
+            else:
+                indented = False
+                paragraph = not (ATX.match(line) or SETEXT.match(line))
+        else:
+            paragraph = False
     return result
 
 
@@ -79,7 +94,7 @@ def heading_text(raw):
         part = re.sub(r'<[^>]+>', '', part)
         part = re.sub(r'\*+|~~', '', part)
         part = re.sub(r'(?<!\w)_+|_+(?!\w)', '', part)
-        out.append(part)
+        out.append(unescape(part))
     return ''.join(out).strip()
 
 
@@ -135,8 +150,9 @@ def destination(line, start):
     """Parse an inline link destination beginning at offset `start`.
 
     Returns the destination string (without <> or title), or None when the
-    parenthesis is never closed on this line. Balanced parentheses inside
-    the destination are kept, as CommonMark allows.
+    destination has no terminator. Input may span lines: Markdown permits
+    whitespace around a destination. Balanced parentheses inside the
+    destination are kept, as CommonMark allows.
     """
     rest = line[start:].lstrip()
     if rest.startswith('<'):
@@ -159,14 +175,16 @@ def links(text):
     """
     lines = text.splitlines()
     code = code_lines(lines)
+    visible = '\n'.join(' ' * len(raw) if index in code else mask_code_spans(raw)
+                        for index, raw in enumerate(lines))
+    for match in INLINE_LINK.finditer(visible):
+        target = destination(visible, match.end())
+        if target is not None:
+            yield visible.count('\n', 0, match.start()) + 1, target
     for index, raw in enumerate(lines):
         if index in code:
             continue
         line = mask_code_spans(raw)
-        for match in INLINE_LINK.finditer(line):
-            target = destination(line, match.end())
-            if target is not None:
-                yield index + 1, target
         match = REFERENCE.match(line)
         if match:
             yield index + 1, match.group(1)
