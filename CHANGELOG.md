@@ -17,6 +17,8 @@ All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
 - Add smzuggler contribution rules, preserved upstream guidance and a tested PR checklist.
+- Add the upstream offer tracker and isolated, offline branch extraction helper.
+- Document upstream extraction ordering and verify atomic multi-commit replay.
 - Add the architecture guide and checks for source references and directory coverage.
 - Add headless `--dump-surface[=FILE]` shim inventory with sorted source attribution.
 - Ignore indented Markdown examples, check multiline link destinations, and

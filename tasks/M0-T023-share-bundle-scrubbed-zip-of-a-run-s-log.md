@@ -4,7 +4,7 @@ title = "Share bundle: scrubbed zip of a run's logs, perf reports, CSVs and scre
 milestone = 0
 deps = ["M0-T001", "M0-T003"]
 agent = "any"
-owns = ["tools/share/**", "tests/tools/test_make_bundle.py", "src/main.c"]
+owns = ["tools/share/**", "tests/tools/test_make_bundle.py", "src/main.c", "ARCHITECTURE.md"]
 docs = ["docs/sharing.md", "CHANGELOG.md"]
 tests_required = true
 may_edit_tests = false
@@ -19,6 +19,7 @@ Add `tools/share/make_bundle.py RUN_DIR... -o FILE.zip` (also reachable as `smzu
 The tool never uploads or posts anything.
 
 ## Acceptance criteria
+- [ ] `ARCHITECTURE.md` has a directory-map row for `tools/share/` (required by `tests/tools/test_architecture_refs.py`); no other ARCHITECTURE.md change.
 - [ ] `tests/tools/test_make_bundle.py`, using temp dirs and a temp deny-list with made-up terms: a log containing the temp HOME, a fake user name, a fake host name and a deny-list term produces a zip whose files contain `~` and `[redacted]` and none of the originals.
 - [ ] A PNG with a `tEXt` chunk and a JPEG with EXIF (both generated in the test) come out without metadata and with identical pixel data.
 - [ ] A planted deny term the scrubber cannot rewrite (e.g. inside a binary file) makes the tool exit 1 without creating the zip, and neither stdout nor stderr contains the term.
