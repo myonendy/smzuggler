@@ -41,3 +41,41 @@ start Xvfb and Openbox as in CI before running the test gate. GPU tests use the
 available backend or report upstream's existing skips when no device is usable.
 Actual hosted runs require the owner to push the workflow (SI-6 in
 [specification issues](SPEC_ISSUES.md)); local workflow tests verify its wiring.
+
+## Read-only game smoke
+
+Run `tools/smoke/game_smoke.sh 120` with `SMZUGGLER_GAME_DIR` naming a local
+**test copy**, and `smzuggler-rt` on PATH. `SMZUGGLER_RUNTIME` may select another
+executable. Steam/Proton locations, missing game configuration and invalid frame
+counts return 2. The default is 120 frames. Symlinks and special files in the
+game tree are refused to avoid following data outside the copy.
+
+The driver launches control mode, sends an initial evaluation command and keeps
+stdin open until the frame-limited runtime exits. A 120-second wall timeout
+fails the run. It creates private HOME, temporary and XDG directories, starts the
+runtime in scratch with this checkout's shims, and uses bubblewrap to bind the host and game read-only with
+scratch as the only writable filesystem mount. Network and PID namespaces and
+dropped capabilities constrain the child. Bubblewrap is required: missing or
+unusable containment fails closed rather than executing an unprotected runtime.
+Display sockets and device access still depend on the local GUI environment;
+this is a filesystem smoke harness, not a hostile-code security boundary.
+
+Before/after SHA-256 manifests cover every regular file and include directory
+entries. The report prints both listings with JSON-escaped relative paths,
+requested frame count, runtime exit code and `game dir unchanged` or
+`game dir changed`. Any tree difference or nonzero child status fails the run.
+Runtime output is private scratch data and is deleted with the manifests on
+exit, so absolute paths from runtime diagnostics cannot leak into the report.
+A denied write that the child ignores cannot land outside scratch; a runtime
+that propagates a denied write fails through its exit status.
+
+The game-free tests use a tiny synthetic tree, shell runtime stubs and a
+bubblewrap command double to verify mount arguments, control input, tree
+mutation detection and exit handling. They do not certify kernel confinement.
+Run them with `python3 -m unittest discover -s tests/tools -p test_game_smoke.py`.
+
+The real M0 report must record frame count, exit code and `game dir unchanged`
+on dev-laptop after at least two minutes unplugged, with battery at least 50%
+and `powerprofilesctl get` reporting `power-saver`. If the game copy or GUI is
+unavailable, report `BLOCKED: needs dev-laptop GUI run`; stub runs are not real
+game evidence. A human wires the gate after that run (DEC-SETUP-006).

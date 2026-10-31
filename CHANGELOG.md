@@ -19,6 +19,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Add a read-only game smoke runner with SHA-256 tree checks and scratch XDG storage.
 - Add `tools/share/make_bundle.py` and `smzuggler-rt --share-bundle` to pack a
   scrubbed zip of a run's logs, perf reports and frame times for sharing.
 - Add `tools/perf/binsize.py`, which reports stripped `smzuggler-rt`, shared-library

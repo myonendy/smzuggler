@@ -278,3 +278,13 @@ directory under `$XDG_STATE_HOME/smzuggler-rt/runs/` (or `~/.local/state/...`
 when that variable is unset) as the last run. `scan.py` skips NUL binaries;
 the packager still searches them for deny-list terms and refuses to write the
 zip on a hit, printing only the file and `chunk`, never the matched text.
+
+## DEC-M0-T016 — Fail closed without filesystem containment
+
+The read-only smoke driver requires usable bubblewrap instead of running an
+unconfined fallback. A before/after game hash can detect game changes, but cannot
+prove that no write landed elsewhere on the host. Mounting the host read-only
+and scratch writable gives the smoke run that property without scanning private
+host files. The synthetic tests distinguish orchestration coverage from native
+namespace enforcement; unavailable namespaces produce a failed smoke run, never
+an unprotected launch. The real GUI/battery run remains a separate requirement.
