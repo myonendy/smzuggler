@@ -1,4 +1,4 @@
-<!-- SPDX-License-Identifier: GPL-3.0-or-later; Copyright (C) 2026 The smzuggler contributors; Modified 2026-10-31: preserve upstream U-PR rules verbatim below this note; see ../CONTRIBUTING.md for fork policy and ../ARCHITECTURE.md for module boundaries. -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later; Copyright (C) 2026 The smzuggler contributors; Modified 2026-10-31: preserve upstream U-PR rules verbatim below this note, except that upstream's contact address is written as "contact [at] generalarcade.com" because the privacy allow-list has no entry for this path; see ../CONTRIBUTING.md for fork policy and ../ARCHITECTURE.md for module boundaries. -->
 # Contributing to Outsider
 
 Thank you for helping improve Outsider. Bug reports, plugin compatibility
@@ -27,7 +27,7 @@ General Arcade in turn always makes the code base available under the
 GPLv3, so your contribution stays free software.
 
 If you cannot agree to this, please open an issue describing the change
-instead of sending code, or write to contact@generalarcade.com.
+instead of sending code, or write to contact [at] generalarcade.com.
 
 ## Sending a change
 

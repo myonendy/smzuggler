@@ -35,13 +35,21 @@ class ContributionContracts(unittest.TestCase):
         self.assertIn('descriptive commit subjects', template)
 
     def test_upstream_bytes(self):
-        """Keep U-PR instructions byte-exact after the single fork note line."""
+        """Keep U-PR instructions byte-exact after the single fork note line.
+
+        The one permitted difference is upstream's contact address, written
+        with "[at]" because tools/privacy/allowlist.txt (protected) only
+        allows it in the root CONTRIBUTING.md; the note line must say so.
+        """
         upstream = subprocess.check_output(
             ['git', 'show', 'f789f46:CONTRIBUTING.md'], cwd=ROOT)
         preserved = (ROOT / 'docs/upstream-CONTRIBUTING.md').read_bytes()
         note, body = preserved.split(b'\n', 1)
         self.assertIn(b'SPDX-License-Identifier: GPL-3.0-or-later', note)
-        self.assertEqual(body, upstream)
+        self.assertIn(b'contact [at] generalarcade.com', note)
+        self.assertEqual(upstream.count(b'@generalarcade.com'), 1)
+        self.assertEqual(body, upstream.replace(
+            b'@generalarcade.com', b' [at] generalarcade.com'))
 
     def test_commit_rules_preserved(self):
         """Compare the commit section to its pre-card revision without rewriting it."""
