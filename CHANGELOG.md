@@ -8,6 +8,7 @@ Modified 2026-10-31: record Markdown parser corrections.
 Modified 2026-10-31: add the binary-size tool and M0 baseline.
 Modified 2026-10-31: add the perf attribution tool entry.
 Modified 2026-10-31: record the API-members-only surface dump.
+Modified 2026-10-31: record the smaller-shim compatibility inventory.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 <!-- Records project changes for release review; keep entries free of private data. -->
@@ -19,6 +20,7 @@ All notable changes to smzuggler. Outsider's own history is in its git log.
 ## Unreleased
 - Add `tools/perf/binsize.py`, which reports stripped `smzuggler-rt`, shared-library
   and shim sizes and a per-dependency archive breakdown, and record the M0 size baseline.
+- Add the offline compatibility-surface checker and inventory for smaller shims.
 - Add `tools/perf/attribute.py`, which splits `perf script` samples into the §6.1 buckets.
 - Add §12 copyright lines and dated Modified notes to `.gitignore`,
   `tests/CMakeLists.txt` and `tests/integration/test_acceptance.c`; put the
