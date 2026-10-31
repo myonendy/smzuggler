@@ -15,10 +15,19 @@
 /* Keep the observer in a closure so its state cannot pollute the inventory.
  * Snapshot data descriptors as references, allowing replaced members to be
  * attributed to the last shim that installs them. Accessors are never called.
- * The global alias and ancestor checks prevent window/document cycles. */
+ * The global alias and ancestor checks prevent window/document cycles.
+ * Spec §15.4 counts only API members (DEC-M0-T009b): a function's intrinsic
+ * `length`, `name` and `prototype` get no row (the prototype's members still
+ * do), and DOM elements reached from `document` (own string `tagName`) get one
+ * row each without their members, which repeat HTMLElement.prototype. */
 static const char observer[] =
     "globalThis.__smz_surface = (function(){"
     "const root=globalThis, rows=new Map(); let before;"
+    "const intrinsic=['length','name','prototype'];"
+    "/** True for a DOM element under document; reads a descriptor, never a getter. */"
+    "function element(v,path){if(path!=='document'&&!path.startsWith('document.'))return false;"
+    "const t=Object.getOwnPropertyDescriptor(v,'tagName');"
+    "return !!t&&('value' in t)&&typeof t.value==='string';}"
     "/** Snapshot own descriptors without executing browser getters. */"
     "function snapshot(){const out=new Map();"
     "/** Follow namespaces and constructor prototypes; ancestors break cycles. */"
@@ -29,8 +38,10 @@ static const char observer[] =
     "const label=typeof key==='symbol'?'['+String(key)+']':key;"
     "const path=prefix?prefix+'.'+label:label;"
     "const v=d.value, kind=('value' in d)?typeof v:'accessor';"
-    "out.set(path,{kind:kind,value:v,get:d.get,set:d.set});"
-    "if(v && (typeof v==='object'||typeof v==='function') && v!==root && !ancestors.includes(v))"
+    "const skip=typeof obj==='function'&&intrinsic.includes(key);"
+    "if(!skip)out.set(path,{kind:kind,value:v,get:d.get,set:d.set});"
+    "if(v && (typeof v==='object'||typeof v==='function') && v!==root && !ancestors.includes(v)"
+    " && (!skip||key==='prototype') && !element(v,path))"
     "walk(v,path,ancestors.concat([v]));"
     "}}walk(root,'',[root]);return out;}"
     "before=snapshot();"

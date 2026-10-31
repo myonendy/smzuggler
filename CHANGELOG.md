@@ -2,8 +2,10 @@
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
 Modified 2026-10-31: add docs-touched gate release entry.
+Modified 2026-10-31: record contribution guide and PR checklist.
 Modified 2026-10-30: document runtime naming, CI coverage and format checks.
 Modified 2026-10-31: record Markdown parser corrections.
+Modified 2026-10-31: record the API-members-only surface dump.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 <!-- Records project changes for release review; keep entries free of private data. -->
@@ -23,8 +25,13 @@ All notable changes to smzuggler. Outsider's own history is in its git log.
   moved Outsider file keeps upstream's licence lines.
 - Add `tools/doclint/headers.py --base REV` to check spec section 12 licence headers
   and dated `Modified` notes; restore Outsider's header lines in `CMakeLists.txt`.
+- Add smzuggler contribution rules, preserved upstream guidance and a tested PR checklist.
+- Add the upstream offer tracker and isolated, offline branch extraction helper.
+- Document upstream extraction ordering and verify atomic multi-commit replay.
 - Add the architecture guide and checks for source references and directory coverage.
 - Add headless `--dump-surface[=FILE]` shim inventory with sorted source attribution.
+- Limit `--dump-surface` to API members: drop intrinsic function `length`,
+  `name` and `prototype` rows and members of DOM elements under `document`.
 - Ignore indented Markdown examples, check multiline link destinations, and
   decode heading entities while preserving literal code-span text in mdlinks.
 - Add an offline Markdown link and anchor check (`tools/doclint/mdlinks.py`)

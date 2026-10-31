@@ -72,10 +72,13 @@ Python tool tests live in `tests/tools/` (run by `tools/forge/test.sh`). U cards
 upstream's existing test files in upstream's style (`may_edit_tests = true`, additions only)
 so their patches apply upstream unchanged.
 
-## DEC-SETUP-010 — Claude is review-only
-Claude may review code (`agents.review_pool`) and is never a worker, fallback worker,
-planner or auditor. `allow_overage = false`: a Claude run that reaches paid overage is
-stopped. Caps in `forge.toml` are conservative placeholders for the owner to set.
+## DEC-SETUP-010 — Claude works and reviews, never on overage
+Until 2026-10-31 Claude was review-only. From 2026-10-31 (owner) Claude is a worker
+alongside Codex (`workers = ["codex", "claude"]`) and reviews (`review_pool`). Grok is the
+last-resort fallback worker, used only when Codex and Claude are both cooling
+(`fallback_workers = ["codex", "claude", "grok"]`). Planner and auditor stay Codex.
+`allow_overage = false`: a Claude run that reaches paid overage is stopped. Caps in
+`forge.toml` are conservative placeholders for the owner to set.
 
 ## DEC-SETUP-011 — Build gate uses build/; the binary rename edits one upstream assertion
 Upstream's acceptance test (`build_pipeline_structure` in `tests/integration/test_acceptance.c`)
@@ -192,3 +195,50 @@ exemption list hides them and no check was relaxed.
   `prompts/auditor.md`, `prompts/planner.md`, `prompts/reviewer.md`,
   `prompts/worker.md`, `tools/privacy/allowlist.txt`, and 110 task cards under
   `tasks/` (`tasks/*.md` and `tasks/draft/*.md`).
+## DEC-M0-T013 — Upstream extraction uses exact paths and atomic publication
+
+The tracker expands abbreviated §8.1 filenames to their upstream-tree paths and
+includes the existing test files allowed by DEC-SETUP-005. U13's provisional shim
+path is canvas2d_shim.js; revisit the row if root-cause analysis needs another
+file, rather than permitting every shim. Mixed-path commits are rejected whole,
+not filtered: silently discarding part of a fix could produce an invalid offer.
+The helper replays in a detached temporary worktree and publishes the local topic
+branch only after validation and optional offline QuickJS build/ctest succeed.
+## DEC-M0-T009b — What counts as a dump "member"
+Spec §15.4 defines the surface as "every global and prototype member the shims install".
+Intrinsic function properties (`length`, `name`, and `prototype` as a row of its own) are not
+APIs, and the members of instances reached from `document` (`document.body.*` and so on) repeat
+`HTMLElement.prototype`. The dump leaves both out. Nothing a shim installs on a global,
+constructor, prototype or namespace is dropped, `_`-prefixed members included. No test or gate
+gets weaker: the existing dump test is unchanged, a new test pins the exclusions, and the
+compat-surface check stays exact table-vs-dump equality.
+
+## DEC-M0-T010-SPLIT — Seed the compat table in three cards
+Even after DEC-M0-T009b the table has about 2,000 rows, more than one card's 1,500-line SIZE
+cap, so the table is seeded per shim file. M0-T010a adds the checker (with `--shim`) and the
+small shims. M0-T010b adds dom_shim.js. M0-T010 adds pixi_shim.js, and the full check with no
+`--shim` must pass there. M0-T010b and M0-T010 are data-only (`tests_required = false`): the
+checker run in each report is their test, and the `compat_surface` gate takes over after
+M0-T010. `max_diff_lines` is unchanged.
+
+## DEC-SETUP-014 — Upstream contact address in docs/upstream-CONTRIBUTING.md
+`docs/upstream-CONTRIBUTING.md` must be byte-identical to upstream's CONTRIBUTING.md (M0-T012,
+SI-7), and that file contains Outsider's public company address.
+That address is already allow-listed for the inherited CONTRIBUTING.md, LICENSE and README.md.
+The allow-list gets the same exact-match entry for the preserved copy. It is a generic-rule
+override for one public, non-personal address in one file. Deny-list rules are untouched, and
+the scan still flags any other email.
+
+## DEC-M0-T014-SCOPE — Header check: full-tree pass moves to M0-T014b
+M0-T014 blocked after four attempts because "`headers.py --base upstream-main` passes on the
+tree" required header edits to files outside its `owns`, some of them protected (AGENTS.md,
+forge.toml, tasks/**, tools/forge/** and so on) and some upstream tests. M0-T014 now has to be
+clean only for the files it owns, adds or changes, and must list every remaining violation;
+verbatim licence texts are skipped by explicit path. No exemption list is added and no check is
+relaxed: the full-tree pass is still required, by draft card M0-T014b plus a human for the
+protected files, before `headers.py` becomes a gate.
+
+## DEC-SETUP-015 — Cards that add a src/ or tools/ directory own ARCHITECTURE.md
+`tests/tools/test_architecture_refs.py::test_directory_map` requires an ARCHITECTURE.md row for
+every directory under `src/` and `tools/`. Cards that create one (M0-T013, M0-T016, M0-T017,
+M0-T019, M0-T020, M0-T023, M1-T001, M1-T003) own ARCHITECTURE.md, limited to adding that row.
