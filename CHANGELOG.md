@@ -4,6 +4,7 @@ Copyright (C) 2026 The smzuggler contributors
 Modified 2026-10-31: add docs-touched gate release entry.
 Modified 2026-10-30: document runtime naming, CI coverage and format checks.
 Modified 2026-10-31: record Markdown parser corrections.
+Modified 2026-10-31: add the perf attribution tool entry.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
@@ -15,6 +16,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Add `tools/perf/attribute.py`, which splits `perf script` samples into the §6.1 buckets.
 - Add the architecture guide and checks for source references and directory coverage.
 - Add headless `--dump-surface[=FILE]` shim inventory with sorted source attribution.
 - Ignore indented Markdown examples, check multiline link destinations, and

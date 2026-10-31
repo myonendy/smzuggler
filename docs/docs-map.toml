@@ -79,6 +79,10 @@ path = 'tools/format/**'
 docs = ['docs/style.md']
 
 [[areas]]
+path = 'tools/perf/**'
+docs = ['docs/perf.md']
+
+[[areas]]
 path = 'tools/privacy/**'
 docs = ['docs/privacy.md']
 
