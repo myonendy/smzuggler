@@ -22,7 +22,8 @@ smzuggler copyright line or a Modified note (docs/DECISIONS.md DEC-SETUP-005).
 Only the first HEAD_LINES lines are read as the header. All regular files are
 checked, including prose, configuration and extensionless scripts, except these
 formats without comment syntax: JSON/JSONL, PNG/JPEG/GIF/WebP/ICO/BMP, audio/video,
-fonts, PDF, archives and RPG Maker saves (SKIPPED_SUFFIXES). Deleted files and
+fonts, PDF, archives and RPG Maker saves (SKIPPED_SUFFIXES). A renamed file is
+checked as a change against its source path's base header. Deleted files and
 symlinks are ignored. Checked files must decode as UTF-8; invalid bytes are errors.
 Exit status: 0 clean, 1 header violations, 2 usage or git errors.
 """
@@ -56,22 +57,32 @@ def git(root, *args):
 
 
 def changed_files(root, base):
-    """Return (added, modified) repo-relative paths from BASE to the working tree.
+    """Return sorted (path, base_path) pairs for files changed from BASE.
 
-    Renames count as delete plus add, so a moved upstream file must be re-headed
-    as new only if its content is new; untracked, non-ignored files count as added.
+    BASE_PATH is None for an added file. A rename git detects (default 50%
+    similarity) keeps its source path, so a moved Outsider file is checked against
+    its own base header and keeps upstream's lines (spec section 12) instead of
+    being re-headed as new. Untracked, non-ignored files count as added because
+    git cannot pair them with a deleted source.
     """
-    out = git(root, 'diff', '--name-status', '--no-renames', '-z', base, '--')
+    out = git(root, 'diff', '--name-status', '--find-renames', '-z', base, '--')
     fields = out.decode().split('\0')
-    added, modified = set(), set()
-    for status, path in zip(fields[0::2], fields[1::2]):
+    pairs = {}
+    i = 0
+    while i + 1 < len(fields):
+        status = fields[i]
+        if status.startswith('R'):
+            pairs[fields[i + 2]] = fields[i + 1]
+            i += 3
+            continue
         if status.startswith('A'):
-            added.add(path)
+            pairs[fields[i + 1]] = None
         elif status.startswith(('M', 'T')):
-            modified.add(path)
+            pairs[fields[i + 1]] = fields[i + 1]
+        i += 2
     others = git(root, 'ls-files', '--others', '--exclude-standard', '-z')
-    added.update(p for p in others.decode().split('\0') if p)
-    return sorted(added), sorted(modified)
+    pairs.update((p, None) for p in others.decode().split('\0') if p)
+    return sorted(pairs.items())
 
 
 def is_checked(path):
@@ -156,8 +167,12 @@ def check_upstream_mode(base_lines, lines):
     return problems
 
 
-def check_file(root, base, path, is_new, upstream):
-    """Return the header problems of one changed PATH; skipped types give []."""
+def check_file(root, base, path, base_path, upstream):
+    """Return the header problems of one changed PATH; skipped types give [].
+
+    BASE_PATH names the file at BASE (differs from PATH after a rename), or is
+    None when the file is new.
+    """
     target = root / path
     if not is_checked(path) or target.is_symlink() or not target.is_file():
         return []
@@ -167,8 +182,10 @@ def check_file(root, base, path, is_new, upstream):
         return ['invalid UTF-8 in checked file; cannot validate licensing header']
     lines = header(text)
     base_lines = None
-    if not is_new:
-        base_text = git(root, 'show', f'{base}:{path}').decode('utf-8', 'replace')
+    if base_path is not None:
+        # The base is trusted history, so stray bytes there are tolerated; only
+        # the new content is gated, which is why it alone is decoded strictly.
+        base_text = git(root, 'show', f'{base}:{base_path}').decode('utf-8', 'replace')
         base_lines = header(base_text)
     if upstream:
         return check_upstream_mode(base_lines, lines)
@@ -179,10 +196,9 @@ def check_file(root, base, path, is_new, upstream):
 
 def run(root, base, upstream):
     """Check every changed file and print one line per problem; return the count."""
-    added, modified = changed_files(root, base)
     count = 0
-    for path, is_new in [(p, True) for p in added] + [(p, False) for p in modified]:
-        for problem in check_file(root, base, path, is_new, upstream):
+    for path, base_path in changed_files(root, base):
+        for problem in check_file(root, base, path, base_path, upstream):
             print(f'{path}: {problem}')
             count += 1
     return count

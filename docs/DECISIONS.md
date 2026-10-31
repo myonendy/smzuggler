@@ -163,9 +163,19 @@ A changed file whose base header names only smzuggler follows the new-file rule.
 Changed upstream files retain their copyright and SPDX lines and require an
 additional dated modification note. Header lines may move within the first 40
 lines; comment delimiters do not form part of the licensing text.
+A rename that git detects (`--find-renames`, default 50% similarity) is checked
+as a change against the source path's base header, so a moved Outsider file
+keeps upstream's copyright and SPDX lines and adds ours and a dated note.
+Untracked files cannot be paired with a source and count as added.
 
 The complete comparison against `upstream-main` exposes missing headers in
 protected infrastructure, task cards, specification documents, and existing tests.
 These paths cannot receive header-only fixes within this card's ownership rules.
+Outside `owns` and editable only with `may_edit_tests` or a wider scope:
+`.gitignore`, `CONTRIBUTING.md`, `tests/CMakeLists.txt`,
+`tests/integration/test_acceptance.c`. Protected and editable only by a human:
+`.gitattributes`, `AGENTS.md`, `CLAUDE.md`, `forge.toml`, `LICENSES/**`,
+`.claude/**`, `.codex/**`, `prompts/**`, `docs/spec/**`, `tasks/**`,
+`tools/commitmsg/**`, `tools/forge/**`, `tools/privacy/**`.
 The orchestrator must resolve that scope conflict before the full-tree acceptance
 criterion can pass. No path exemptions hide these violations.

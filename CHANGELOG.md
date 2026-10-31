@@ -15,6 +15,8 @@ All notable changes to smzuggler. Outsider's own history is in its git log.
 ## Unreleased
 - Require licensing headers on prose and configuration and reject invalid UTF-8
   in checked files instead of silently treating source files as binary.
+- Check renamed upstream files in `headers.py` against their source header so a
+  moved Outsider file keeps upstream's licence lines.
 - Add `tools/doclint/headers.py --base REV` to check spec section 12 licence headers
   and dated `Modified` notes; restore Outsider's header lines in `CMakeLists.txt`.
 - Add the architecture guide and checks for source references and directory coverage.

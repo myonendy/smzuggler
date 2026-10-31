@@ -104,6 +104,19 @@ class HeadersTests(unittest.TestCase):
         self.assertIn(f'src/up.c: missing "{SMZ_LINE}"', result.stdout)
         self.assertIn('src/up.c: needs a new "Modified', result.stdout)
 
+    def test_moved_upstream_file_keeps_upstream_header(self):
+        """Accept a moved upstream file that keeps its lines and adds ours and a note."""
+        (self.root / 'src/up.c').unlink()
+        self.write('src/moved.c', UPSTREAM.replace(' */\n', f' * {SMZ_LINE}\n{MARK} */\n')
+                   + 'int up;\n')
+        self.git('add', '-A')
+        self.assert_passes()
+
+    def test_moved_upstream_file_without_mark_fails(self):
+        """Reject a moved upstream file that lacks our line and a dated note."""
+        self.git('mv', 'src/up.c', 'src/moved.c')
+        self.assert_fails('src/moved.c', 'needs a new "Modified')
+
     def test_undated_mark_is_not_a_mark(self):
         """Reject a Modified note whose date is missing or impossible."""
         bad = ' * Modified 2026-13-45: fix the frame pacing.\n * Modified: no date\n'
