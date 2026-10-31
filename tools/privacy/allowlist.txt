@@ -6,6 +6,8 @@
 # Upstream Outsider public contact and author addresses (inherited files).
 email	AUTHORS	drtermit@gmail\.com
 email	CONTRIBUTING.md	contact@generalarcade\.com
+# Byte-identical copy of upstream's CONTRIBUTING.md kept for U-PRs (M0-T012, DEC-SETUP-014).
+email	docs/upstream-CONTRIBUTING.md	contact@generalarcade\.com
 email	LICENSE	contact@generalarcade\.com
 email	LICENSES/COMMERCIAL.md	contact@generalarcade\.com
 email	README.md	contact@generalarcade\.com
