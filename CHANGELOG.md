@@ -18,6 +18,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Include head, body and html in document tag lookups, including wildcard matches (U1).
 - Add `tools/perf/binsize.py`, which reports stripped `smzuggler-rt`, shared-library
   and shim sizes and a per-dependency archive breakdown, and record the M0 size baseline.
 - Add the offline compatibility-surface checker and inventory for smaller shims.

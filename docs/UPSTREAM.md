@@ -16,7 +16,7 @@ no new test infrastructure or unrelated paths may enter an offer.
 
 | PR | Change | Files (exact extraction allowlist) | Depends | Status | Branch | Upstream link | Notes (merge / carried commits) |
 |---|---|---|---|---|---|---|---|
-| U1 | Document tag lookup includes head/body/html (§5.1) | `src/shims/dom_shim.js`, `tests/test_dom_shim.c` | — | planned | up/U1-document-tags | — | <50 lines; shim unit test |
+| U1 | Document tag lookup includes head/body/html (§5.1) | `src/shims/dom_shim.js`, `tests/test_dom_shim.c` | — | ready to cut | up/U1-document-tags | — | Singleton identity, case-insensitive tags and wildcard covered by QuickJS shim tests |
 | U2 | Element subtree tag/id/class selectors (§5.1, §5.7) | `src/shims/dom_shim.js`, `tests/test_dom_shim.c` | — | planned | up/U2-element-selectors | — | 100–200 lines; shim unit test |
 | U3 | Window EventEmitter and window methods (§5.2) | `src/shims/storage_shim.js`, `tests/test_storage.c` | — | planned | up/U3-window-events | — | 100–150 lines; shim unit test |
 | U4 | SDL close event and forced quit (§5.2) | `src/platform/platform_sdl3.c`, `src/engine/game_loop.c`, `src/shims/storage_shim.js`, `tests/test_game_loop.c`, `tests/test_storage.c` | U3 | planned | up/U4-close-delivery | — | 50–120 lines; C and control-mode tests |

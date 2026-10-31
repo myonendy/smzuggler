@@ -821,6 +821,53 @@ static void test_document(void)
     destroy_test_ctx(tc);
 }
 
+/* Tests: document tag lookup preserves singleton identity and registry matches. */
+static void test_document_tags(void)
+{
+    TestCtx *tc = create_test_ctx();
+    if (!tc) { TEST(dom_setup); FAIL("engine setup"); return; }
+
+    const char *tags[] = { "head", "HEAD", "body", "BODY", "html", "HTML" };
+    const char *properties[] = { "head", "head", "body", "body",
+                                 "documentElement", "documentElement" };
+    for (int i = 0; i < 6; i++) {
+        char script[256];
+        TEST(document_tag_singleton);
+        snprintf(script, sizeof(script),
+            "var matches = document.getElementsByTagName('%s');"
+            "String(matches.length === 1 && matches[0] === document.%s)",
+            tags[i], properties[i]);
+        char *r = js_engine_eval_string(tc->engine, script, "test");
+        if (r && strcmp(r, "true") == 0) { PASS(); } else { FAIL(r ? r : "NULL"); }
+        js_engine_free_string(r);
+    }
+
+    TEST(document_tag_other_matches);
+    char *r = js_engine_eval_string(tc->engine,
+        "var first = document.createElement('span');\n"
+        "var second = document.createElement('span');\n"
+        "var spans = document.getElementsByTagName('SPAN');\n"
+        "String(spans.length === 2 && spans[0] === first && spans[1] === second && "
+        "document.getElementsByTagName('span').length === 2 && "
+        "document.getElementsByTagName('unknown-tag').length === 0 && "
+        "document.getElementsByTagName('canvas')[0] === document.getElementById('refresher'))",
+        "test");
+    if (r && strcmp(r, "true") == 0) { PASS(); } else { FAIL(r ? r : "NULL"); }
+    js_engine_free_string(r);
+
+    TEST(document_tag_wildcard);
+    r = js_engine_eval_string(tc->engine,
+        "var all = document.getElementsByTagName('*');\n"
+        "String(all.length === 6 && all.indexOf(document.head) >= 0 && "
+        "all.indexOf(document.body) >= 0 && all.indexOf(document.documentElement) >= 0 && "
+        "all.indexOf(first) >= 0 && all.indexOf(second) >= 0 && "
+        "all.indexOf(document.getElementById('refresher')) >= 0)", "test");
+    if (r && strcmp(r, "true") == 0) { PASS(); } else { FAIL(r ? r : "NULL"); }
+    js_engine_free_string(r);
+
+    destroy_test_ctx(tc);
+}
+
 /* Tests: navigator object */
 
 static void test_navigator(void)
@@ -1166,6 +1213,7 @@ int main(void)
     printf("\n-- document --\n");
     test_inserted_scripts();
     test_document();
+    test_document_tags();
 
     printf("\n-- navigator --\n");
     test_navigator();
