@@ -26,7 +26,7 @@ EXTENSIONS = {'.c', '.cc', '.cpp', '.h', '.js'}
 LEXEMES = re.compile(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"|'
                      r"'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`", re.S)
 C_SIGNATURE = re.compile(
-    r'^[ \t]*(?:(?:[\w:]+|\*|&)[ \t\n]+)+'
+    r'(?:^|(?<=[;}]))[ \t]*(?:(?:[\w:]+|\*|&)[ \t\n]+)+'
     r'[*& \t]*([\w:~]+)[ \t]*\(', re.M)
 JS_SIGNATURE = re.compile(r'\bfunction\s*\*?\s*[\w$]*\s*\(')
 JS_METHOD = re.compile(r'^[ \t]*(?:(?:async|static|get|set)\s+)*'
@@ -85,8 +85,9 @@ def functions(source, suffix):
             if finish is not None and brace not in seen:
                 seen.add(brace)
                 # Include the assignment preceding a JS function expression.
-                line_start = source.rfind('\n', 0, start) + 1
-                yield line_start, finish + 1
+                declaration_start = (source.rfind('\n', 0, start) + 1
+                                     if suffix == '.js' else start)
+                yield declaration_start, finish + 1
 
 
 def documented(source, start):

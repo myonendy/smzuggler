@@ -7,8 +7,8 @@ This tool supports spec section 15.1 without adding compiler dependencies.
 
 # Documentation lint baseline
 
-On 2026-10-30, `python3 tools/doclint/doclint.py --all` scanned `src/` in
-1.622 seconds and reported **1,586 findings**: 72 `header.purpose` and 1,514
+On 2026-10-31, `python3 tools/doclint/doclint.py --all` scanned `src/` in
+0.867 seconds and reported **1,586 findings**: 72 `header.purpose` and 1,514
 `function.doc`. Exit status 1 is expected for this legacy baseline. Milestone D
 will reduce this debt; this count is a record, not an exemption or threshold.
 
@@ -33,6 +33,8 @@ It recognizes ordinary C/C++ definitions, non-static header prototypes, JS
 function declarations and expressions (including prototype assignments), and
 common class/object methods and block-bodied arrows. Plain block and line
 comments qualify, but a licensing block alone does not document a function.
+Separate C/C++ definitions on the same line each require their own comment;
+documentation preceding the first definition does not cover later definitions.
 Headers need license metadata and a separate nonempty prose line. Human review
 must assess the paragraph's meaning and the function's contract; this tool
 cannot establish that text explains ownership, threading or API deviations.
