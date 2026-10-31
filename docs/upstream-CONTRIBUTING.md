@@ -1,8 +1,4 @@
-<!--
-SPDX-License-Identifier: GPL-3.0-or-later
-Copyright (C) 2026 The smzuggler contributors
-Modified 2026-10-31: preserve upstream U-PR rules byte for byte below this note; see ../CONTRIBUTING.md for fork policy and ../ARCHITECTURE.md for module boundaries.
--->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later; Copyright (C) 2026 The smzuggler contributors; Modified 2026-10-31: preserve upstream U-PR rules byte for byte below this note; see ../CONTRIBUTING.md for fork policy and ../ARCHITECTURE.md for module boundaries. -->
 # Contributing to Outsider
 
 Thank you for helping improve Outsider. Bug reports, plugin compatibility

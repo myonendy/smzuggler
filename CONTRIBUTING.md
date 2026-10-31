@@ -1,7 +1,6 @@
 <!--
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
-Modified 2026-10-31: confirm section 12 notices for changed upstream files.
 Modified 2026-10-31: replace upstream contribution policy for smzuggler.
 Contributor workflow for the runtime described in ARCHITECTURE.md; keep fork
 licensing, privacy and upstream assignment rules distinct.
