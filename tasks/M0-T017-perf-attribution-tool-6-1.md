@@ -4,7 +4,7 @@ title = "perf attribution tool (§6.1)"
 milestone = 0
 deps = []
 agent = "any"
-owns = ["tools/perf/**", "tests/tools/test_attribute.py", "tests/tools/fixtures/perf/**"]
+owns = ["tools/perf/**", "tests/tools/test_attribute.py", "tests/tools/fixtures/perf/**", "ARCHITECTURE.md"]
 docs = ["docs/perf.md", "CHANGELOG.md"]
 tests_required = true
 may_edit_tests = false
@@ -13,6 +13,7 @@ may_edit_tests = false
 Add `tools/perf/attribute.py`: reads `perf script` output (with call graphs) and attributes each sample to the §6.1 buckets (QuickJS interpreter, GC, shim JS, game JS, Canvas2D, renderer/GPU submit, audio, video, libc/other) by DSO and symbol rules kept in `tools/perf/buckets.toml`. Writes JSON and a Markdown table with self and total percentages. Strips paths to basenames.
 
 ## Acceptance criteria
+- [ ] `ARCHITECTURE.md` has a directory-map row for `tools/perf/` if it does not have one yet (M0-T019 adds it too; required by `tests/tools/test_architecture_refs.py`); no other ARCHITECTURE.md change.
 - [ ] `tests/tools/test_attribute.py` feeds synthetic `perf script` text (in `tests/tools/fixtures/perf/`, hand-written, no real profile) and asserts exact bucket totals, the handling of `[unknown]` frames and kernel samples, and that no absolute path appears in the output.
 - [ ] `docs/perf.md` explains how to record (`perf record -g --call-graph dwarf`), how to attribute, and the bucket rules.
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment.

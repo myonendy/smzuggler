@@ -4,7 +4,7 @@ title = "Measure binary size"
 milestone = 0
 deps = []
 agent = "any"
-owns = ["tools/perf/binsize.py", "tests/tools/test_binsize.py", "docs/perf/binary-size.md"]
+owns = ["tools/perf/binsize.py", "tests/tools/test_binsize.py", "docs/perf/binary-size.md", "ARCHITECTURE.md"]
 docs = ["docs/perf.md", "CHANGELOG.md"]
 tests_required = true
 may_edit_tests = false
@@ -13,6 +13,7 @@ may_edit_tests = false
 Add `tools/perf/binsize.py BUILD_DIR`: reports the stripped size of `smzuggler-rt`, its shared libraries and the installed shims, and a per-dependency breakdown from the static archives (QuickJS, SDL3, SoLoud, Effekseer, shader tools). Write the result to `docs/perf/binary-size.md` as the M0 baseline.
 
 ## Acceptance criteria
+- [ ] `ARCHITECTURE.md` has a directory-map row for `tools/perf/` if it does not have one yet (M0-T017 adds it too; required by `tests/tools/test_architecture_refs.py`); no other ARCHITECTURE.md change.
 - [ ] `tests/tools/test_binsize.py` runs the tool on a tiny fake build dir (generated object files) and asserts the totals.
 - [ ] `docs/perf/binary-size.md` lists the release-build numbers with the build flags used.
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment.
