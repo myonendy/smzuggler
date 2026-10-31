@@ -1,3 +1,9 @@
+<!--
+SPDX-License-Identifier: GPL-3.0-or-later
+Copyright (C) 2026 The smzuggler contributors
+Contributor reference; follow the architecture and policy in ARCHITECTURE.md.
+-->
+
 # Working with AgentForge
 
 smzuggler's work is split into small cards that AgentForge runs (`forge.toml` at the root).

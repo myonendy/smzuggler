@@ -3,6 +3,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
 Modified 2026-10-30: document runtime naming and link testing instructions.
 Modified 2026-10-31: document the Markdown link check.
+Modified 2026-10-31: link the licence notes and the header check.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 
@@ -512,6 +513,10 @@ smzuggler is based on Outsider by [General Arcade](https://generalarcade.com);
 see [AUTHORS](AUTHORS) for upstream credits. Upstream copyright and license
 headers are retained. smzuggler modifications are GPL-3.0-or-later; General
 Arcade's commercial licensing option does not cover these modifications.
-See [LICENSE](LICENSE).
+See [LICENSE](LICENSE), and [LICENSES/README.md](LICENSES/README.md) for how the
+licences combine in the files smzuggler distributes. `tools/doclint/headers.py --base
+REV` checks that every file changed since `REV` carries the right header: new files
+are GPL-3.0-or-later with the smzuggler copyright line, and changed upstream files
+keep their original lines and add ours with a dated `Modified` note.
 
 Contributions are welcome under the terms in [CONTRIBUTING.md](CONTRIBUTING.md).

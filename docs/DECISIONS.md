@@ -72,10 +72,13 @@ Python tool tests live in `tests/tools/` (run by `tools/forge/test.sh`). U cards
 upstream's existing test files in upstream's style (`may_edit_tests = true`, additions only)
 so their patches apply upstream unchanged.
 
-## DEC-SETUP-010 — Claude is review-only
-Claude may review code (`agents.review_pool`) and is never a worker, fallback worker,
-planner or auditor. `allow_overage = false`: a Claude run that reaches paid overage is
-stopped. Caps in `forge.toml` are conservative placeholders for the owner to set.
+## DEC-SETUP-010 — Claude works and reviews, never on overage
+Until 2026-10-31 Claude was review-only. From 2026-10-31 (owner) Claude is a worker
+alongside Codex (`workers = ["codex", "claude"]`) and reviews (`review_pool`). Grok is the
+last-resort fallback worker, used only when Codex and Claude are both cooling
+(`fallback_workers = ["codex", "claude", "grok"]`). Planner and auditor stay Codex.
+`allow_overage = false`: a Claude run that reaches paid overage is stopped. Caps in
+`forge.toml` are conservative placeholders for the owner to set.
 
 ## DEC-SETUP-011 — Build gate uses build/; the binary rename edits one upstream assertion
 Upstream's acceptance test (`build_pipeline_structure` in `tests/integration/test_acceptance.c`)
@@ -152,6 +155,46 @@ lines expand under clang-format. These existing tests are outside this card’s
 ownership and cannot be edited here. Keep diagnostics visible rather than
 excluding tests or changing the measured upstream style to hide the failures.
 
+## DEC-M0-T014 — Header gate scope and what counts as a modification
+
+`tools/doclint/headers.py` checks all regular changed files, including Markdown,
+TOML, YAML, and extensionless configuration. Only explicit formats without comment
+syntax are skipped; its module docstring and `SKIPPED_SUFFIXES` list them. Checked
+files must be UTF-8: decoding failures produce a licensing error rather than a
+binary-file exemption. Symlinks and deletions are ignored.
+A changed file whose base header names only smzuggler follows the new-file rule.
+Changed upstream files retain their copyright and SPDX lines and require an
+additional dated modification note. Header lines may move within the first 40
+lines; comment delimiters do not form part of the licensing text.
+A rename that git detects (`--find-renames`, default 50% similarity) is checked
+as a change against the source path's base header, so a moved Outsider file
+keeps upstream's copyright and SPDX lines and adds ours and a dated note.
+Untracked files cannot be paired with a source and count as added.
+In `--upstream` mode, added files must carry exactly the canonical General Arcade
+copyright and complete dual-license SPDX expression, in upstream order. An
+unrelated holder or substituted licence expression fails even if both kinds of
+line are present; existing offers retain their base header unchanged.
+
+Verbatim licence texts (`LICENSE`, `LICENSES/*.txt`) are skipped by explicit
+path, because a licence text must be distributed unaltered; project-written prose
+such as `LICENSES/README.md` is still checked.
+
+Following DEC-M0-T014-SCOPE, the full-tree run (`headers.py --base upstream-main`,
+2026-10-31) is clean for every file this card owns, adds or changes, and reports
+262 problems in 131 files outside `owns`, left for draft card M0-T014b. No
+exemption list hides them and no check was relaxed.
+- Outside `owns`, fixable by M0-T014b: `.gitignore`, `CONTRIBUTING.md`,
+  `tests/CMakeLists.txt`, `tests/integration/test_acceptance.c` (each changed
+  upstream file lacks our copyright line and a dated Modified note).
+- Protected, for a human (no SPDX or smzuggler copyright line unless noted):
+  `.gitattributes` (upstream file: our line and Modified note missing),
+  `AGENTS.md`, `CLAUDE.md`, `forge.toml`, `LICENSES/README.md`,
+  `.claude/agents/investigator.md`, `.claude/hooks/guard.sh`,
+  `.codex/config.toml`, `docs/spec/CHANGES.md`, `docs/spec/README.md`,
+  `docs/spec/SPEC.md`, `docs/spec/V8_MZ_HOST_SPEC_v0.2.md`,
+  `prompts/auditor.md`, `prompts/planner.md`, `prompts/reviewer.md`,
+  `prompts/worker.md`, `tools/privacy/allowlist.txt`, and 110 task cards under
+  `tasks/` (`tasks/*.md` and `tasks/draft/*.md`).
 ## DEC-M0-T013 — Upstream extraction uses exact paths and atomic publication
 
 The tracker expands abbreviated §8.1 filenames to their upstream-tree paths and

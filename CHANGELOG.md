@@ -9,8 +9,6 @@ Modified 2026-10-31: record the API-members-only surface dump.
 Modified 2026-10-31: record the smaller-shim compatibility inventory.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
-<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-<!-- Copyright (C) 2026 The smzuggler contributors -->
 <!-- Records project changes for release review; keep entries free of private data. -->
 
 # Changelog
@@ -19,6 +17,16 @@ All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
 - Add the offline compatibility-surface checker and inventory for smaller shims.
+- Skip verbatim licence texts (`LICENSE`, `LICENSES/*.txt`) by path in `headers.py`
+  and list the remaining out-of-scope header violations for M0-T014b.
+- Require the canonical General Arcade copyright and complete SPDX expression on
+  added upstream-offer files; reject unrelated holders and substituted licences.
+- Require licensing headers on prose and configuration and reject invalid UTF-8
+  in checked files instead of silently treating source files as binary.
+- Check renamed upstream files in `headers.py` against their source header so a
+  moved Outsider file keeps upstream's licence lines.
+- Add `tools/doclint/headers.py --base REV` to check spec section 12 licence headers
+  and dated `Modified` notes; restore Outsider's header lines in `CMakeLists.txt`.
 - Add smzuggler contribution rules, preserved upstream guidance and a tested PR checklist.
 - Add the upstream offer tracker and isolated, offline branch extraction helper.
 - Document upstream extraction ordering and verify atomic multi-commit replay.
