@@ -1,5 +1,7 @@
 /*
  * Copyright (c) 2026 General Arcade (Pte. Ltd.)
+ * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-10-31: record smzuggler acceptance-test changes.
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
  */
 

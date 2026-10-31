@@ -1,3 +1,5 @@
+# Copyright (C) 2026 The smzuggler contributors
+# Modified 2026-10-31: record smzuggler changes under spec section 12.
 if(RMMZ_RENDER_BACKEND STREQUAL "gpu")
     set(RMMZ_TEST_PLATFORM_RENDER_SOURCES
         ${CMAKE_SOURCE_DIR}/src/rendering/gpu_backend.c
