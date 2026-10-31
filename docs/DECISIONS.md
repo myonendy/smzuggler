@@ -278,3 +278,12 @@ directory under `$XDG_STATE_HOME/smzuggler-rt/runs/` (or `~/.local/state/...`
 when that variable is unset) as the last run. `scan.py` skips NUL binaries;
 the packager still searches them for deny-list terms and refuses to write the
 zip on a hit, printing only the file and `chunk`, never the matched text.
+
+## DEC-M0-T010b-HEADER — compat_check.py skips only the exact header row
+M0-T010b blocked after four attempts. `table_rows()` skipped every row whose first cell is
+`name`, so the real `name` member (`window.name`) in dom_shim.js could never be matched, and
+the card's `owns = []` made the policy gate reject the checker fix. M0-T010b now owns
+`compat_check.py` and `tests/tools/test_compat_check.py`, may change only that header test to
+skip the exact header and separator rows, and must add a new test proving `name` is matched,
+with existing tests unedited (`tests_required = true`). No gate is relaxed and
+`max_diff_lines` is unchanged.
