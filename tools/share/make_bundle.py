@@ -32,7 +32,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tools' / 'privacy'))
-import scan  # noqa: E402
+import scan
 
 SAVE_SUFFIXES = ('.rmmzsave', '.rpgsave')
 ASSET_SUFFIXES = ('.ogg', '.m4a', '.webm', '.mp4', '.rpgmvp', '.png_')
@@ -312,8 +312,7 @@ def last_run_dir() -> Path:
     return max(dirs, key=lambda item: item.stat().st_mtime)
 
 
-def consider(path: Path, run_root: Path, game_root: Path | None,
-             include_shots: bool) -> tuple[str, str]:
+def consider(path: Path, run_root: Path, game_root: Path | None, include_shots: bool) -> tuple[str, str]:
     """Decide include/exclude/skip for one filesystem entry under a run.
 
     Exclusions are listed by run-relative name only. Symlinks are never
@@ -333,8 +332,7 @@ def consider(path: Path, run_root: Path, game_root: Path | None,
     return 'skip', rel
 
 
-def collect_run(run_dir: Path, game_root: Path | None,
-                include_shots: bool) -> tuple[list[tuple[str, Path]], list[str]]:
+def collect_run(run_dir: Path, game_root: Path | None, include_shots: bool) -> tuple[list[tuple[str, Path]], list[str]]:
     """Walk one run directory without following links; return (files, exclusions).
 
     Directory symlinks are recorded as exclusions and pruned so os.walk
@@ -363,8 +361,7 @@ def collect_run(run_dir: Path, game_root: Path | None,
     return included, excluded
 
 
-def prepare_bytes(path: Path, home: str, names: list[str],
-                  patterns: list[re.Pattern]) -> bytes:
+def prepare_bytes(path: Path, home: str, names: list[str], patterns: list[re.Pattern]) -> bytes:
     """Read one file, strip image metadata or scrub text, leave binaries intact.
 
     Images are rewritten only by dropping metadata chunks/segments. Text is
@@ -463,8 +460,7 @@ def build_readme(staged: list[tuple[str, bytes]], excluded: list[str]) -> str:
     return '\n'.join(lines) + '\n'
 
 
-def scan_staged(stage: Path, names: list[str], denylist: str | None,
-                patterns: list[re.Pattern]) -> int:
+def scan_staged(stage: Path, names: list[str], denylist: str | None, patterns: list[re.Pattern]) -> int:
     """Fail closed if a staged file still matches the deny-list or scan.py.
 
     scan.py skips NUL binaries, so this also searches latin-1 text of every
@@ -546,9 +542,7 @@ def run_dirs_from_args(args: argparse.Namespace) -> list[Path]:
     return resolved
 
 
-def stage_runs(runs: list[Path], game_root: Path | None, include_shots: bool,
-               home: str, names: list[str],
-               patterns: list[re.Pattern]) -> tuple[list[tuple[str, bytes]], list[str]]:
+def stage_runs(runs: list[Path], game_root: Path | None, include_shots: bool, home: str, names: list[str], patterns: list[re.Pattern]) -> tuple[list[tuple[str, bytes]], list[str]]:
     """Scrub every collected file from each run into (`zip-name`, bytes) pairs."""
     staged: list[tuple[str, bytes]] = []
     excluded: list[str] = []
