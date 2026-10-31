@@ -152,6 +152,15 @@ lines expand under clang-format. These existing tests are outside this card’s
 ownership and cannot be edited here. Keep diagnostics visible rather than
 excluding tests or changing the measured upstream style to hide the failures.
 
+## DEC-M0-T013 — Upstream extraction uses exact paths and atomic publication
+
+The tracker expands abbreviated §8.1 filenames to their upstream-tree paths and
+includes the existing test files allowed by DEC-SETUP-005. U13's provisional shim
+path is canvas2d_shim.js; revisit the row if root-cause analysis needs another
+file, rather than permitting every shim. Mixed-path commits are rejected whole,
+not filtered: silently discarding part of a fix could produce an invalid offer.
+The helper replays in a detached temporary worktree and publishes the local topic
+branch only after validation and optional offline QuickJS build/ctest succeed.
 ## DEC-M0-T009b — What counts as a dump "member"
 Spec §15.4 defines the surface as "every global and prototype member the shims install".
 Intrinsic function properties (`length`, `name`, and `prototype` as a row of its own) are not

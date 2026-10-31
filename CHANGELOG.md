@@ -2,6 +2,7 @@
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
 Modified 2026-10-31: add docs-touched gate release entry.
+Modified 2026-10-31: record contribution guide and PR checklist.
 Modified 2026-10-30: document runtime naming, CI coverage and format checks.
 Modified 2026-10-31: record Markdown parser corrections.
 Modified 2026-10-31: record the API-members-only surface dump.
@@ -16,6 +17,9 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Add smzuggler contribution rules, preserved upstream guidance and a tested PR checklist.
+- Add the upstream offer tracker and isolated, offline branch extraction helper.
+- Document upstream extraction ordering and verify atomic multi-commit replay.
 - Add the architecture guide and checks for source references and directory coverage.
 - Add headless `--dump-surface[=FILE]` shim inventory with sorted source attribution.
 - Limit `--dump-surface` to API members: drop intrinsic function `length`,

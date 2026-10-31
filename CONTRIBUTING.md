@@ -1,46 +1,104 @@
-# Contributing to Outsider
+<!--
+SPDX-License-Identifier: GPL-3.0-or-later
+Copyright (C) 2026 The smzuggler contributors
+Modified 2026-10-31: replace upstream contribution policy for smzuggler.
+Contributor workflow for the runtime described in ARCHITECTURE.md; keep fork
+licensing, privacy and upstream assignment rules distinct.
+-->
 
-Thank you for helping improve Outsider. Bug reports, plugin compatibility
-findings and patches are all welcome.
+# Contributing to smzuggler
 
-## Copyright assignment
+smzuggler contributions are GPL-3.0-or-later. There is no CLA and no copyright
+assignment for contributions to this fork. Preserve inherited copyright and
+SPDX lines; add `Copyright (C) 2026 The smzuggler contributors` and a dated
+modified note to inherited files you change. New files use
+`SPDX-License-Identifier: GPL-3.0-or-later` and the project copyright line.
+Do not add upstream's commercial license option to new fork files.
 
-Outsider is dual-licensed: under the GPLv3 (or any later version) for
-everyone, and under a commercial license that General Arcade (Pte. Ltd.)
-grants to projects that cannot use the GPL. Offering that second option is
-only possible while General Arcade holds the copyright to the whole code
-base.
+Read [ARCHITECTURE.md](ARCHITECTURE.md) and [style](docs/style.md) before
+changing a subsystem. Keep changes focused, add failing tests first, implement
+the fix, and update documentation in the same change. Explain why each public
+type and function exists, including ownership, threading and error contracts.
 
-For that reason, **by submitting a contribution (a pull request, patch, or
-code sent in any other form) you assign the copyright in that contribution
-to General Arcade (Pte. Ltd.)**, and you confirm that:
+## Identity and privacy setup
 
-- the contribution is your own original work, or you have the right to
-  assign it;
-- it does not include code under a license that would conflict with either
-  the GPLv3 or General Arcade's commercial license;
-- you understand that General Arcade may distribute it under the GPLv3,
-  under its commercial license, or both.
+Use the project identity for both author and committer, including upstream PRs.
+Set it per repository, never globally; remove any environment overrides that
+would substitute a personal author or committer:
 
-General Arcade in turn always makes the code base available under the
-GPLv3, so your contribution stays free software.
+```sh
+git config --local user.name myonendy
+git config --local user.email 350390780+myonendy@users.noreply.github.com
+tools/privacy/install-hooks.sh
+```
 
-If you cannot agree to this, please open an issue describing the change
-instead of sending code, or write to contact@generalarcade.com.
+Before committing, maintain a nonempty private deny-list at
+`~/.config/smzuggler-rt/privacy-denylist.txt`, outside the repository. Each line
+is a case-insensitive literal or `re:` regex. Never publish its contents.
+The installer adds pre-commit and commit-msg hooks and refuses to overwrite
+unrelated hooks. Hooks refuse commits without the deny-list. CI's `privacy-scan`
+checks the full tree, PR commits (messages, author and committer), and reports.
+Deny-list hits cannot be overridden; diagnostics identify locations without
+printing matched text.
 
-## Sending a change
+Keep personal names, emails, usernames, hostnames and absolute home paths out
+of code, docs, commits, PR text, logs and fixtures. Use roles, `~`, `dev-laptop`,
+and `example.invalid` instead. Never log the environment. Keep game scripts,
+assets, saves and screenshots out of the repository, and never copy proprietary
+wrapper code. Tests use external installations through `SMZUGGLER_GAME_DIR` or
+`RMMZ_TEST_GAME_DIR`; save fixtures belong only in
+`$XDG_DATA_HOME/smzuggler-rt/fixtures/`.
 
-- Open an issue first for anything larger than a small fix, so the approach
-  can be agreed before you spend time on it.
-- Keep the existing style: C17 and C++ for the native side, ES5-compatible
-  JavaScript in the shims (QuickJS runs them without a JIT, so keep hot
-  paths simple), Python 3.8+ in `tools/`.
-- Every new source file starts with the copyright line and the SPDX
-  expression `GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial`.
-- Add or update tests under `tests/` and make sure `ctest --test-dir build`
-  passes. `tests/test_build_pipeline.py` covers the packaging tools.
-- When a change fixes a game, say which game and plugin in the commit
-  message; a plugin name is often the only way to find the problem again.
+## Build and test
+
+Run from the repository root with the pinned dependency source cache already
+available. These commands are offline and never download dependencies:
+
+```sh
+tools/forge/build.sh
+tools/forge/test.sh
+tools/forge/privacy_gate.sh
+tools/forge/commit_subjects.sh
+tools/forge/game_names.sh
+python3 tools/doclint/mdlinks.py CONTRIBUTING.md docs/upstream-CONTRIBUTING.md .github/pull_request_template.md
+```
+
+See [the dependency cache instructions](docs/FORGE.md#dependency-cache) for
+cache setup. `SMZ_DEPS_DIR` selects another cache; `SMZ_BUILD_DIR` selects the
+build directory. The test gate runs CTest and Python tool tests without a game.
+
+## Pull requests and documentation
+
+Use the [PR template](.github/pull_request_template.md) and address every item:
+
+- Why the change is needed: describe the failure and intended behavior.
+- Docs updated: change subsystem docs, module README or compat table alongside code.
+- Compat row updated: record the API reference, status and deviations.
+- Tests added: describe the regression and how it was verified.
+- Upstream-eligible?: explain whether the fix should go to Outsider.
+- Privacy scan clean (§16): check source, metadata, commits and shared reports.
+
+CI checks file headers and function doc comments, compat-table consistency,
+Markdown links and the docs-touched gate. If no documentation change is needed,
+request the `no-doc-change` label with a stated justification; the reviewer must
+agree. A subsystem's milestone documentation also needs fresh-eyes review by
+someone who did not write it; turn every question into a documentation fix.
+Use descriptive commit subjects as specified below.
+
+## Upstream patches
+
+U-PRs follow the preserved [upstream contribution rules](docs/upstream-CONTRIBUTING.md),
+including upstream copyright assignment, rather than this fork's no-CLA policy.
+The owner makes upstream's required assignment statement once under the project
+identity. See [upstream workflow and tracking](docs/UPSTREAM.md).
+Cut `up/<id>-<slug>` from current `upstream/main`, never smzuggler's main.
+Keep one concern per PR, ideally under about 200 changed lines, with its own
+test and no unrelated refactoring. Use upstream headers and style, ES5 shims,
+and QuickJS CI; assume neither V8 nor real PIXI. Open dependent PRs only after
+the prerequisite lands. Explain the observed failure, root cause with file and
+line, fix, tests and reference behavior with a public API documentation link.
+Mention plugin names and public behavior only, never game files or identities.
+Track each PR and its upstream and carried smzuggler commits in docs/UPSTREAM.md.
 
 ## Commit messages (smzuggler)
 
