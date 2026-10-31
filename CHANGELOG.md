@@ -10,6 +10,7 @@ Modified 2026-10-31: add the perf attribution tool entry.
 Modified 2026-10-31: record the API-members-only surface dump.
 Modified 2026-10-31: record the smaller-shim compatibility inventory.
 Modified 2026-10-31: record the dom_shim.js compatibility inventory.
+Modified 2026-10-31: add the share-bundle packager.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 <!-- Records project changes for release review; keep entries free of private data. -->
@@ -22,6 +23,8 @@ All notable changes to smzuggler. Outsider's own history is in its git log.
 - Verify literal `name` compatibility rows through the checker CLI, including stale-row rejection.
 - Recognize only the complete compatibility-table header, preserving the DOM `name` member.
 - Add compatibility-surface rows for every dump member credited to `dom_shim.js`.
+- Add `tools/share/make_bundle.py` and `smzuggler-rt --share-bundle` to pack a
+  scrubbed zip of a run's logs, perf reports and frame times for sharing.
 - Add `tools/perf/binsize.py`, which reports stripped `smzuggler-rt`, shared-library
   and shim sizes and a per-dependency archive breakdown, and record the M0 size baseline.
 - Add the offline compatibility-surface checker and inventory for smaller shims.

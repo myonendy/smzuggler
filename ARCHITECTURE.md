@@ -225,6 +225,7 @@ changes together.
 | `tools/format/` | Formatting and ES5 checks; fork. |
 | `tools/perf/` | Offline perf call-graph attribution and bucket rules; fork. |
 | `tools/privacy/` | Repository privacy scanning and tests; fork. |
+| `tools/share/` | Offline run-bundle packager with privacy scrubbing; fork. |
 | `tools/upstream/` | Isolated, offline upstream offer extraction; fork. |
 
 ## Where do I start?
