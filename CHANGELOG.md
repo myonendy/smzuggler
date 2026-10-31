@@ -5,6 +5,7 @@ Modified 2026-10-31: add docs-touched gate release entry.
 Modified 2026-10-31: record contribution guide and PR checklist.
 Modified 2026-10-30: document runtime naming, CI coverage and format checks.
 Modified 2026-10-31: record Markdown parser corrections.
+Modified 2026-10-31: add the binary-size tool and M0 baseline.
 Modified 2026-10-31: add the perf attribution tool entry.
 Modified 2026-10-31: record the API-members-only surface dump.
 Modified 2026-10-31: record the smaller-shim compatibility inventory.
@@ -19,6 +20,8 @@ All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
 - Add compatibility-surface rows for every dump member credited to `dom_shim.js`.
+- Add `tools/perf/binsize.py`, which reports stripped `smzuggler-rt`, shared-library
+  and shim sizes and a per-dependency archive breakdown, and record the M0 size baseline.
 - Add the offline compatibility-surface checker and inventory for smaller shims.
 - Add `tools/perf/attribute.py`, which splits `perf script` samples into the §6.1 buckets.
 - Add §12 copyright lines and dated Modified notes to `.gitignore`,

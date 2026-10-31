@@ -1,8 +1,8 @@
 <!--
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
-How to record a CPU profile and split it into the spec section 6.1 buckets
-with tools/perf/attribute.py. Repository tooling, not part of the runtime.
+How to record a CPU profile (tools/perf/attribute.py) and measure the shipped
+binary (tools/perf/binsize.py). Repository tooling, not part of the runtime.
 Never commit a recorded profile or a report taken from a game run.
 -->
 
@@ -12,7 +12,9 @@ Spec §6.1 asks one question before any V8 work starts: how much of a QuickJS
 frame is interpreter time that V8's JIT removes, and how much is native work
 (Canvas2D raster, texture upload, GPU submit, GC) that it would not.
 `tools/perf/attribute.py` answers it from a `perf` call-graph profile, using
-the rules in `tools/perf/buckets.toml`.
+the rules in `tools/perf/buckets.toml`. Spec §9 also asks for a binary-size
+baseline before V8, ICU (Q8) and ANGLE (Q5) land; that is
+`tools/perf/binsize.py`, documented under [Binary size](#binary-size).
 
 ## Recording
 
@@ -101,3 +103,56 @@ names out of the rules (AGENTS.md section 4).
 
 The tests in `tests/tools/test_attribute.py` pin the exact split of the
 hand-written profile in `tests/tools/fixtures/perf/`.
+
+## Binary size
+
+Spec §9 (M0) asks for a size baseline before V8, ICU (Q8) and ANGLE (Q5)
+make the binary larger. `tools/perf/binsize.py` measures one CMake build
+directory:
+
+```sh
+python3 tools/perf/binsize.py BUILD_DIR             # Markdown tables
+python3 tools/perf/binsize.py BUILD_DIR --json      # the same data as JSON
+python3 tools/perf/binsize.py BUILD_DIR --install-dir PREFIX
+```
+
+It reports:
+
+- **The executable** (`SMZUGGLER_BIN` from `CMakeCache.txt`, default
+  `smzuggler-rt`), stripped.
+- **Every shared library** in the build tree, stripped. Symlinks and anything
+  under `BUILD_DIR/tests/` are skipped. System libraries (libc, libGL) are
+  outside the tree and are not counted.
+- **The shims.** By default these are the `src/shims/**/*.js` files of the
+  configured source tree, which is what the `runtime` install component copies.
+  With `--install-dir`, the tool measures `PREFIX/shims/` of a
+  `cmake --install BUILD_DIR --component runtime --prefix PREFIX` instead.
+- **Per-dependency archive totals.** Every `*.a`/`*.lib` outside `tests/` is
+  grouped as QuickJS, SDL3, SoLoud, Effekseer or "shader tools" (glslang,
+  SPIRV, SPIRV-Cross, SDL_shadercross). Any other archive is listed under its
+  own name. For each group the tool sums the archive file bytes and the ELF
+  text, data and bss of the members.
+
+The build flags (`CMAKE_BUILD_TYPE`, `CMAKE_C_FLAGS`, `CMAKE_CXX_FLAGS`) are
+printed with the numbers, so a baseline always says how it was built.
+
+How it measures:
+
+- Everything is parsed in Python. The tool calls no `strip`, `ar` or `size`,
+  so its numbers do not depend on the host's binutils.
+- "Stripped" means the file size minus the sections `strip --strip-all`
+  removes (`.symtab`, `.strtab`, `.debug*`) and their section headers. This
+  can differ from real `strip` by a few bytes of alignment.
+- PE and Mach-O files are reported at their raw size and marked
+  "not ELF, unstripped". Non-ELF archive members count in the "non-ELF"
+  column.
+- Archive totals are an upper bound on what a dependency costs, because the
+  linker drops unreferenced sections.
+- The tool only reads. It exits 1 with the offending file's basename when the
+  directory is not configured, the executable is missing or an ELF file is
+  truncated. Exit 2 is a usage error.
+
+Tests: `tests/tools/test_binsize.py` builds a fake build directory from ELF
+objects and ar archives that it generates itself, then checks every total.
+
+Results: [M0 baseline](perf/binary-size.md).
