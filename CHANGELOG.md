@@ -13,6 +13,8 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Add an offline Markdown link and anchor check (`tools/doclint/mdlinks.py`)
+  and fix the broken architecture link in `docs/style.md`.
 - Check documentation on compact C/C++ definitions independently in doclint.
 - Add source documentation lint with changed-line checks and a legacy baseline.
 - Recognize ES5 regex literals after logical operators and unary keywords.

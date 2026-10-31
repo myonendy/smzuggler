@@ -2,6 +2,7 @@
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
 Modified 2026-10-30: document runtime naming and link testing instructions.
+Modified 2026-10-31: document the Markdown link check.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 
@@ -475,6 +476,10 @@ and an end-to-end acceptance pass); point `RMMZ_TEST_GAME_DIR` at an RPG
 Maker MZ project at configure time to enable them, otherwise they skip.
 The packaging and evaluator tools have their own tests:
 `python tests/test_build_pipeline.py` and `python tests/test_visual_eval.py`.
+
+`python3 tools/doclint/mdlinks.py` checks every relative link and `#anchor`
+in the tracked Markdown files offline, using GitHub's heading slugs, and
+prints `file:line` for each broken one; pass file paths to check only those.
 
 ### Visual evaluator
 
