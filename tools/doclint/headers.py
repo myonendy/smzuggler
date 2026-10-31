@@ -23,7 +23,11 @@ expression, and neither has the smzuggler copyright line or a Modified note
 Only the first HEAD_LINES lines are read as the header. All regular files are
 checked, including prose, configuration and extensionless scripts, except these
 formats without comment syntax: JSON/JSONL, PNG/JPEG/GIF/WebP/ICO/BMP, audio/video,
-fonts, PDF, archives and RPG Maker saves (SKIPPED_SUFFIXES). A renamed file is
+fonts, PDF, archives and RPG Maker saves (SKIPPED_SUFFIXES). Verbatim licence
+texts are skipped by explicit path (`LICENSE` and `LICENSES/*.txt`, in
+is_checked), because a licence text must be distributed unaltered and adding
+a header would change it; project-written prose such as `LICENSES/README.md` is
+still checked (docs/DECISIONS.md DEC-M0-T014-SCOPE). A renamed file is
 checked as a change against its source path's base header. Deleted files and
 symlinks are ignored. Checked files must decode as UTF-8; invalid bytes are errors.
 Exit status: 0 clean, 1 header violations, 2 usage or git errors.
@@ -31,7 +35,7 @@ Exit status: 0 clean, 1 header violations, 2 usage or git errors.
 
 import argparse
 import datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import subprocess
 import sys
@@ -91,7 +95,14 @@ def changed_files(root, base):
 
 
 def is_checked(path):
-    """Check all paths except explicit formats that cannot carry comments."""
+    """Check all paths except comment-less formats and verbatim licence texts.
+
+    PATH is repository-relative with forward slashes, as git prints it. The
+    licence patterns match whole paths, so a nested `docs/LICENSE` is checked.
+    """
+    pure = PurePosixPath(path)
+    if path == 'LICENSE' or (str(pure.parent) == 'LICENSES' and pure.suffix == '.txt'):
+        return False
     return Path(path).suffix.lower() not in SKIPPED_SUFFIXES
 
 

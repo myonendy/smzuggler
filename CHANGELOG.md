@@ -13,6 +13,8 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Skip verbatim licence texts (`LICENSE`, `LICENSES/*.txt`) by path in `headers.py`
+  and list the remaining out-of-scope header violations for M0-T014b.
 - Require the canonical General Arcade copyright and complete SPDX expression on
   added upstream-offer files; reject unrelated holders and substituted licences.
 - Require licensing headers on prose and configuration and reject invalid UTF-8

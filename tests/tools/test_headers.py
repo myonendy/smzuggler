@@ -157,6 +157,15 @@ class HeadersTests(unittest.TestCase):
         (self.root / 'src/up.c').unlink()
         self.assert_passes()
 
+    def test_verbatim_licence_texts_skipped_but_licence_prose_checked(self):
+        """Skip LICENSE and LICENSES/*.txt only; README prose and lookalikes fail."""
+        self.write('LICENSE', 'GNU GENERAL PUBLIC LICENSE\n')
+        self.write('LICENSES/GPL-3.0.txt', 'GNU GENERAL PUBLIC LICENSE\n')
+        self.assert_passes()
+        for path in ('LICENSES/README.md', 'docs/LICENSE', 'LICENSES/sub/x.txt'):
+            self.write(path, 'project-written notes\n')
+            self.assert_fails(path, 'SPDX-License-Identifier')
+
     def test_prose_and_configuration_require_headers(self):
         """Prevent prose and configuration from bypassing the CLI header rules."""
         for path in ('docs/notes.md', 'config.toml', 'config.yaml', '.gitignore'):

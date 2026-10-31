@@ -172,14 +172,23 @@ copyright and complete dual-license SPDX expression, in upstream order. An
 unrelated holder or substituted licence expression fails even if both kinds of
 line are present; existing offers retain their base header unchanged.
 
-The complete comparison against `upstream-main` exposes missing headers in
-protected infrastructure, task cards, specification documents, and existing tests.
-These paths cannot receive header-only fixes within this card's ownership rules.
-Outside `owns` and editable only with `may_edit_tests` or a wider scope:
-`.gitignore`, `CONTRIBUTING.md`, `tests/CMakeLists.txt`,
-`tests/integration/test_acceptance.c`. Protected and editable only by a human:
-`.gitattributes`, `AGENTS.md`, `CLAUDE.md`, `forge.toml`, `LICENSES/**`,
-`.claude/**`, `.codex/**`, `prompts/**`, `docs/spec/**`, `tasks/**`,
-`tools/commitmsg/**`, `tools/forge/**`, `tools/privacy/**`.
-The orchestrator must resolve that scope conflict before the full-tree acceptance
-criterion can pass. No path exemptions hide these violations.
+Verbatim licence texts (`LICENSE`, `LICENSES/*.txt`) are skipped by explicit
+path, because a licence text must be distributed unaltered; project-written prose
+such as `LICENSES/README.md` is still checked.
+
+Following DEC-M0-T014-SCOPE, the full-tree run (`headers.py --base upstream-main`,
+2026-10-31) is clean for every file this card owns, adds or changes, and reports
+262 problems in 131 files outside `owns`, left for draft card M0-T014b. No
+exemption list hides them and no check was relaxed.
+- Outside `owns`, fixable by M0-T014b: `.gitignore`, `CONTRIBUTING.md`,
+  `tests/CMakeLists.txt`, `tests/integration/test_acceptance.c` (each changed
+  upstream file lacks our copyright line and a dated Modified note).
+- Protected, for a human (no SPDX or smzuggler copyright line unless noted):
+  `.gitattributes` (upstream file: our line and Modified note missing),
+  `AGENTS.md`, `CLAUDE.md`, `forge.toml`, `LICENSES/README.md`,
+  `.claude/agents/investigator.md`, `.claude/hooks/guard.sh`,
+  `.codex/config.toml`, `docs/spec/CHANGES.md`, `docs/spec/README.md`,
+  `docs/spec/SPEC.md`, `docs/spec/V8_MZ_HOST_SPEC_v0.2.md`,
+  `prompts/auditor.md`, `prompts/planner.md`, `prompts/reviewer.md`,
+  `prompts/worker.md`, `tools/privacy/allowlist.txt`, and 110 task cards under
+  `tasks/` (`tasks/*.md` and `tasks/draft/*.md`).
