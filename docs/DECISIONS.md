@@ -242,3 +242,31 @@ protected files, before `headers.py` becomes a gate.
 `tests/tools/test_architecture_refs.py::test_directory_map` requires an ARCHITECTURE.md row for
 every directory under `src/` and `tools/`. Cards that create one (M0-T013, M0-T016, M0-T017,
 M0-T019, M0-T020, M0-T023, M1-T001, M1-T003) own ARCHITECTURE.md, limited to adding that row.
+
+## DEC-M0-T014b — Remaining section 12 notices outside M0-T014's owns
+
+`.gitignore`, `tests/CMakeLists.txt` and `tests/integration/test_acceptance.c`
+gain our copyright line and a dated Modified note naming the earlier smzuggler
+change; upstream copyright and SPDX lines are untouched. `CONTRIBUTING.md`
+already passes and is unchanged. No checker exemption changes.
+
+`docs/upstream-CONTRIBUTING.md` (under `docs/**`, not protected) had packed
+SPDX, copyright and note into one comment line, which the checker, reading one
+item per line, rejected. Its comment now has one item per line, and
+`tests/tools/test_pr_template.py::test_upstream_bytes` skips the whole leading
+comment block (up to the first `-->` line), checks the SPDX and copyright lines
+in it, and still compares every remaining byte with upstream `CONTRIBUTING.md`.
+That test lies outside this card's `owns`; the reviewer required the edit.
+
+`python3 tools/doclint/headers.py --base upstream-main` (2026-10-31) exits 1
+with 262 problems in 131 files, all under forge.toml `protected` (which includes `LICENSES/**`): `.gitattributes`, `AGENTS.md`, `CLAUDE.md`,
+`forge.toml`, `LICENSES/README.md`, `.claude/agents/investigator.md`,
+`.claude/hooks/guard.sh`, `.codex/config.toml`, `docs/spec/{CHANGES,README,SPEC,
+V8_MZ_HOST_SPEC_v0.2}.md`, `prompts/{auditor,planner,reviewer,worker}.md`,
+`tools/privacy/allowlist.txt`, and the task cards under `tasks/` and
+`tasks/draft/`. A human adds those headers and confirms the run exits 0.
+
+The cumulative `git diff upstream-main -- tests/` also shows earlier functional
+changes (fragment registration, DEC-SETUP-009; the `smzuggler-rt` executable
+name, M0-T001). This card adds only comment lines to those files; assertions and
+the ASSERT count are unchanged.
