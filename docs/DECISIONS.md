@@ -8,7 +8,6 @@ Modified 2026-11-01: record evaluator scratch-root isolation.
 Modified 2026-11-01: record evaluator game-process XDG isolation.
 Modified 2026-11-01: default host data directories when SMZUGGLER_NAME is set.
 Modified 2026-11-01: record Map 92 report owner-run and JS-time gap definitions.
-Modified 2026-11-01: record M0-T022 blocked until XDG save and power-saver.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 
@@ -397,25 +396,3 @@ is testable and the owner's report is comparable to Gate G1:
 - **Gap** is `|attributed − GameLoopStats| / GameLoopStats`, as a percent.
   More than 15% writes a FLAG in the report; the process still exits 0. p95
   frame time uses nearest-rank.
-
-## DEC-M0-T022 — M0 exit stays unmerged until XDG save and power-saver
-M0-T022 records the §9 checklist; it does not close M0. The Linux save dir is
-`$XDG_DATA_HOME/<dir_save_name>/` of a scratch XDG tree (M0, not M5). The
-save-location plugin already computes that absolute path (U5). `existsSync`
-goes through `file_io_resolve_path`, which rejects paths outside the game
-root, so the plugin never mkdir's the XDG dir and `DataManager.saveGame(1)`
-falls back to `save/` under the game root, which U7 refuses. Writes and mkdir
-already accept an absolute path outside the root when the write guard is on;
-`existsSync` does not. This card owns only `docs/milestones/**` and cannot
-change `bind_io.c` / `file_io.c`. SI-12 still keeps Windows/macOS paths and
-Proton import in M5.
-
-The card notes also require the exit run on battery with `power-saver`,
-unplugged ≥ 2 min. An AC / llvmpipe session is observation only and is not
-the §9 / §14.4 exit. Contained `game_smoke.sh` is evidence only when the
-`bwrap` child actually starts.
-
-Until a later card allows `existsSync` / mkdir / write on the absolute XDG
-path (still refusing game-root writes) and a power-saver map-save run lands
-the slot file under scratch `$XDG_DATA_HOME/<dir_save_name>/`, leave M0-T022
-unmerged.
