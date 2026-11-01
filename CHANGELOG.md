@@ -24,6 +24,7 @@ Modified 2026-11-01: record the .jsc cache-dir option (U10).
 Modified 2026-11-01: default logs, cache and config to smzuggler-rt data dirs.
 Modified 2026-11-01: record the Map 92 profile report tool and owner-run recipe.
 Modified 2026-11-01: record the M0 exit observation checklist.
+Modified 2026-11-01: record guarded save reads (U15).
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 <!-- Records project changes for release review; keep entries free of private data. -->
@@ -37,6 +38,10 @@ All notable changes to smzuggler. Outsider's own history is in its git log.
   game-run items `pending owner run`, hosted CI `pending push`) and the owner
   run recipe `docs/milestones/m0-exit-recipe.md` (battery and `power-saver`
   checks, test copy, tree hash, smoke, evaluator, scratch save, bundle).
+- With the save-path guard on, `existsSync`, `isDirSync`, `readdirSync`,
+  `readFileSync` and `readFileBinary` also accept an absolute path outside the
+  game root that the write guard would accept, so a save written under
+  `$XDG_DATA_HOME/<dir_save_name>/` can be found and read back (U15).
 - Add `tools/perf/map92_report.py`, which turns a Map 92 attribution run,
   GameLoopStats log, frame-time CSV and §14.4 machine-state snapshot into the
   M0 QuickJS profile report, plus the owner-run recipe

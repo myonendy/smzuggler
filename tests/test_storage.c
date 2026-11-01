@@ -789,6 +789,58 @@ done:
     test_restore_env("XDG_DATA_HOME", xdg);
 }
 
+/* With the save-path guard on, the save sequence of a save-location plugin
+   (exists check on the folder, mkdir, write, exists check on the file, read)
+   must land under $XDG_DATA_HOME/<name>/ and read back, with nothing written
+   in the game root. */
+TEST(guarded_save_lands_in_xdg_data_home)
+{
+    char *home = test_getenv_copy("HOME");
+    char *xdg = test_getenv_copy("XDG_DATA_HOME");
+    char scratch[TEST_PATH_MAX], scratch_home[TEST_PATH_MAX];
+    char scratch_xdg[TEST_PATH_MAX], save_file[TEST_PATH_MAX * 2];
+    snprintf(scratch, sizeof(scratch), "%s/rmmz_test_storage_guarded_save", test_tmp_root());
+    snprintf(scratch_home, sizeof(scratch_home), "%s/home", scratch);
+    snprintf(scratch_xdg, sizeof(scratch_xdg), "%s/xdg-data", scratch);
+    snprintf(save_file, sizeof(save_file), "%s/StandInSaves/file1.rmmzsave", scratch_xdg);
+    test_rm_rf(scratch);
+    test_mkdir_p(scratch_home);
+    test_mkdir_p(scratch_xdg);
+
+    test_setenv("HOME", scratch_home);
+    test_setenv("XDG_DATA_HOME", scratch_xdg);
+    js_setup();
+    file_io_set_write_guard(true);
+    ASSERT_DONE(js_check(SAVE_DIR_SNIPPET));
+#if defined(__linux__) && !defined(__ANDROID__)
+    ASSERT_DONE(js_check(
+        "var fs = require('fs');"
+        "var dirPath = saveDir();"
+        "var filePath = dirPath + 'file1.rmmzsave';"
+        "var saveData = 'compressed-save-data-here';"
+        "var dirBefore = fs.existsSync(dirPath);"
+        "if (!dirBefore) fs.mkdirSync(dirPath, { recursive: true });"
+        "fs.writeFileSync(filePath, saveData);"
+        "!dirBefore && fs.existsSync(filePath) &&"
+        "  fs.readFileSync(filePath, { encoding: 'utf8' }) === saveData"));
+    char *on_disk = file_io_read_text(save_file, NULL);
+    int saved = on_disk && strcmp(on_disk, "compressed-save-data-here") == 0;
+    free(on_disk);
+    ASSERT_DONE(saved);
+    size_t root_entries = 0;
+    char **list = file_io_readdir(TEST_SAVE_DIR, &root_entries);
+    int root_listed = list != NULL;
+    file_io_free_dirlist(list);
+    ASSERT_DONE(root_listed && root_entries == 0);
+#endif
+done:
+    file_io_set_write_guard(false);
+    if (s_js) js_teardown();
+    test_restore_env("HOME", home);
+    test_restore_env("XDG_DATA_HOME", xdg);
+    test_rm_rf(scratch);
+}
+
 #undef ASSERT_DONE
 
 /* Tests: Utils.isNwjs() pattern */
@@ -1135,6 +1187,7 @@ int main(int argc, char *argv[])
     RUN(process_next_tick_continues_after_throw);
     RUN(process_next_tick_after_already_queued_promise);
     RUN(process_env_gives_real_save_dir);
+    RUN(guarded_save_lands_in_xdg_data_home);
 
     printf("\n--- RPG Maker MZ compatibility tests ---\n");
     RUN(utils_is_nwjs_pattern);

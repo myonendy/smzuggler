@@ -27,8 +27,8 @@ bool file_io_resolve_path(const char *relative_path, char *out, size_t out_size)
    fails on a read-only install). With the guard on, bind_io accepts writes
    (write, mkdir, unlink, rename) only through file_io_check_write_path(),
    and uses the path as given instead of resolving it against the root.
-   Off by default, because stock RMMZ saves to "<root>/save/". Reads are
-   never affected. */
+   Off by default, because stock RMMZ saves to "<root>/save/". Reads use
+   file_io_resolve_read_path(), so they can reach what was written. */
 void file_io_set_write_guard(bool enabled);
 
 /* True if the save-path guard is on. */
@@ -39,6 +39,14 @@ bool file_io_write_guard_enabled(void);
    existing prefix) must not be the game root or lie under it. Logs exactly
    one error on refusal, nothing on success. Does not consult the guard. */
 bool file_io_check_write_path(const char *path);
+
+/* Resolve a path for a read call (exists, isDir, readdir, readFile). Tries
+   file_io_resolve_path() first, so game paths resolve exactly as before.
+   Only if that refuses, the guard is on, and the path is absolute and would
+   pass file_io_check_write_path(), the path is accepted as given: reads may
+   go where save writes may go, and nowhere else. Logs nothing, so probing a
+   missing save is silent. */
+bool file_io_resolve_read_path(const char *path, char *out, size_t out_size);
 
 /* Receives one file_io error message (one line, no trailing newline). The
    string is only valid for the duration of the call. */

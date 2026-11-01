@@ -28,6 +28,23 @@ static const char *resolve_path_arg(JSContext *ctx, JSValueConst arg,
     return raw;
 }
 
+/* Like resolve_path_arg, for calls that only read. With the save-path guard
+   on, an absolute path the write guard would accept is also allowed, so a
+   save written outside the game root can be found and read back. */
+static const char *resolve_read_arg(JSContext *ctx, JSValueConst arg,
+                                    char *out, size_t out_size)
+{
+    const char *raw = JS_ToCString(ctx, arg);
+    if (!raw) return NULL;
+
+    if (!file_io_resolve_read_path(raw, out, out_size)) {
+        JS_ThrowTypeError(ctx, "path resolution failed: %s", raw);
+        JS_FreeCString(ctx, raw);
+        return NULL;
+    }
+    return raw;
+}
+
 /* Like resolve_path_arg, for calls that change the file system. With the
    save-path guard on, the path must pass file_io_check_write_path() and is
    used as given: save paths are absolute file-system paths outside the game
@@ -60,7 +77,7 @@ static JSValue js_read_file_sync(JSContext *ctx, JSValueConst this_val,
     if (argc < 1) return JS_ThrowTypeError(ctx, "readFileSync requires a path argument");
 
     char resolved[PATH_BUF_SIZE];
-    const char *raw = resolve_path_arg(ctx, argv[0], resolved, sizeof(resolved));
+    const char *raw = resolve_read_arg(ctx, argv[0], resolved, sizeof(resolved));
     if (!raw) return JS_EXCEPTION;
     JS_FreeCString(ctx, raw);
 
@@ -83,7 +100,7 @@ static JSValue js_read_file_binary(JSContext *ctx, JSValueConst this_val,
     if (argc < 1) return JS_ThrowTypeError(ctx, "readFileBinary requires a path argument");
 
     char resolved[PATH_BUF_SIZE];
-    const char *raw = resolve_path_arg(ctx, argv[0], resolved, sizeof(resolved));
+    const char *raw = resolve_read_arg(ctx, argv[0], resolved, sizeof(resolved));
     if (!raw) return JS_EXCEPTION;
     JS_FreeCString(ctx, raw);
 
@@ -172,7 +189,7 @@ static JSValue js_exists_sync(JSContext *ctx, JSValueConst this_val,
     if (argc < 1) return JS_ThrowTypeError(ctx, "existsSync requires a path argument");
 
     char resolved[PATH_BUF_SIZE];
-    const char *raw = resolve_path_arg(ctx, argv[0], resolved, sizeof(resolved));
+    const char *raw = resolve_read_arg(ctx, argv[0], resolved, sizeof(resolved));
     if (!raw) return JS_EXCEPTION;
     JS_FreeCString(ctx, raw);
 
@@ -187,7 +204,7 @@ static JSValue js_is_dir_sync(JSContext *ctx, JSValueConst this_val,
     if (argc < 1) return JS_ThrowTypeError(ctx, "isDirSync requires a path argument");
 
     char resolved[PATH_BUF_SIZE];
-    const char *raw = resolve_path_arg(ctx, argv[0], resolved, sizeof(resolved));
+    const char *raw = resolve_read_arg(ctx, argv[0], resolved, sizeof(resolved));
     if (!raw) return JS_EXCEPTION;
     JS_FreeCString(ctx, raw);
 
@@ -202,7 +219,7 @@ static JSValue js_readdir_sync(JSContext *ctx, JSValueConst this_val,
     if (argc < 1) return JS_ThrowTypeError(ctx, "readdirSync requires a path argument");
 
     char resolved[PATH_BUF_SIZE];
-    const char *raw = resolve_path_arg(ctx, argv[0], resolved, sizeof(resolved));
+    const char *raw = resolve_read_arg(ctx, argv[0], resolved, sizeof(resolved));
     if (!raw) return JS_EXCEPTION;
     JS_FreeCString(ctx, raw);
 
