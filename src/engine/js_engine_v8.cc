@@ -10,7 +10,8 @@
 // scripts: one isolate and one context (the page's window), classic-script
 // evaluation with a ScriptOrigin naming the file so stack traces read
 // `file.js:line:col` as in NW.js DevTools, `console`, and the microtask
-// checkpoint the game loop calls after each macrotask. The isolate and
+// checkpoint the game loop calls after each macrotask, plus a watchdog that
+// stops runaway scripts as Chromium's hung-page check would. The isolate and
 // context come from the jsb seam (src/jsb/jsb.h), so bindings defined
 // through js_engine_get_jsb() share the game's global object. See
 // docs/js-binding.md, "js_engine on V8".
@@ -23,8 +24,13 @@
 //   rejections) and Resets them in js_engine_shutdown.
 // - Isolate data slot 0 belongs to jsb; this file uses slot 1 for its
 //   JSEngine, so isolate-wide callbacks can find it.
+// - The watchdog thread (js_watchdog.h) never enters the isolate: it only
+//   calls the thread-safe Isolate::RequestInterrupt. Everything else, the
+//   location report and TerminateExecution, runs on the main thread inside
+//   the interrupt (docs/js-binding.md, "Watchdog").
 
 #include "engine/js_engine.h"
+#include "engine/js_watchdog.h"
 
 #include "jsb.h"
 
@@ -32,6 +38,7 @@
 
 #include <sys/stat.h>
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -81,8 +88,19 @@ struct JSEngine {
     int jobs_run = 0;
     // Set by the message listener when a microtask threw uncaught.
     bool job_failed = false;
-    // Watchdog settings; see js_engine_set_watchdog.
+    // Watchdog limit (0 = off) and its timer thread, which exists only
+    // while the limit is on; see js_engine_set_watchdog.
     unsigned watchdog_ms = 0;
+    js_watchdog *watchdog = nullptr;
+    // Generation the watchdog thread asked to interrupt (0 = none); written
+    // by that thread, taken by the interrupt on the main thread.
+    std::atomic<uint64_t> fired_gen{0};
+    // Set when the watchdog terminated a script; cleared, with
+    // CancelTerminateExecution, once no engine entry point is on the stack.
+    bool terminated = false;
+    // Nesting of engine entry points (an eval from a native called by JS
+    // nests); only the outermost arms the watchdog and cancels termination.
+    int depth = 0;
     // .jsc location (empty = beside each script) and the game root that
     // keys it, as in js_engine.c.
     std::string cache_dir;
@@ -262,15 +280,74 @@ bool adopt_runtime(jsb_ctx *, void *user) {
     return install_console(engine, context);
 }
 
+// Returns `file:line:col` of the innermost JS frame, or "<unknown>" when
+// no JS is on the stack. Main thread, isolate entered.
+std::string current_location(v8::Isolate *isolate) {
+    v8::HandleScope scope(isolate);
+    v8::Local<v8::StackTrace> trace = v8::StackTrace::CurrentStackTrace(isolate, 1);
+    if (trace->GetFrameCount() < 1) return "<unknown>";
+    v8::Local<v8::StackFrame> frame = trace->GetFrame(isolate, 0);
+    return to_utf8(isolate, frame->GetScriptName()) + ":" +
+           std::to_string(frame->GetLineNumber()) + ":" +
+           std::to_string(frame->GetColumn());
+}
+
+// Isolate::RequestInterrupt callback: runs on the main thread inside the
+// running script, the only place where V8 can say where that script is.
+// Reports the location at level `error` and terminates the script with
+// Isolate::TerminateExecution, unless a later arm made this request stale
+// (the script it was meant for already finished).
+void on_watchdog_interrupt(v8::Isolate *isolate, void *data) {
+    JSEngine *engine = static_cast<JSEngine *>(data);
+    uint64_t gen = engine->fired_gen.exchange(0);
+    if (gen == 0 || gen != js_watchdog_generation(engine->watchdog)) return;
+    emit(engine, "error", "js_engine: watchdog: script ran longer than " +
+                              std::to_string(engine->watchdog_ms) + " ms, terminated at " +
+                              current_location(isolate));
+    engine->terminated = true;
+    isolate->TerminateExecution();
+}
+
+// js_watchdog fire callback, on the watchdog thread: records the overrun
+// generation and asks V8 to run on_watchdog_interrupt at its next interrupt
+// check (loop back-edges and calls). Touches nothing else of the isolate.
+void on_watchdog_fire(uint64_t generation, void *user) {
+    JSEngine *engine = static_cast<JSEngine *>(user);
+    engine->fired_gen.store(generation);
+    engine->isolate->RequestInterrupt(on_watchdog_interrupt, engine);
+}
+
+// Called when no engine entry point is on the stack: lets JS run again
+// after a watchdog termination (V8 refuses all JS until it is cancelled).
+void clear_termination(JSEngine *engine) {
+    if (!engine->terminated) return;
+    engine->terminated = false;
+    engine->isolate->CancelTerminateExecution();
+}
+
+// Marks the start of an engine entry point that runs JS; the outermost one
+// restarts the watchdog clock (js_engine.h: eval entry points arm it).
+void begin_entry(JSEngine *engine) {
+    if (engine->depth++ == 0) js_watchdog_arm(engine->watchdog);
+}
+
+// Marks the end of an entry point begun with begin_entry; the outermost one
+// cancels a watchdog termination so the next script runs.
+void end_entry(JSEngine *engine) {
+    if (--engine->depth == 0) clear_termination(engine);
+}
+
 // Compiles and runs `source` (borrowed, `len` bytes of UTF-8) as a classic
 // script named `name`, line and column offsets 0, so V8's 1-based stack
 // positions match the file. `cache` (ownership taken, may be NULL) is a V8
 // code cache to consume; when `cache_out` is not NULL a fresh code cache of
 // the compiled script is stored there (caller deletes). The result goes to
-// `result_out` when not NULL. Errors are reported; returns false on them.
-bool run_source(JSEngine *engine, const char *source, size_t len, const char *name,
-                v8::ScriptCompiler::CachedData *cache,
-                v8::ScriptCompiler::CachedData **cache_out, std::string *result_out) {
+// `result_out` when not NULL. Errors are reported, except a watchdog
+// termination, which on_watchdog_interrupt already reported; returns false
+// on them. Call through run_source.
+bool compile_and_run(JSEngine *engine, const char *source, size_t len, const char *name,
+                     v8::ScriptCompiler::CachedData *cache,
+                     v8::ScriptCompiler::CachedData **cache_out, std::string *result_out) {
     v8::Isolate *isolate = engine->isolate;
     v8::Isolate::Scope isolate_scope(isolate);
     v8::HandleScope scope(isolate);
@@ -286,17 +363,28 @@ bool run_source(JSEngine *engine, const char *source, size_t len, const char *na
                                      cache ? v8::ScriptCompiler::kConsumeCodeCache
                                            : v8::ScriptCompiler::kNoCompileOptions)
              .ToLocal(&script)) {
-        report_exception(engine, context, tc);
+        if (!tc.HasTerminated()) report_exception(engine, context, tc);
         return false;
     }
     if (cache_out)
         *cache_out = v8::ScriptCompiler::CreateCodeCache(script->GetUnboundScript());
     if (!script->Run(context).ToLocal(&result)) {
-        report_exception(engine, context, tc);
+        if (!tc.HasTerminated()) report_exception(engine, context, tc);
         return false;
     }
     if (result_out) *result_out = to_utf8(isolate, result);
     return true;
+}
+
+// compile_and_run (same arguments and result) inside an engine entry, so
+// the watchdog covers it and a termination is cancelled afterwards.
+bool run_source(JSEngine *engine, const char *source, size_t len, const char *name,
+                v8::ScriptCompiler::CachedData *cache,
+                v8::ScriptCompiler::CachedData **cache_out, std::string *result_out) {
+    begin_entry(engine);
+    bool ok = compile_and_run(engine, source, len, name, cache, cache_out, result_out);
+    end_entry(engine);
+    return ok;
 }
 
 // Reads a whole file. Returns false if it cannot be opened or read.
@@ -477,9 +565,12 @@ JSEngine *js_engine_init(void) {
     return engine;
 }
 
-// See js_engine.h. Globals are Reset before jsb disposes of the isolate.
+// See js_engine.h. The watchdog thread is joined, then Globals are Reset,
+// before jsb disposes of the isolate.
 void js_engine_shutdown(JSEngine *engine) {
     if (!engine) return;
+    js_watchdog_stop(engine->watchdog);
+    engine->watchdog = nullptr;
     for (Rejection &r : engine->rejections) {
         r.promise.Reset();
         r.reason.Reset();
@@ -598,7 +689,9 @@ bool js_engine_default_cache_dir(const char *app, char *out, size_t out_size) {
 }
 
 // See js_engine.h. One V8 microtask checkpoint (MicrotasksPolicy::kExplicit,
-// spec section 4.1), then the unhandled-rejection report.
+// spec section 4.1), then the unhandled-rejection report. The checkpoint is
+// an entry point for the watchdog; after a termination the report waits for
+// the next checkpoint and -1 is returned.
 int js_engine_execute_pending_jobs(JSEngine *engine) {
     if (!engine) return -1;
     v8::Isolate *isolate = engine->isolate;
@@ -608,9 +701,12 @@ int js_engine_execute_pending_jobs(JSEngine *engine) {
     v8::Context::Scope context_scope(context);
     engine->jobs_run = 0;
     engine->job_failed = false;
+    begin_entry(engine);
     isolate->PerformMicrotaskCheckpoint();
-    flush_rejections(engine, context);
-    return engine->job_failed ? -1 : engine->jobs_run;
+    bool stopped = engine->terminated;
+    if (!stopped) flush_rejections(engine, context);
+    end_entry(engine);
+    return (stopped || engine->job_failed) ? -1 : engine->jobs_run;
 }
 
 // See js_engine.h.
@@ -623,18 +719,29 @@ void js_engine_set_console_callback(JSEngine *engine, JSConsoleCallback cb, void
 // See js_engine.h.
 jsb_runtime *js_engine_get_jsb(JSEngine *engine) { return engine ? engine->rt : nullptr; }
 
-// See js_engine.h. Only the limit is kept here: the V8 watchdog thread
-// (Isolate::TerminateExecution) is card M1-T008, so nothing interrupts
-// scripts yet in v8 mode; a non-zero limit says so once on stderr.
+// See js_engine.h. The timer thread exists only while the limit is on: a
+// new limit stops the old thread and starts one for the new limit, and 0
+// leaves none. If the thread cannot start, scripts run unwatched (stderr
+// says so). Main thread, outside JS.
 void js_engine_set_watchdog(JSEngine *engine, unsigned limit_ms) {
     if (!engine) return;
+    js_watchdog_stop(engine->watchdog);
+    engine->watchdog = nullptr;
+    engine->fired_gen.store(0);  // a request of the old thread is stale
     engine->watchdog_ms = limit_ms;
-    if (limit_ms)
-        std::fprintf(stderr, "js_engine: the script watchdog is not available "
-                             "on V8 yet; scripts are not interrupted\n");
+    if (limit_ms) {
+        engine->watchdog = js_watchdog_start(limit_ms, on_watchdog_fire, engine);
+        js_watchdog_arm(engine->watchdog);
+    }
 }
 
-// See js_engine.h. Nothing to restart until the V8 watchdog exists.
-void js_engine_watchdog_arm(JSEngine *engine) { (void)engine; }
+// See js_engine.h. Called by the game loop at the start of each frame, when
+// no script runs, so a termination left by JS the loop called directly is
+// cancelled here too.
+void js_engine_watchdog_arm(JSEngine *engine) {
+    if (!engine) return;
+    if (engine->depth == 0) clear_termination(engine);
+    js_watchdog_arm(engine->watchdog);
+}
 
 }  // extern "C"

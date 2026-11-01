@@ -9,6 +9,7 @@
 # Modified 2026-11-01: build the jsb seam's V8 backend as smz_jsb (src/jsb/).
 # Modified 2026-11-01: build smz_jsb on the transitional QuickJS backend in quickjs mode.
 # Modified 2026-11-01: build js_engine.h on V8 as smz_js_engine_v8 in v8 mode.
+# Modified 2026-11-01: add the script watchdog thread to smz_js_engine_v8.
 # Build orchestration; see docs/DECISIONS.md (DEC-M0-T001).
 
 cmake_minimum_required(VERSION 3.20)
@@ -340,8 +341,10 @@ target_include_directories(smz_jsb PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/jsb)
 # runtime keeps js_engine.c until game_loop.c, error_handler.c and the
 # bindings stop calling QuickJS (M1-T009, M1-T011, M1-T016..T025).
 if(SMZ_JS_ENGINE STREQUAL "v8")
-    add_library(smz_js_engine_v8 STATIC src/engine/js_engine_v8.cc)
-    target_link_libraries(smz_js_engine_v8 PUBLIC smz_jsb)
+    add_library(smz_js_engine_v8 STATIC src/engine/js_engine_v8.cc
+        src/engine/js_watchdog.cc)
+    find_package(Threads REQUIRED)
+    target_link_libraries(smz_js_engine_v8 PUBLIC smz_jsb Threads::Threads)
     target_include_directories(smz_js_engine_v8 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_definitions(smz_js_engine_v8
         PUBLIC SMZ_JS_ENGINE_V8

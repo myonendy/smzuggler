@@ -2,6 +2,7 @@
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
 Modified 2026-11-01: add persistent callbacks.
+Modified 2026-11-01: document the V8 script watchdog.
 How native C bindings talk to the JS engine through jsb.h, and the handle rules.
 -->
 # JS binding: the `jsb` seam
@@ -246,8 +247,7 @@ v8-mode library serves every caller that needs only `js_engine.h`, starting with
   source and V8's code cache, because a V8 code cache only works with its own source
   and `js_engine.h` promises that a hit runs what was cached. M1-T012 replaces it with
   the hashed cache under `$XDG_CACHE_HOME`.
-- **Watchdog**: only the limit is stored; scripts are not interrupted on V8 until
-  M1-T008.
+- **Watchdog**: see "Watchdog" below.
 - **`js_engine_get_context`** is declared only without `SMZ_JS_ENGINE_V8`. In quickjs
   mode `js_engine_get_jsb()` returns NULL: the transitional backend creates its own
   `JSContext` and has no way to adopt the engine's; that needs a change to
@@ -255,6 +255,36 @@ v8-mode library serves every caller that needs only `js_engine.h`, starting with
 - **Handles** (§15.8): every entry point opens its own `HandleScope`; the engine owns
   exactly two kinds of `Global` (its context and pending rejections) and Resets them in
   `js_engine_shutdown` before the isolate is disposed of.
+
+### Watchdog
+`js_engine_set_watchdog(engine, ms)` (from `--watchdog <ms>`) stops scripts that run
+longer than `ms` since the last arm (§4.1 item 3, card M1-T008, DEC-M1-T008). The
+outermost eval entry point and each microtask checkpoint arm it, and the game loop arms
+it once per frame, as in QuickJS mode.
+
+- **Thread**: `src/engine/js_watchdog.cc` is a timer thread that knows nothing of V8.
+  It exists only while the limit is non-zero: 0 (the default) stops and joins it, a new
+  limit replaces it, and `js_engine_shutdown` joins it before the isolate goes.
+  `js_watchdog_live_threads()` counts the live threads, so tests can check that none
+  exists while the limit is off.
+- **Termination**: when an armed generation passes its deadline, the thread calls
+  `Isolate::RequestInterrupt` (the only isolate call it makes). The interrupt runs on
+  the main thread inside the script, reports
+  `js_engine: watchdog: script ran longer than N ms, terminated at file:line:col` at
+  level `error`, and calls `Isolate::TerminateExecution`. `try`/`catch` cannot catch it.
+  A request made stale by a later arm (the script finished in time) is dropped.
+- **Recovery**: when the outermost entry point returns, the engine calls
+  `CancelTerminateExecution`, so the next eval runs. The failed eval returns false and
+  the checkpoint returns -1; rejections still pending are reported at the next
+  checkpoint. `js_engine_watchdog_arm` outside JS also cancels a termination left by JS
+  the game loop called directly, so the frame loop continues.
+- **Limits**: a script blocked inside a native call is stopped only once it returns to
+  JS, because V8 checks interrupts only while it runs JS.
+
+`tests/smz/test_js_watchdog.c` (ctest `js_watchdog`, v8 mode) checks that `while(true){}`
+under 200 ms stops within 400 ms naming `spin.js:2`, that a `catch` cannot swallow it,
+that the next eval succeeds, that re-arming per eval and idle time do not fire, that a
+looping promise job is stopped too, and that no thread exists while the limit is off.
 
 `tests/smz/test_js_engine_v8.c` (ctest `js_engine_stack`, both modes) checks that a
 throw in `foo.js` line 3 reports `foo.js:3` from a file, a string and a SyntaxError; in

@@ -10,6 +10,7 @@ Modified 2026-11-01: default host data directories when SMZUGGLER_NAME is set.
 Modified 2026-11-01: record Map 92 report owner-run and JS-time gap definitions.
 Modified 2026-11-01: propose the V8 pin (DEC-M1-T001).
 Modified 2026-11-01: record jsb persistent callback handles.
+Modified 2026-11-01: record the V8 script watchdog design.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 
@@ -479,3 +480,18 @@ result is a fourth parameter beyond the card's `(cb, argc, argv)` so that the ca
 "return value" criterion can be met; it may be NULL. Callback exceptions go to a
 per-runtime handler set with `jsb_set_error_handler` (default: stderr), since the engine's
 `error_handler.c` is not yet on jsb; it will register there when ported (§4.1, item 5).
+
+## DEC-M1-T008 — the watchdog thread requests an interrupt, which terminates on the main thread
+§4.1 item 3 asks for `Isolate::TerminateExecution` from a timer thread. Called straight
+from that thread it stops the script, but the card also wants the script's file and line,
+and only the main thread, inside the running script, can read V8's current stack. So the
+timer thread (`src/engine/js_watchdog.cc`) calls the thread-safe
+`Isolate::RequestInterrupt`; the interrupt reads the top frame, reports it and calls
+`TerminateExecution` on the main thread. Calling both from the timer thread was rejected:
+V8 does not promise to service an API interrupt before a pending termination, so the
+interrupt could stay queued and run during the *next* script. Each arm bumps a generation, and the interrupt
+drops a request whose generation is no longer current, so a script that finished in time
+is never hit by a late request. The watchdog keeps QuickJS mode's rule that the clock runs
+from the last arm (no disarm). The `--js-timeout-ms` flag and the control-mode default
+named by the card need `src/main.c`, which the card does not own; `--watchdog <ms>`
+reaches the same code meanwhile.

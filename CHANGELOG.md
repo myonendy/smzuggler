@@ -27,6 +27,7 @@ Modified 2026-11-01: record the M0 exit observation checklist.
 Modified 2026-11-01: record guarded save reads (U15).
 Modified 2026-11-01: record the V8 build script and proposed pin.
 Modified 2026-11-01: record jsb persistent callbacks.
+Modified 2026-11-01: record the V8 script watchdog.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 <!-- Records project changes for release review; keep entries free of private data. -->
@@ -36,6 +37,11 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Stop runaway scripts on V8: a watchdog thread (`src/engine/js_watchdog.cc`), present
+  only while `js_engine_set_watchdog` has a limit, interrupts the script, reports its
+  `file:line:col` and terminates it with `Isolate::TerminateExecution`; the engine then
+  cancels the termination so the next eval runs. Test `js_watchdog`
+  (`docs/js-binding.md`, "Watchdog"; DEC-M1-T008).
 - Implement `js_engine.h` on V8 (`src/engine/js_engine_v8.cc`, library
   `smz_js_engine_v8` in v8 mode) with `ScriptOrigin` file names, console,
   error stacks and a microtask checkpoint; add `js_engine_get_jsb()` and the
