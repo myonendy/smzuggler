@@ -3,6 +3,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
 Modified 2026-10-31: seed dom_shim.js inventory rows.
 Modified 2026-10-31: seed pixi_shim.js inventory rows.
+Modified 2026-10-31: record PIXI.Circle, Ellipse, Polygon and SHAPES (U8).
 Modified 2026-10-31: record nw.Window.get EventEmitter and stubs (U3).
 Modified 2026-10-31: record real process env, platform, arch, versions, hrtime, nextTick (U5).
 Compatibility inventory for browser, NW.js and Node replacements.
@@ -14,8 +15,8 @@ shim attribution; statuses describe implementation, not conformance certificatio
 
 Every dumped member has a row; `pixi_shim.js` rows describe Outsider's
 QuickJS-mode PIXI, which real-PIXI mode does not load (§4.2).
-Absent APIs such as `PIXI.Circle` are recorded in the notes of their parent
-row, because the table matches the dump exactly.
+Absent APIs such as `PIXI.RoundedRectangle` and `PIXI.Mesh` are recorded in
+the notes of their parent row, because the table matches the dump exactly.
 Post-core/control shims currently install no members in the game-free dump.
 Names include aliases, internal members and constructor back-references
 retained by DEC-M0-T009b.
@@ -1031,7 +1032,7 @@ dump and rejection of a stale `name` row through the CLI.
 | `webkitAudioContext.prototype.suspend` | stub | `src/shims/webaudio_shim.js` | - | No native effect; empty result or simulated state only. |
 | `webkitAudioContext.prototype.suspend.prototype.constructor` | stub | `src/shims/webaudio_shim.js` | - | No native effect; empty result or simulated state only. |
 | `window` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Alias of globalThis. |
-| `PIXI` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Namespace of the QuickJS-mode shim; no Circle, Ellipse, Polygon, RoundedRectangle or Mesh (§5.4). Inventory test only. |
+| `PIXI` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Namespace of the QuickJS-mode shim; no RoundedRectangle or Mesh (§5.4). Inventory test only. |
 | `PIXI.Application` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Wires renderer, stage and ticker. |
 | `PIXI.Application.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Wires renderer, stage and ticker. |
 | `PIXI.Application.prototype.destroy` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Wires renderer, stage and ticker. |
@@ -1134,6 +1135,14 @@ dump and rejection of a stale `name` row through the CLI.
 | `PIXI.Buffer.prototype.dispose.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores buffer data only; no native vertex buffer (§4.2). |
 | `PIXI.Buffer.prototype.update` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores buffer data only; no native vertex buffer (§4.2). |
 | `PIXI.Buffer.prototype.update.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores buffer data only; no native vertex buffer (§4.2). |
+| `PIXI.Circle` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 circle math; clone, contains (closed disk) and getBounds. |
+| `PIXI.Circle.prototype.clone` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 circle math; clone, contains (closed disk) and getBounds. |
+| `PIXI.Circle.prototype.clone.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 circle math; clone, contains (closed disk) and getBounds. |
+| `PIXI.Circle.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 circle math; clone, contains (closed disk) and getBounds. |
+| `PIXI.Circle.prototype.contains` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 circle math; clone, contains (closed disk) and getBounds. |
+| `PIXI.Circle.prototype.contains.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 circle math; clone, contains (closed disk) and getBounds. |
+| `PIXI.Circle.prototype.getBounds` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 circle math; clone, contains (closed disk) and getBounds. |
+| `PIXI.Circle.prototype.getBounds.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 circle math; clone, contains (closed disk) and getBounds. |
 | `PIXI.Container` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
 | `PIXI.Container.prototype._calculateBounds` | stub | `src/shims/pixi_shim.js` | - | No-op. |
 | `PIXI.Container.prototype._calculateBounds.prototype.constructor` | stub | `src/shims/pixi_shim.js` | - | No-op. |
@@ -1220,6 +1229,14 @@ dump and rejection of a stale `name` row through the CLI.
 | `PIXI.DisplayObject.prototype.x` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
 | `PIXI.DisplayObject.prototype.y` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
 | `PIXI.DisplayObject.prototype.zIndex` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.Ellipse` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 ellipse math; width/height are half-sizes; getBounds uses those half sizes. |
+| `PIXI.Ellipse.prototype.clone` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 ellipse math; width/height are half-sizes; getBounds uses those half sizes. |
+| `PIXI.Ellipse.prototype.clone.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 ellipse math; width/height are half-sizes; getBounds uses those half sizes. |
+| `PIXI.Ellipse.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 ellipse math; width/height are half-sizes; getBounds uses those half sizes. |
+| `PIXI.Ellipse.prototype.contains` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 ellipse math; width/height are half-sizes; getBounds uses those half sizes. |
+| `PIXI.Ellipse.prototype.contains.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 ellipse math; width/height are half-sizes; getBounds uses those half sizes. |
+| `PIXI.Ellipse.prototype.getBounds` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 ellipse math; width/height are half-sizes; getBounds uses those half sizes. |
+| `PIXI.Ellipse.prototype.getBounds.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 ellipse math; width/height are half-sizes; getBounds uses those half sizes. |
 | `PIXI.FORMATS` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Constant table only. Inventory test only. |
 | `PIXI.FORMATS.ALPHA` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Constant table only. Inventory test only. |
 | `PIXI.FORMATS.LUMINANCE` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Constant table only. Inventory test only. |
@@ -1436,6 +1453,14 @@ dump and rejection of a stale `name` row through the CLI.
 | `PIXI.Point.prototype.equals.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Plain point; no observers. |
 | `PIXI.Point.prototype.set` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Plain point; no observers. |
 | `PIXI.Point.prototype.set.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Plain point; no observers. |
+| `PIXI.Polygon` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 polygon math; flat array, points or varargs; closeStroke; even-odd contains. |
+| `PIXI.Polygon.prototype.clone` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 polygon math; flat array, points or varargs; closeStroke; even-odd contains. |
+| `PIXI.Polygon.prototype.clone.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 polygon math; flat array, points or varargs; closeStroke; even-odd contains. |
+| `PIXI.Polygon.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 polygon math; flat array, points or varargs; closeStroke; even-odd contains. |
+| `PIXI.Polygon.prototype.contains` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 polygon math; flat array, points or varargs; closeStroke; even-odd contains. |
+| `PIXI.Polygon.prototype.contains.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 polygon math; flat array, points or varargs; closeStroke; even-odd contains. |
+| `PIXI.Polygon.prototype.getBounds` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 polygon math; flat array, points or varargs; closeStroke; even-odd contains. |
+| `PIXI.Polygon.prototype.getBounds.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 polygon math; flat array, points or varargs; closeStroke; even-odd contains. |
 | `PIXI.Program` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores shader strings only; no program compilation (§4.2). |
 | `PIXI.Program.from` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores shader strings only; no program compilation (§4.2). |
 | `PIXI.Program.from.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores shader strings only; no program compilation (§4.2). |
@@ -1503,6 +1528,12 @@ dump and rejection of a stale `name` row through the CLI.
 | `PIXI.SCALE_MODES` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; nearest/linear sampling. |
 | `PIXI.SCALE_MODES.LINEAR` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; nearest/linear sampling. |
 | `PIXI.SCALE_MODES.NEAREST` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; nearest/linear sampling. |
+| `PIXI.SHAPES` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 shape type enum (POLY/RECT/CIRC/ELIP/RREC). |
+| `PIXI.SHAPES.CIRC` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 shape type enum (POLY/RECT/CIRC/ELIP/RREC). |
+| `PIXI.SHAPES.ELIP` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 shape type enum (POLY/RECT/CIRC/ELIP/RREC). |
+| `PIXI.SHAPES.POLY` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 shape type enum (POLY/RECT/CIRC/ELIP/RREC). |
+| `PIXI.SHAPES.RECT` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 shape type enum (POLY/RECT/CIRC/ELIP/RREC). |
+| `PIXI.SHAPES.RREC` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | PIXI 5.3.12 shape type enum (POLY/RECT/CIRC/ELIP/RREC). |
 | `PIXI.Shader` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores program and uniforms only; never bound (§4.2). |
 | `PIXI.Shader.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores program and uniforms only; never bound (§4.2). |
 | `PIXI.Shader.prototype.destroy` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores program and uniforms only; never bound (§4.2). |

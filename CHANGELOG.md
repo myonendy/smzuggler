@@ -11,6 +11,7 @@ Modified 2026-10-31: record the API-members-only surface dump.
 Modified 2026-10-31: record the smaller-shim compatibility inventory.
 Modified 2026-10-31: record the dom_shim.js compatibility inventory.
 Modified 2026-10-31: add the share-bundle packager.
+Modified 2026-10-31: record PIXI.Circle, Ellipse and Polygon (U8).
 Modified 2026-10-31: record the nw.Window EventEmitter (U3).
 Modified 2026-10-31: record the real process env and platform (U5).
 Project documentation; identity decisions are in docs/DECISIONS.md.
@@ -23,6 +24,7 @@ All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
 - Make `process.env` a snapshot of the real environment and `process.platform`/`arch` the real OS and CPU, and add `versions`, `hrtime` and `nextTick`, so saves no longer go to `undefined/.local/share` (U5).
+- Add PIXI.Circle, Ellipse and Polygon with PIXI 5.3.12 clone, contains, getBounds and type (U8).
 - Add an opt-in save-path guard: with it on, file writes, mkdir, unlink and rename refuse relative paths and paths that resolve inside the game root, logging one error (U7).
 - Report navigator.platform and userAgent for the real OS in Chrome's format, following process.platform/arch, instead of always Windows (U6).
 - Deliver the `close` event on SDL quit and window close; a listener keeps the app running until `close(true)` or `nw.App.quit()` (U4).
