@@ -9,6 +9,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+
+#ifdef _WIN32
+#include <sys/utime.h>
+#define test_utime _utime
+#define test_utimbuf _utimbuf
+#else
+#include <utime.h>
+#define test_utime utime
+#define test_utimbuf utimbuf
+#endif
 
 static int tests_run = 0;
 static int tests_passed = 0;
@@ -601,6 +612,161 @@ static void test_state_persistence(void)
     js_engine_shutdown(engine);
 }
 
+/* .jsc cache location: next to the script by default, under the cache dir
+   (keyed by the game-relative path) when js_engine_set_cache_dir() is used. */
+
+static int file_exists(const char *path)
+{
+    struct stat st;
+    return stat(path, &st) == 0;
+}
+
+static int write_text(const char *path, const char *text)
+{
+    FILE *f = fopen(path, "w");
+    if (!f) return 0;
+    fputs(text, f);
+    fclose(f);
+    return 1;
+}
+
+/* Evaluate a file through the cache in a fresh engine and return the value of
+   jscValue as a newly allocated string (NULL on failure). */
+static char *eval_cached_value(const char *cache_dir, const char *game_root,
+                               const char *script)
+{
+    JSEngine *engine = js_engine_init();
+    char *out = NULL;
+    if (!engine) return NULL;
+    if (cache_dir) js_engine_set_cache_dir(engine, cache_dir, game_root);
+    if (js_engine_eval_file_cached(engine, script)) {
+        char *v = js_engine_eval_string(engine, "String(jscValue)", "test");
+        if (v) {
+            out = malloc(strlen(v) + 1);
+            if (out) strcpy(out, v);
+        }
+        js_engine_free_string(v);
+    }
+    js_engine_shutdown(engine);
+    return out;
+}
+
+static void test_jsc_cache_dir(void)
+{
+    char game[TEST_PATH_MAX], cache[TEST_PATH_MAX], plugins[TEST_PATH_MAX];
+    char script[TEST_PATH_MAX], beside[TEST_PATH_MAX], cached[TEST_PATH_MAX];
+    snprintf(game, sizeof(game), "%s", test_tmp_path("rmmz_jsc_game"));
+    snprintf(cache, sizeof(cache), "%s", test_tmp_path("rmmz_jsc_cache/outsider/jsc"));
+    snprintf(plugins, sizeof(plugins), "%s/js/plugins", game);
+    snprintf(script, sizeof(script), "%s/A.js", plugins);
+    snprintf(beside, sizeof(beside), "%s/A.jsc", plugins);
+    snprintf(cached, sizeof(cached), "%s/js/plugins/A.jsc", cache);
+    test_rm_rf(game);
+    test_rm_rf(test_tmp_path("rmmz_jsc_cache"));
+
+    TEST(jsc_cache_dir_setup);
+    if (!test_mkdir_p(plugins) || !write_text(script, "var jscValue = 'first';\n")) {
+        FAIL("could not create test game dir");
+        return;
+    }
+    PASS();
+
+    TEST(jsc_cache_dir_writes_under_cache_dir);
+    {
+        char *v = eval_cached_value(cache, game, script);
+        if (!v || strcmp(v, "first") != 0) FAIL("script did not run");
+        else if (!file_exists(cached)) FAIL("no .jsc under the cache dir");
+        else if (file_exists(beside)) FAIL(".jsc written beside the script");
+        else PASS();
+        free(v);
+    }
+
+    TEST(jsc_cache_dir_reused_on_second_load);
+    {
+        /* Change the source but keep its mtime: only a cache hit still
+           yields the old value. */
+        struct stat st;
+        struct test_utimbuf times;
+        int ok = stat(script, &st) == 0 && write_text(script, "var jscValue = 'second';\n");
+        times.actime = st.st_atime;
+        times.modtime = st.st_mtime;
+        ok = ok && test_utime(script, &times) == 0;
+        char *v = ok ? eval_cached_value(cache, game, script) : NULL;
+        if (!ok) FAIL("could not rewrite the script");
+        else if (!v || strcmp(v, "first") != 0) FAIL("cache was not reused");
+        else if (file_exists(beside)) FAIL(".jsc written beside the script");
+        else PASS();
+        free(v);
+    }
+
+    TEST(jsc_cache_dir_key_stays_inside_cache_dir);
+    {
+        char outside[TEST_PATH_MAX], via_dotdot[TEST_PATH_MAX], key[TEST_PATH_MAX];
+        snprintf(outside, sizeof(outside), "%s", test_tmp_path("rmmz_jsc_outside.js"));
+        snprintf(via_dotdot, sizeof(via_dotdot), "%s/../rmmz_jsc_outside.js", game);
+        snprintf(key, sizeof(key), "%s/__/rmmz_jsc_outside.jsc", cache);
+        write_text(outside, "var jscValue = 'outside';\n");
+        char *v = eval_cached_value(cache, game, via_dotdot);
+        if (!v || strcmp(v, "outside") != 0) FAIL("script did not run");
+        else if (!file_exists(key)) FAIL("'..' key not kept inside the cache dir");
+        else if (file_exists(test_tmp_path("rmmz_jsc_outside.jsc"))) FAIL(".jsc beside the script");
+        else PASS();
+        free(v);
+        remove(outside);
+    }
+
+    TEST(jsc_default_cache_beside_script);
+    {
+        test_rm_rf(test_tmp_path("rmmz_jsc_cache"));
+        char *v = eval_cached_value(NULL, NULL, script);
+        if (!v || strcmp(v, "second") != 0) FAIL("script did not run");
+        else if (!file_exists(beside)) FAIL("default .jsc not beside the script");
+        else if (file_exists(cached)) FAIL("default wrote into the cache dir");
+        else PASS();
+        free(v);
+    }
+
+    test_rm_rf(game);
+    test_rm_rf(test_tmp_path("rmmz_jsc_cache"));
+}
+
+static void test_jsc_default_cache_dir(void)
+{
+    char out[TEST_PATH_MAX];
+    TEST(jsc_default_cache_dir_rejects_bad_args);
+    if (js_engine_default_cache_dir(NULL, out, sizeof(out)) ||
+        js_engine_default_cache_dir("outsider", out, 4)) FAIL("accepted bad arguments");
+    else PASS();
+
+#if defined(__linux__) && !defined(__ANDROID__)
+    const char *saved = getenv("XDG_CACHE_HOME");
+    char saved_buf[TEST_PATH_MAX];
+    if (saved) snprintf(saved_buf, sizeof(saved_buf), "%s", saved);
+
+    TEST(jsc_default_cache_dir_uses_xdg_cache_home);
+    setenv("XDG_CACHE_HOME", "/tmp/rmmz-xdg-cache/", 1);
+    if (!js_engine_default_cache_dir("outsider", out, sizeof(out)) ||
+        strcmp(out, "/tmp/rmmz-xdg-cache/outsider/jsc") != 0) FAIL(out);
+    else PASS();
+
+    TEST(jsc_default_cache_dir_falls_back_to_home);
+    {
+        const char *home = getenv("HOME");
+        char home_buf[TEST_PATH_MAX];
+        if (home) snprintf(home_buf, sizeof(home_buf), "%s", home);
+        unsetenv("XDG_CACHE_HOME");
+        setenv("HOME", "/tmp/rmmz-home", 1);
+        if (!js_engine_default_cache_dir("outsider", out, sizeof(out)) ||
+            strcmp(out, "/tmp/rmmz-home/.cache/outsider/jsc") != 0) FAIL(out);
+        else PASS();
+        if (home) setenv("HOME", home_buf, 1);
+        else unsetenv("HOME");
+    }
+    if (saved) setenv("XDG_CACHE_HOME", saved_buf, 1);
+    else unsetenv("XDG_CACHE_HOME");
+#endif
+}
+
 int main(int argc, char *argv[])
 {
     (void)argc;
@@ -614,6 +780,8 @@ int main(int argc, char *argv[])
     test_eval_file();
     test_pending_jobs();
     test_state_persistence();
+    test_jsc_cache_dir();
+    test_jsc_default_cache_dir();
 
     printf("\nResults: %d/%d passed\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;
