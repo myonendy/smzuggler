@@ -221,7 +221,7 @@ changes together.
 | `tools/commitmsg/` | Commit subject checks and fixtures; fork. |
 | `tools/compat/` | Plugin require/process surface scanner; fork. |
 | `tools/doclint/` | Source documentation, Markdown and docs-touched checks; fork. |
-| `tools/evaluator/` | Runtime evaluation driver support; mixed: upstream NW.js/Outsider comparison plus the fork's isolated scratch-copy entry point `smzuggler.py` ([local scenarios](docs/testing.md#local-title-map-menu-and-save-scenarios)). |
+| `tools/evaluator/` | Runtime evaluation driver support; mixed: upstream NW.js/Outsider comparison plus the fork's isolated scratch-copy entry point `smzuggler.py`, which launches the host with scratch HOME/XDG directories ([local scenarios](docs/testing.md#local-title-map-menu-and-save-scenarios)). |
 | `tools/evaluator/scenarios/` | Evaluation scenario definitions; mixed: upstream scenarios plus the fork's `smz-basics.json` title, Map 92, menu, save/reload and close control route. |
 | `tools/forge/` | Offline worker build/test and policy gate entry points; fork. |
 | `tools/format/` | Formatting and ES5 checks; fork. |

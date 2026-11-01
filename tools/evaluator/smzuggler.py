@@ -136,7 +136,7 @@ def scratch_env(run, inherited):
     env = dict(inherited)
     for key, folder in SCRATCH_ENV:
         target = run / folder
-        target.mkdir(mode=0o700)
+        target.mkdir(mode=0o700, exist_ok=True)
         env[key] = str(target)
     return env
 

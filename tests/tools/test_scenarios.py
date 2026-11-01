@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 The smzuggler contributors
 # Modified 2026-11-01: assert the game process gets scratch HOME/XDG directories.
+# Modified 2026-11-01: capture Popen env and the save-check XDG path.
 """Guard local evaluator scenarios; see docs/testing.md.
 
 Game-free tests keep the driver recipes portable and private. No game is read.
@@ -13,7 +14,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -111,24 +112,34 @@ class ScenarioTests(unittest.TestCase):
             smzuggler.check_scratch_save(stage, data)
 
     def test_game_process_receives_scratch_xdg(self):
-        """The child HOME and XDG bases must live under the run, not the caller."""
+        """Popen must get scratch HOME/XDG dirs under the run, not the caller."""
         keys = ('HOME', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME',
                 'XDG_STATE_HOME', 'XDG_CACHE_HOME')
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             run = root / 'run'
             run.mkdir()
+            (run / 'host').write_text('')
             caller = root / 'caller'
             caller.mkdir()
             fake = {key: str(caller / key.lower()) for key in keys}
+            child = MagicMock()
+            child.stdin = MagicMock()
+            child.stdin.write.side_effect = OSError('gone')
+            child.stdout = iter(())
+            child.poll.return_value = 1
+            child.wait.return_value = 1
             with patch.dict(os.environ, fake), \
                  patch.object(smzuggler, 'stage_game', return_value=run), \
                  patch.object(smzuggler, 'game_resolution', return_value=(640, 480)), \
-                 patch.object(smzuggler, 'OutsiderDriver',
-                              side_effect=smzuggler.DriverError('stop')) as driver:
+                 patch('tools.evaluator.drivers.subprocess.Popen',
+                       return_value=child) as popen:
                 with self.assertRaises(smzuggler.DriverError):
                     smzuggler.play(run / 'host', run, run, {'steps': []})
-            env = driver.call_args.kwargs['env']
+                for key in keys:
+                    self.assertEqual(os.environ[key], fake[key], key)
+            env = popen.call_args.kwargs['env']
+            self.assertIsNotNone(env)
             run_root = run.resolve()
             for key in keys:
                 path = Path(env[key]).resolve()
@@ -250,13 +261,17 @@ class ScenarioTests(unittest.TestCase):
                  patch.object(smzuggler, 'game_resolution', return_value=(640, 480)), \
                  patch.object(smzuggler, 'OutsiderDriver') as driver_cls, \
                  patch.object(smzuggler, 'Runner') as runner, \
-                 patch.object(smzuggler, 'check_scratch_save'):
+                 patch.object(smzuggler, 'check_scratch_save') as save_check:
                 driver = driver_cls.return_value
                 driver.evaluate.return_value = 0
                 driver.proc.wait.return_value = 0
                 runner.return_value.run.return_value = [type('R', (), {'status': 'ok'})()]
                 smzuggler.play(run / 'host', run, run, {'steps': [{'wait': 1}]})
             driver._send.assert_called_once_with('eval', json.dumps('nw.Window.get().close()'))
+            save_check.assert_called_once()
+            data_home = Path(save_check.call_args.args[1]).resolve()
+            self.assertTrue(data_home.is_relative_to(run.resolve()))
+            self.assertEqual(data_home.name, 'xdg-data')
             self.assertEqual(json.loads((run / 'summary.json').read_text())[-1],
                              {'step': 'window-close', 'status': 'ok'})
 

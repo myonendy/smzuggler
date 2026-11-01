@@ -340,6 +340,7 @@ is not reused because save and reload need a writable save directory. The map st
 configured start map. Control-mode perf samples keep native 0.1 ms precision and are
 diagnostic; they cannot establish the later device acceptance gate. See
 [local scenario instructions](testing.md#local-title-map-menu-and-save-scenarios).
+
 ## DEC-M0-T021 — Default host data directories when SMZUGGLER_NAME is set
 U9/U10's `--data-dir` stays opt-in in `rmmz_resolve_log_dir` so the upstream
 C test keeps writing logs to the game folder without the flag. When
@@ -372,6 +373,7 @@ name. `prelude.js` stays identical to upstream, a test can show the loaded text 
 the inherited CLI's new `--prelude` option lets the NW.js reference run use the same text.
 Bundle README step lines are appended by the entry point because the share packager's
 README has no step section.
+
 ## DEC-M0-T018-OWNER-RUN — M0-T018 builds the report tool; the owner runs it
 With the owner's approval (2026-11-01), DEC-M0-T015-OWNER-RUN extends to M0-T018. The card
 now builds and tests `tools/perf/map92_report.py` on synthetic inputs and writes the run
