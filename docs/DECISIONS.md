@@ -5,6 +5,7 @@ Modified 2026-10-30: document runtime naming and format policy.
 Modified 2026-10-31: record the share-bundle last-run path.
 Modified 2026-10-31: record process.argv shape and throwing require.
 Modified 2026-11-01: record evaluator scratch-root isolation.
+Modified 2026-11-01: record evaluator game-process XDG isolation.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 
@@ -338,6 +339,14 @@ is not reused because save and reload need a writable save directory. The map st
 configured start map. Control-mode perf samples keep native 0.1 ms precision and are
 diagnostic; they cannot establish the later device acceptance gate. See
 [local scenario instructions](testing.md#local-title-map-menu-and-save-scenarios).
+
+## DEC-M0-T015-SAVE-ISOLATION — M0-T015 isolates the game's whole environment
+M0-T015 blocked again after the owner-run change. The last review found that since U5 made
+`process.env` a real snapshot, the evaluator started the game with the owner's environment,
+so the game's save-location plugin would target the owner's real save folder (the write
+guard refused it this time). The card now requires the game process to get scratch `HOME`
+and `XDG_*` directories under the evaluator's output root, a save check that looks in that
+scratch XDG tree, tests for both, and a clean boot-error path. Owner approved 2026-11-01.
 
 ## DEC-M0-T015b — cut storage stubs from the prelude instead of restoring them
 Upstream's evaluator prelude stubs `StorageManager.saveObject`, `loadObject` and `exists`,

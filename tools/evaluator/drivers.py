@@ -1,4 +1,6 @@
 # Copyright (c) 2026 General Arcade (Pte. Ltd.)
+# Copyright (C) 2026 The smzuggler contributors
+# Modified 2026-11-01: accept an optional child environment for isolated save IO.
 # SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
 """Players the evaluator can drive.
 
@@ -201,7 +203,15 @@ class OutsiderDriver:
     name = "outsider"
 
     def __init__(self, exe, game_dir, prelude, width, height, shims_dir=None,
-                 log_path=None, cwd=None, extra_args=(), boot_timeout=60.0):
+                 log_path=None, cwd=None, extra_args=(), boot_timeout=60.0, env=None):
+        """Launch the host in --control mode and install the prelude before frame 0.
+
+        env is an optional mapping passed to the child; None inherits the caller's
+        environment (upstream comparison runs). The fork entry point passes a
+        scratch HOME/XDG mapping so save-location plugins cannot see the caller's
+        folders. Other arguments match the inherited CLI. Raises DriverError if
+        the process exits before the prelude eval returns.
+        """
         args = [os.path.abspath(exe), os.path.abspath(game_dir), "--control",
                 "--resolution", "%dx%d" % (width, height), "--no-audio"]
         if shims_dir:
@@ -209,7 +219,8 @@ class OutsiderDriver:
         args += list(extra_args)
         self.log = open(log_path, "wb") if log_path else None
         self.proc = subprocess.Popen(args, cwd=cwd, stdin=subprocess.PIPE,
-                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                     env=env)
         self.replies = queue.Queue()
         self.pending = {}
         self.next_id = 1

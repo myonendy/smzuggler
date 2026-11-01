@@ -3,6 +3,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
 Modified 2026-11-01: document isolated evaluator scenarios, the storage-preserving
 prelude, step summaries and local NW.js references.
+Modified 2026-11-01: document scratch HOME/XDG isolation for the evaluator game process.
 
 Local and CI validation of the QuickJS baseline, part of build infrastructure.
 Keep the game-free suite independent of any installed game; do not bypass skips.
@@ -116,11 +117,14 @@ Each session creates a fresh directory under
 `~/.local/state/smzuggler-rt/evaluator/`). The host runs against a disposable
 copy of the inputs under this run's output directory. Copies dereference
 symlinks and exclude top-level owner save directories, save files and runtime
-logs. Reserve enough space for a complete test copy per session. The host only
-receives the scratch game root; its saves and logs therefore stay beneath the
-run directory. Nothing is written into the original game directory. Unlike the
-read-only smoke above, this route needs a writable save directory, so it uses
-a scratch copy instead of a read-only bubblewrap mount.
+logs. Reserve enough space for a complete test copy per session. The game
+process is started with scratch `HOME`, `XDG_DATA_HOME`, `XDG_CONFIG_HOME`,
+`XDG_STATE_HOME` and `XDG_CACHE_HOME` directories created under that run
+(never the caller's), so the save-location plugin, which reads `process.env`
+(U5), resolves inside the scratch tree. Display and `PATH` stay inherited so
+the window can open. Nothing is written into the original game directory.
+Unlike the read-only smoke above, this route needs a writable save directory,
+so it uses a scratch copy instead of a read-only bubblewrap mount.
 
 The route waits for title, starts a new game, checks `$gameMap.mapId() === 92`
 directly (not the configured start map), captures 60/300/600 additional
@@ -129,15 +133,19 @@ menu, saves slot 1, checks that the slot exists, reloads it (requiring a
 replacement game-system object) and requests `nw.Window.get().close()`. The
 process must exit with status zero; forced cleanup does not count as a clean
 close. After the steps, the entry point also checks that a slot-1 file exists
-in the scratch copy's `save/` directory. Readiness can advance frames, so
-these capture offsets are relative to readiness, not engine boot.
+in the scratch copy's `save/` directory or under the child's
+`$XDG_DATA_HOME/<save-dir>/` (both `file1.rmmzsave` and `forage_*file1`
+names). The save-dir name is taken from the tree the plugin wrote; it is not
+hard-coded. Readiness can advance frames, so these capture offsets are
+relative to readiness, not engine boot.
 
 The upstream `prelude.js` stubs `StorageManager.saveObject`, `loadObject` and
 `exists` so its own scenarios never touch player data. That would make save
 and reload no-ops, so the entry point loads the prelude without that section
 (`--print-prelude` shows exactly what is loaded). The cut keeps
 `var storagePatched = false` so prelude status reporting stays valid. This is
-safe only because the host sees a scratch copy without owner saves.
+safe only because the host sees a scratch copy without owner saves and because
+its HOME and XDG bases are under the run directory.
 
 `summary.json` records logical frame counts and status per step without game
 text or screenshots. `runtime.log`, native phase averages in `perf.json`,

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 The smzuggler contributors
+# Modified 2026-11-01: assert the game process gets scratch HOME/XDG directories.
 """Guard local evaluator scenarios; see docs/testing.md.
 
 Game-free tests keep the driver recipes portable and private. No game is read.
@@ -91,6 +92,49 @@ class ScenarioTests(unittest.TestCase):
                 smzuggler.check_scratch_save(stage)
             (stage / 'save' / 'forage_rmmzsave.x.file1').write_text('{}')
             smzuggler.check_scratch_save(stage)
+
+    def test_scratch_save_check_finds_xdg_slot_names(self):
+        """A slot under scratch $XDG_DATA_HOME counts for both storage file names."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stage = root / 'stage'
+            (stage / 'save').mkdir(parents=True)
+            data = root / 'xdg-data'
+            slot = data / 'save-dir'
+            slot.mkdir(parents=True)
+            with self.assertRaisesRegex(smzuggler.DriverError, 'slot 1'):
+                smzuggler.check_scratch_save(stage, data)
+            (slot / 'file1.rmmzsave').write_text('{}')
+            smzuggler.check_scratch_save(stage, data)
+            (slot / 'file1.rmmzsave').unlink()
+            (slot / 'forage_localforagefile1').write_text('{}')
+            smzuggler.check_scratch_save(stage, data)
+
+    def test_game_process_receives_scratch_xdg(self):
+        """The child HOME and XDG bases must live under the run, not the caller."""
+        keys = ('HOME', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME',
+                'XDG_STATE_HOME', 'XDG_CACHE_HOME')
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            run = root / 'run'
+            run.mkdir()
+            caller = root / 'caller'
+            caller.mkdir()
+            fake = {key: str(caller / key.lower()) for key in keys}
+            with patch.dict(os.environ, fake), \
+                 patch.object(smzuggler, 'stage_game', return_value=run), \
+                 patch.object(smzuggler, 'game_resolution', return_value=(640, 480)), \
+                 patch.object(smzuggler, 'OutsiderDriver',
+                              side_effect=smzuggler.DriverError('stop')) as driver:
+                with self.assertRaises(smzuggler.DriverError):
+                    smzuggler.play(run / 'host', run, run, {'steps': []})
+            env = driver.call_args.kwargs['env']
+            run_root = run.resolve()
+            for key in keys:
+                path = Path(env[key]).resolve()
+                self.assertTrue(path.is_dir(), key)
+                self.assertTrue(path.is_relative_to(run_root), key)
+                self.assertNotEqual(path, Path(fake[key]).resolve(), key)
 
     def test_failed_launch_keeps_original_error_and_summary(self):
         """A constructor failure must survive cleanup without timing evidence."""

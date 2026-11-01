@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 The smzuggler contributors
+# Modified 2026-11-01: isolate the game process HOME and XDG directories under the run.
 """Local, isolated control scenarios for the QuickJS host.
 
 Why: spec §10 / §14.6 need a title → Map 92 → menu → save/reload → close route
 that never writes into the game dir. Architecture: ARCHITECTURE.md tools/evaluator
 row and docs/testing.md. Runs on the CLI thread; the host is a child process.
-Scratch copies and run output stay under $XDG_STATE_HOME/smzuggler-rt/evaluator/.
+Scratch copies, the child's HOME/XDG directories, and run output stay under
+$XDG_STATE_HOME/smzuggler-rt/evaluator/.
 """
 import argparse
 import csv
@@ -29,6 +31,15 @@ ROOT = HERE.parents[1]
 SCENARIO = HERE / 'scenarios/smz-basics.json'
 STORAGE_BEGIN = '/* --- Storage isolation'
 STORAGE_END = '/* --- Stay windowed'
+# Child env keys the save-location plugin (and XDG helpers) read. Values are
+# directory names created under the run so they never alias the caller's folders.
+SCRATCH_ENV = (
+    ('HOME', 'home'),
+    ('XDG_DATA_HOME', 'xdg-data'),
+    ('XDG_CONFIG_HOME', 'xdg-config'),
+    ('XDG_STATE_HOME', 'xdg-state'),
+    ('XDG_CACHE_HOME', 'xdg-cache'),
+)
 
 
 def prelude_text():
@@ -113,6 +124,23 @@ def quiet(message):
     return None
 
 
+def scratch_env(run, inherited):
+    """Return a child environment whose save-related dirs live under run.
+
+    Copies inherited so DISPLAY and PATH still work, then replaces HOME and
+    the XDG bases with new directories inside run. The game's save-location
+    plugin reads process.env (U5), so inheriting the caller's XDG_DATA_HOME
+    would write the owner's real save folder. Directories are created here;
+    the returned dict is owned by the caller. inherited is borrowed.
+    """
+    env = dict(inherited)
+    for key, folder in SCRATCH_ENV:
+        target = run / folder
+        target.mkdir(mode=0o700)
+        env[key] = str(target)
+    return env
+
+
 def request_window_close(driver):
     """Fire nw.Window.get().close() without waiting for a JS reply.
 
@@ -131,8 +159,11 @@ def play(exe, game, run, scenario):
     Inputs are Paths and a validated scenario. Outputs stay under run. Exceptions
     abort the run; finally always releases the child. Frame counts are logical
     evaluator frames, not a substitute for native presentation-time measurements.
+    The child HOME and XDG bases are created under run so the save-location
+    plugin cannot target the caller's folders.
     """
     stage = stage_game(game, run)
+    child_env = scratch_env(run, os.environ)
     results = [{'step': index, 'status': 'not-run'}
                for index in range(len(scenario['steps']))]
     results.append({'step': 'window-close', 'status': 'not-run'})
@@ -142,7 +173,7 @@ def play(exe, game, run, scenario):
         driver = OutsiderDriver(str(exe), str(stage), prelude_text(),
                             width, height, shims_dir=str(ROOT / 'src/shims'),
                             log_path=str(run / 'runtime.log'), cwd=str(run),
-                            extra_args=['--perf', '1'])
+                            extra_args=['--perf', '1'], env=child_env)
         runner = Runner(driver, str(run / 'shots'), log=quiet)
         with (run / 'steps.csv').open('w') as stream:
             writer = csv.writer(stream)
@@ -157,7 +188,7 @@ def play(exe, game, run, scenario):
                 writer.writerow([index, before, after, (time.monotonic()-start)*1000, result.status])
                 if result.status != 'ok':
                     raise DriverError('scenario step failed: %d' % index)
-        check_scratch_save(stage)
+        check_scratch_save(stage, Path(child_env['XDG_DATA_HOME']))
         request_window_close(driver)
         code = driver.proc.wait(timeout=15)
         results[-1] = {'step': 'window-close', 'status': 'ok' if code == 0 else 'error'}
@@ -173,16 +204,25 @@ def play(exe, game, run, scenario):
     timing_report(run)
 
 
-def check_scratch_save(stage):
-    """Prove slot 1 reached disk in the scratch copy, not only in memory.
+def check_scratch_save(stage, data_home=None):
+    """Prove slot 1 reached disk in the scratch copy or scratch XDG tree.
 
-    stage is the scratch game root the host was given; the host derives its
-    save directory from it; local mode writes file1.rmmzsave and localforage
-    mode a forage_ file whose key ends in file1. Raise DriverError when neither exists.
+    stage is the scratch game root the host was given. data_home is the child's
+    $XDG_DATA_HOME under the run directory; the save-location plugin writes
+    $XDG_DATA_HOME/<dir_save_name>/. Local mode writes file1.rmmzsave and
+    localforage mode a forage_ file whose key ends in file1. The folder name
+    is not hard-coded: every immediate child of data_home is searched. Raise
+    DriverError when neither location contains a slot-1 file.
     """
-    save = stage / 'save'
-    if not (list(save.glob('file1.*')) or list(save.glob('forage_*file1'))):
-        raise DriverError('slot 1 was not written to the scratch save directory')
+    folders = [stage / 'save']
+    if data_home is not None:
+        home = Path(data_home)
+        if home.is_dir():
+            folders.extend(path for path in home.iterdir() if path.is_dir())
+    for folder in folders:
+        if list(folder.glob('file1.*')) or list(folder.glob('forage_*file1')):
+            return
+    raise DriverError('slot 1 was not written to the scratch save directory')
 
 
 def timing_report(run):
@@ -303,7 +343,9 @@ def main(argv=None):
         game, out = paths(os.environ, Path.home())
         scenario = load_scenario(SCENARIO)
         # Paths are printed only to the local terminal, never to the summary.
-        print('game:', game, '\noutput:', out, '\nscratch saves: <run>/input/save')
+        print('game:', game, '\noutput:', out)
+        print('scratch env: <run>/home and <run>/xdg-{data,config,state,cache}')
+        print('scratch saves: <run>/input/save and <run>/xdg-data/<save-dir>/')
         print('runtime:', args.runtime.resolve(), '\nscenario:', SCENARIO)
         if args.dry_run:
             return 0

@@ -18,6 +18,7 @@ Modified 2026-10-31: record the real process env and platform (U5).
 Modified 2026-10-31: record process.argv/cwd/exit, throwing require, plugin scan.
 Modified 2026-10-31: record opt-in --data-dir log path (U9).
 Modified 2026-11-01: record local evaluator scenarios.
+Modified 2026-11-01: record evaluator game-process XDG isolation.
 Modified 2026-11-01: record the .jsc cache-dir option (U10).
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
@@ -32,6 +33,9 @@ All notable changes to smzuggler. Outsider's own history is in its git log.
   with scratch storage, native timing exports and privacy-scanned local bundles.
 - Load the evaluator prelude without StorageManager stubs so scenario save and reload hit the
   scratch save directory; check Map 92 directly and add per-step results to bundle READMEs.
+- Start the evaluator game process with scratch HOME and XDG directories under the run so
+  the save-location plugin cannot write the caller's save folder; the slot check searches
+  that XDG tree as well as the staged `save/`.
 - Add `js_engine_set_cache_dir()` so the `.jsc` bytecode cache can live under the platform cache dir (`$XDG_CACHE_HOME/outsider/jsc`), keyed by the game-relative path, instead of beside each script (U10).
 - Add opt-in `--data-dir` / `--data-dir=PATH` so `debug.log` and `console.log` go to the platform state directory (or PATH) instead of the game directory (U9).
 - Log one `[PROF] missing: <Class>.<member>` warning per distinct missing renderer or plugin member a game reads, only when profiling is on (U14).
