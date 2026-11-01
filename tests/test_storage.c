@@ -4,6 +4,7 @@
  */
 
 #include "bindings/bind_io.h"
+#include "bindings/bind_platform.h"
 #include "io/file_io.h"
 #include "engine/js_engine.h"
 
@@ -59,6 +60,7 @@ static void js_setup(void)
 
     s_js = js_engine_init();
     bind_io_register(js_engine_get_context(s_js));
+    bind_platform_register_process(js_engine_get_context(s_js));
     file_io_set_game_root(TEST_SAVE_DIR);
 
     /* DOM shim must precede the storage shim (provides window, document). */
@@ -552,6 +554,243 @@ TEST(process_mainmodule_filename)
     js_teardown();
 }
 
+/* Tests: process host facts (env, platform, arch, versions, hrtime, nextTick) */
+
+#if defined(__ANDROID__)
+#define EXPECTED_PLATFORM "android"
+#elif defined(_WIN32)
+#define EXPECTED_PLATFORM "win32"
+#elif defined(__APPLE__)
+#define EXPECTED_PLATFORM "darwin"
+#elif defined(__linux__)
+#define EXPECTED_PLATFORM "linux"
+#endif
+
+#if defined(__x86_64__) || defined(_M_X64)
+#define EXPECTED_ARCH "x64"
+#elif defined(__aarch64__) || defined(_M_ARM64)
+#define EXPECTED_ARCH "arm64"
+#endif
+
+/* Set (value != NULL) or unset an environment variable. */
+static void test_setenv(const char *name, const char *value)
+{
+#ifdef _WIN32
+    _putenv_s(name, value ? value : "");
+#else
+    if (value) setenv(name, value, 1);
+    else unsetenv(name);
+#endif
+}
+
+/* Copy of an env var (or NULL) so a test can restore it afterwards. */
+static char *test_getenv_copy(const char *name)
+{
+    const char *v = getenv(name);
+    if (!v) return NULL;
+    char *copy = malloc(strlen(v) + 1);
+    if (copy) strcpy(copy, v);
+    return copy;
+}
+
+static void test_restore_env(const char *name, char *saved)
+{
+    test_setenv(name, saved);
+    free(saved);
+}
+
+/* Like ASSERT, then jump to a `done:` label so env restoration always runs. */
+#define ASSERT_DONE(cond)                                            \
+    do {                                                             \
+        if (!(cond)) {                                               \
+            printf("FAIL\n    assertion failed: %s\n    at %s:%d\n", \
+                   #cond, __FILE__, __LINE__);                       \
+            tests_failed++;                                          \
+            goto done;                                               \
+        }                                                            \
+    } while (0)
+
+TEST(process_env_is_snapshot_of_host)
+{
+    char *saved = test_getenv_copy("RMMZ_TEST_PROCESS_ENV");
+    test_setenv("RMMZ_TEST_PROCESS_ENV", "a b=c");
+    js_setup();
+    test_setenv("RMMZ_TEST_PROCESS_ENV", "changed");
+    ASSERT_DONE(js_check("process.env.RMMZ_TEST_PROCESS_ENV === 'a b=c'"));
+    ASSERT_DONE(js_check("Object.getPrototypeOf(process.env) === Object.prototype"));
+    ASSERT_DONE(js_check(
+        "Object.keys(process.env).length > 0 &&"
+        "Object.keys(process.env).every(function(k) {"
+        "  return typeof process.env[k] === 'string'; })"
+    ));
+    ASSERT_DONE(js_check("process.env.RMMZ_TEST_PROCESS_ENV_MISSING === undefined"));
+    js_teardown();
+done:
+    if (s_js) js_teardown();
+    test_restore_env("RMMZ_TEST_PROCESS_ENV", saved);
+}
+
+TEST(process_platform_and_arch_match_target)
+{
+    js_setup();
+#ifdef EXPECTED_PLATFORM
+    ASSERT(js_check("process.platform === '" EXPECTED_PLATFORM "'"));
+#endif
+#ifdef EXPECTED_ARCH
+    ASSERT(js_check("process.arch === '" EXPECTED_ARCH "'"));
+#endif
+    ASSERT(js_check("typeof process.platform === 'string' && process.platform.length > 0"));
+    ASSERT(js_check("typeof process.arch === 'string' && process.arch.length > 0"));
+    js_teardown();
+}
+
+TEST(process_versions_match_reference_nwjs)
+{
+    js_setup();
+    ASSERT(js_check("process.versions.nw === '0.80.0'"));
+    ASSERT(js_check("process.versions.chromium === '117.0.5938.63'"));
+    ASSERT(js_check("process.versions.node === '20.7.0'"));
+    ASSERT(js_check("typeof process.versions.quickjs === 'string' && "
+                    "process.versions.quickjs.length > 0"));
+    js_teardown();
+}
+
+TEST(process_hrtime_shape_and_monotonic)
+{
+    js_setup();
+    ASSERT(js_check(
+        "var t = process.hrtime();"
+        "t instanceof Array && t.length === 2 &&"
+        "t[0] === Math.floor(t[0]) && t[0] >= 0 &&"
+        "t[1] === Math.floor(t[1]) && t[1] >= 0 && t[1] < 1e9"
+    ));
+    ASSERT(js_check(
+        "var prev = process.hrtime(), ok = true;"
+        "for (var i = 0; i < 2000; i++) {"
+        "  var cur = process.hrtime();"
+        "  if (cur[0] < prev[0] || (cur[0] === prev[0] && cur[1] < prev[1])) ok = false;"
+        "  prev = cur;"
+        "}"
+        "ok"
+    ));
+    ASSERT(js_check(
+        "var start = process.hrtime(); var x = 0;"
+        "for (var j = 0; j < 100000; j++) x += j;"
+        "var d = process.hrtime(start);"
+        "d.length === 2 && d[0] >= 0 && d[1] >= 0 && d[1] < 1e9 && (d[0] > 0 || d[1] > 0)"
+    ));
+    ASSERT(js_check(
+        "var threw = false;"
+        "try { process.hrtime(5); } catch (e) { threw = e instanceof TypeError; }"
+        "threw"
+    ));
+    ASSERT(js_check(
+        "typeof BigInt !== 'function' || (function() {"
+        "  var a = process.hrtime.bigint(), b = process.hrtime.bigint();"
+        "  return typeof a === 'bigint' && b >= a; })()"
+    ));
+    js_teardown();
+}
+
+TEST(process_next_tick_order_like_node)
+{
+    js_setup();
+    /* Node runs this as N1,N2,P1,P2,T. */
+    ASSERT(js_check(
+        "var order = [];"
+        "setTimeout(function() { order.push('T'); }, 0);"
+        "process.nextTick(function(a, b) {"
+        "  order.push('N1' + a + b);"
+        "  Promise.resolve().then(function() { order.push('P2'); });"
+        "  process.nextTick(function() { order.push('N2'); });"
+        "}, ':', 'x');"
+        "Promise.resolve().then(function() { order.push('P1'); });"
+        "order.length === 0"
+    ));
+    js_engine_execute_pending_jobs(s_js);
+    ASSERT(js_check("order.join(',') === 'N1:x,N2,P1,P2'"));
+    ASSERT(js_check("__dom_flushTimers(); order.join(',') === 'N1:x,N2,P1,P2,T'"));
+    ASSERT(js_check(
+        "var threw = false;"
+        "try { process.nextTick(5); } catch (e) { threw = e instanceof TypeError; }"
+        "threw"
+    ));
+    js_teardown();
+}
+
+TEST(process_next_tick_continues_after_throw)
+{
+    js_setup();
+    ASSERT(js_check(
+        "var ran = false;"
+        "process.nextTick(function() { throw new Error('tick'); });"
+        "process.nextTick(function() { ran = true; });"
+        "ran === false"
+    ));
+    js_engine_execute_pending_jobs(s_js);
+    ASSERT(js_check("ran === true"));
+    js_teardown();
+}
+
+TEST(process_next_tick_after_already_queued_promise)
+{
+    js_setup();
+    /* A Promise job queued before the first nextTick of a turn still runs
+       first: ticks are drained by Promise.resolve().then, so this is P,N.
+       Node would run N,P. */
+    ASSERT(js_check(
+        "var order = [];"
+        "Promise.resolve().then(function() { order.push('P'); });"
+        "process.nextTick(function() { order.push('N'); });"
+        "order.length === 0"));
+    js_engine_execute_pending_jobs(s_js);
+    ASSERT(js_check("order.join(',') === 'P,N'"));
+    js_teardown();
+}
+
+/* Stand-in for how save-location plugins pick the user data directory from
+   process.platform and process.env (not any game's plugin). */
+static const char *SAVE_DIR_SNIPPET =
+    "function saveDir() {"
+    "  var env = process.env, base;"
+    "  if (process.platform === 'win32') base = env.APPDATA;"
+    "  else if (process.platform === 'darwin') base = env.HOME + '/Library/Application Support';"
+    "  else base = env.XDG_DATA_HOME || (env.HOME + '/.local/share');"
+    "  return base + '/StandInSaves/';"
+    "}"
+    "true";
+
+TEST(process_env_gives_real_save_dir)
+{
+    char *home = test_getenv_copy("HOME");
+    char *xdg = test_getenv_copy("XDG_DATA_HOME");
+
+    test_setenv("HOME", "/tmp/rmmz-home");
+    test_setenv("XDG_DATA_HOME", NULL);
+    js_setup();
+    ASSERT_DONE(js_check(SAVE_DIR_SNIPPET));
+    ASSERT_DONE(js_check("saveDir().indexOf('undefined') === -1"));
+#if defined(__linux__) && !defined(__ANDROID__)
+    ASSERT_DONE(js_check("saveDir() === '/tmp/rmmz-home/.local/share/StandInSaves/'"));
+#endif
+    js_teardown();
+
+    test_setenv("XDG_DATA_HOME", "/tmp/rmmz-xdg-data");
+    js_setup();
+    ASSERT_DONE(js_check(SAVE_DIR_SNIPPET));
+    ASSERT_DONE(js_check("saveDir().indexOf('undefined') === -1"));
+#if defined(__linux__) && !defined(__ANDROID__)
+    ASSERT_DONE(js_check("saveDir() === '/tmp/rmmz-xdg-data/StandInSaves/'"));
+#endif
+    js_teardown();
+done:
+    if (s_js) js_teardown();
+    test_restore_env("HOME", home);
+    test_restore_env("XDG_DATA_HOME", xdg);
+}
+
+#undef ASSERT_DONE
+
 /* Tests: Utils.isNwjs() pattern */
 
 TEST(utils_is_nwjs_pattern)
@@ -888,6 +1127,14 @@ int main(int argc, char *argv[])
     printf("\n--- process object tests ---\n");
     RUN(process_exists);
     RUN(process_mainmodule_filename);
+    RUN(process_env_is_snapshot_of_host);
+    RUN(process_platform_and_arch_match_target);
+    RUN(process_versions_match_reference_nwjs);
+    RUN(process_hrtime_shape_and_monotonic);
+    RUN(process_next_tick_order_like_node);
+    RUN(process_next_tick_continues_after_throw);
+    RUN(process_next_tick_after_already_queued_promise);
+    RUN(process_env_gives_real_save_dir);
 
     printf("\n--- RPG Maker MZ compatibility tests ---\n");
     RUN(utils_is_nwjs_pattern);

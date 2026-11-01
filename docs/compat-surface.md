@@ -6,6 +6,7 @@ Modified 2026-10-31: seed pixi_shim.js inventory rows.
 Modified 2026-10-31: record PIXI.Circle, Ellipse, Polygon and SHAPES (U8).
 Modified 2026-10-31: record PIXI [PROF] missing-member warnings (U14).
 Modified 2026-10-31: record nw.Window.get EventEmitter and stubs (U3).
+Modified 2026-10-31: record real process env, platform, arch, versions, hrtime, nextTick (U5).
 Compatibility inventory for browser, NW.js and Node replacements.
 See ../ARCHITECTURE.md for service ownership. Keep exact runtime names and
 shim attribution; statuses describe implementation, not conformance certification.
@@ -943,16 +944,27 @@ dump and rejection of a stale `name` row through the CLI.
 | `print` | stub | `src/shims/dom_shim.js` | `-` | No-op. |
 | `print.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op. |
 | `process` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | File-backed storage / limited Node and NW.js compatibility. |
+| `process.arch` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Compile-target CPU in Node spelling; "x64" when no native binding. dump_surface does not call bind_platform_register_process, so it sees the fallback; the running host gets it from __native_process (§5.3). |
 | `process.argv` | stub | `src/shims/storage_shim.js` | `-` | No-op / fixed compatibility response; no host semantics. |
 | `process.argv.length` | stub | `src/shims/storage_shim.js` | `-` | No-op / fixed compatibility response; no host semantics. |
 | `process.cwd` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | File-backed storage / limited Node and NW.js compatibility. |
 | `process.cwd.prototype.constructor` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | File-backed storage / limited Node and NW.js compatibility. |
-| `process.env` | stub | `src/shims/storage_shim.js` | `-` | Empty object; no host environment snapshot (§5.3). |
+| `process.env` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Snapshot of the host environ at start; empty object when no native binding. dump_surface does not call bind_platform_register_process, so it sees the fallback; the running host gets it from __native_process (§5.3). |
 | `process.exit` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | File-backed storage / limited Node and NW.js compatibility. |
 | `process.exit.prototype.constructor` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | File-backed storage / limited Node and NW.js compatibility. |
+| `process.hrtime` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Monotonic [s, ns], or elapsed since prev; Date.now() fallback without the native clock. |
+| `process.hrtime.bigint` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Monotonic nanoseconds as BigInt; defined only when the engine has BigInt. |
+| `process.hrtime.bigint.prototype.constructor` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Monotonic nanoseconds as BigInt; defined only when the engine has BigInt. |
+| `process.hrtime.prototype.constructor` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Monotonic [s, ns], or elapsed since prev; Date.now() fallback without the native clock. |
 | `process.mainModule` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | File-backed storage / limited Node and NW.js compatibility. |
 | `process.mainModule.filename` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | File-backed storage / limited Node and NW.js compatibility. |
-| `process.platform` | stub | `src/shims/storage_shim.js` | `-` | Hard-coded linux; does not report host OS (§5.3). |
+| `process.nextTick` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Runs before timers in one microtask; a Promise job queued before the first tick of a turn runs first (Node runs the tick). |
+| `process.nextTick.prototype.constructor` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Runs before timers in one microtask; a Promise job queued before the first tick of a turn runs first (Node runs the tick). |
+| `process.platform` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Compile-target OS in Node spelling; "linux" when no native binding. dump_surface does not call bind_platform_register_process, so it sees the fallback; the running host gets it from __native_process (§5.3). |
+| `process.versions` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | NW.js 0.80.0 reference values; native engine name added at run time. |
+| `process.versions.chromium` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | NW.js 0.80.0 reference values; native engine name added at run time. |
+| `process.versions.node` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | NW.js 0.80.0 reference values; native engine name added at run time. |
+| `process.versions.nw` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | NW.js 0.80.0 reference values; native engine name added at run time. |
 | `prompt` | stub | `src/shims/dom_shim.js` | `-` | Always returns null. |
 | `prompt.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Always returns null. |
 | `removeEventListener` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Removes one window listener. |

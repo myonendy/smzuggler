@@ -20,7 +20,7 @@ no new test infrastructure or unrelated paths may enter an offer.
 | U2 | Element subtree tag/id/class selectors (§5.1, §5.7) | `src/shims/dom_shim.js`, `tests/test_dom_shim.c` | — | ready to cut | up/U2-element-selectors | — | Tree-order tag/id/class, compounds, comma lists and syntax errors covered by QuickJS shim tests |
 | U3 | Window EventEmitter and window methods (§5.2) | `src/shims/storage_shim.js`, `tests/test_storage.c` | — | ready to cut | up/U3-window-events | — | Listener order, once, off, removeAllListeners, emit result, listeners copy and singleton covered by QuickJS shim tests |
 | U4 | SDL close event and forced quit (§5.2) | `src/platform/platform_sdl3.c`, `src/engine/game_loop.c`, `src/shims/storage_shim.js`, `tests/test_game_loop.c` | U3 | ready to cut | up/U4-window-close-event | — | Listener defers quit, `close(true)`/`nw.App.quit()` stop, no listener quits: QuickJS tests in `test_game_loop.c`; control-mode run exits 0 |
-| U5 | Process environment, platform, versions, arch, timing and nextTick (§5.3) | `src/shims/storage_shim.js`, `src/bindings/bind_platform.c`, `tests/test_storage.c` | — | planned | up/U5-process | — | 80–150 lines; shim unit test |
+| U5 | Process environment, platform, versions, arch, timing and nextTick (§5.3) | `src/shims/storage_shim.js`, `src/bindings/bind_platform.c`, `src/bindings/bind_platform.h`, `tests/test_storage.c` | — | ready to cut | up/U5-process-env-platform | — | Env snapshot, platform/arch vs compile target, NW.js 0.80.0 versions, monotonic hrtime, nextTick order and a stand-in save-dir snippet in QuickJS shim tests |
 | U6 | OS-consistent navigator identity (§5.3) | `src/shims/navigator_shim.js`, `tests/test_dom_shim.c` | — | ready to cut | up/U6-navigator-platform | — | Chrome-format platform/UA for linux (x64/arm64), darwin, win32 and android from process.platform/arch, Chrome/120.0.0.0 kept, in QuickJS shim tests; U5 makes process.platform real |
 | U7 | Refuse relative and game-root save writes (§5.3) | `src/bindings/bind_io.c`, `src/io/file_io.c`, `src/io/file_io.h`, `tests/test_file_io.c` | — | ready to cut | up/U7-refuse-bad-save-paths | — | Opt-in `file_io_set_write_guard(true)`; write/mkdir/unlink/rename must be absolute and outside the root after `..`/symlink resolution, one error logged per refusal, reads unchanged; C tests in `test_file_io.c`. Nothing enables the guard yet (needs a `main.c` call) |
 | U8 | PIXI Circle/Ellipse/Polygon methods and type (§5.4) | `src/shims/pixi_shim.js`, `tests/test_pixi_shim.c` | — | ready to cut | up/U8-shapes | — | Circle/Ellipse/Polygon constructors, SHAPES type, clone independence, contains edge rules and getBounds match PIXI 5.3.12 in QuickJS shim tests; Polygon accepts a flat array, point objects and varargs, with closeStroke |
@@ -61,6 +61,23 @@ upstream's `test_game_loop` target links neither SDL nor `game_loop.c`; the SDL 
 was checked with a control-mode run (`__native_platform.quit()` pushes a raw
 `SDL_EVENT_QUIT`; with CleanExit's `removeAllListeners`/`on("close")` pattern the
 process exits 0).
+
+U5 makes `process` tell the truth. `bind_platform_register()` also registers
+`__native_process`: `platform` and `arch` in Node's spelling for the compile target,
+`environ()` (a fresh plain object of the host environment, read once by the shim at
+start, so `process.env` is a snapshot) and `hrtime()` (`[s, ns]` from the monotonic
+clock). `process.versions` reports the reference NW.js 0.80.0 (`node` 20.7.0,
+`chromium` 117.0.5938.63) plus `quickjs`, the engine actually running; there is no
+`v8` key under QuickJS. `process.hrtime(prev)` returns the difference, and
+`hrtime.bigint` exists when the engine has BigInt. `process.nextTick(fn, ...args)`
+queues callbacks drained by one Promise job, so they run before timers, and ticks
+queued while draining run ahead of Promise jobs queued meanwhile, as in Node. One
+difference remains: a Promise job queued before the first tick of a turn still runs
+before that tick. The `__native_process` part is `static inline` in
+`bind_platform.h` and needs no SDL, because upstream's `test_storage` target links
+neither SDL nor `bind_platform.c`; the tests call `bind_platform_register_process()`
+directly. Without the binding the shim keeps its old values (`linux`, empty env)
+and falls back to a millisecond `hrtime`.
 
 ## Building and opening offers (§8.2)
 

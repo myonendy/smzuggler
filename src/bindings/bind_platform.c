@@ -141,4 +141,7 @@ void bind_platform_register(JSContext *ctx, Platform *platform)
 
     JS_SetPropertyStr(ctx, global, "__native_platform", obj);
     JS_FreeValue(ctx, global);
+
+    /* storage_shim.js builds process.platform/arch/env/hrtime from this. */
+    bind_platform_register_process(ctx);
 }
