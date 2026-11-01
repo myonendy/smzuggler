@@ -1210,12 +1210,35 @@
         this.dispatchEvent(new Event("pause"));
     };
 
-    /* "maybe" for the formats games ship when the native player exists,
-       so Utils.canPlayWebm() picks a source; "" (cannot play) otherwise. */
-    HTMLVideoElement.prototype.canPlayType = function(type) {
-        if (!_hasNativeVideo()) return "";
-        return /video\/(webm|mp4|ogg)/i.test(String(type)) ? "maybe" : "";
+    /* What this build can decode: MIME type -> codecs it accepts. MPEG-1
+       comes from pl_mpeg, Ogg Vorbis and WAV from SoLoud. WebM/VP9/Opus,
+       MP4 and MP3 are not decoded, so they answer "". */
+    var _MEDIA_DECODERS = {
+        "video/mpeg": ["mpeg1"],
+        "audio/ogg": ["vorbis"],
+        "audio/wav": ["1"]
     };
+
+    /* Answers as Chrome's HTMLMediaElement.canPlayType does: "" when the
+       type or any listed codec is unsupported, "probably" when every codec
+       is supported, "maybe" when no codecs are given. Rejecting webm makes
+       Utils.canPlayWebm() false, so rmmz asks for .mp4, which
+       _toMpegPath maps to the .mpg next to it. */
+    function _canPlayMediaType(type) {
+        var parts = String(type || "").toLowerCase().split(";");
+        var codecs = _MEDIA_DECODERS[parts[0].replace(/^\s+|\s+$/g, "")];
+        if (!codecs) return "";
+        var m = /codecs\s*=\s*"?([^"]*)"?/.exec(parts.slice(1).join(";"));
+        if (!m) return "maybe";
+        var list = m[1].split(",");
+        for (var i = 0; i < list.length; i++) {
+            var c = list[i].replace(/^\s+|\s+$/g, "");
+            if (codecs.indexOf(c) < 0) return "";
+        }
+        return "probably";
+    }
+
+    HTMLVideoElement.prototype.canPlayType = _canPlayMediaType;
 
     /* Per frame: mirror native state and fire "ended". Visibility follows
        style.opacity, which rmmz_core toggles in Video._updateVisibility. */
@@ -1255,12 +1278,7 @@
     HTMLAudioElement.prototype.play = function() { return Promise.resolve(); };
     HTMLAudioElement.prototype.pause = function() {};
     HTMLAudioElement.prototype.load = function() {};
-    HTMLAudioElement.prototype.canPlayType = function(type) {
-        if (type && type.indexOf("ogg") >= 0) return "probably";
-        if (type && type.indexOf("wav") >= 0) return "probably";
-        if (type && type.indexOf("mp3") >= 0) return "probably";
-        return "";
-    };
+    HTMLAudioElement.prototype.canPlayType = _canPlayMediaType;
 
     /* Blob / URL */
 
