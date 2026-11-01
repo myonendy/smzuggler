@@ -478,6 +478,11 @@ static void update_gamepad_state(Platform *p)
 
 Platform *platform_init(const char *title, int width, int height)
 {
+    /* Report a window close once, as SDL_EVENT_WINDOW_CLOSE_REQUESTED, instead
+     * of SDL also synthesising SDL_EVENT_QUIT for it: the game loop turns each
+     * close request into one nw.Window "close" event. */
+    SDL_SetHint(SDL_HINT_QUIT_ON_LAST_WINDOW_CLOSE, "0");
+
     /* Audio and gamepad are optional (absent in WSL / CI / headless). */
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         fprintf(stderr, "SDL_Init(VIDEO) failed: %s\n", SDL_GetError());
@@ -599,7 +604,10 @@ bool platform_poll_events(Platform *p)
     SDL_Event ev;
     while (SDL_PollEvent(&ev)) {
         switch (ev.type) {
+            /* A close request; the game loop decides whether to stop.
+             * Events still queued are handled on the next poll. */
             case SDL_EVENT_QUIT:
+            case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
                 return false;
 
             case SDL_EVENT_KEY_DOWN:

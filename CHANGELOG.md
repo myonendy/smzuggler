@@ -21,6 +21,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Deliver the `close` event on SDL quit and window close; a listener keeps the app running until `close(true)` or `nw.App.quit()` (U4).
 - Make `nw.Window.get()` a Node-style EventEmitter with the §5.2 window methods, so CleanExit-style `removeAllListeners("close")` works (U3).
 - Add subtree tag lookup and simple tag/id/class selector queries with syntax errors for unsupported selectors (U2).
 - Pin SoLoud and SDL_shadercross to the revisions in the offline dependency cache (U12).

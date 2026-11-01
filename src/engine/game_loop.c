@@ -444,6 +444,33 @@ void game_loop_request_stop(GameLoop *loop)
     if (loop) loop->running = false;
 }
 
+/* SDL quit or window close: let the nw.Window shim emit "close". As in NW.js,
+ * a "close" listener keeps the app running until it calls win.close(true) or
+ * nw.App.quit(). Returns true when the loop should stop. */
+static bool host_close_quits(GameLoop *loop, JSContext *ctx)
+{
+    if (!ctx) return true;
+
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue fn = JS_GetPropertyStr(ctx, global, "__nw_hostClose");
+    bool quit = true;
+    if (JS_IsFunction(ctx, fn)) {
+        JSValue ret = JS_Call(ctx, fn, global, 0, NULL);
+        if (JS_IsException(ret)) {
+            /* A throwing listener must not leave the window unclosable. */
+            error_handler_report_js_exception(loop->engine, false);
+        } else {
+            quit = JS_ToBool(ctx, ret);
+        }
+        JS_FreeValue(ctx, ret);
+    }
+    JS_FreeValue(ctx, fn);
+    JS_FreeValue(ctx, global);
+
+    if (!quit) error_handler_log(LOG_INFO, "Window close deferred to a 'close' listener");
+    return quit;
+}
+
 bool game_loop_step(GameLoop *loop)
 {
     if (!loop || !loop->running) return false;
@@ -467,7 +494,7 @@ bool game_loop_step(GameLoop *loop)
     /* --- Phase 1: Events (SDL polling + resize + input) --- */
     phase_start = frame_start;
 
-    if (!platform_poll_events(loop->platform)) {
+    if (!platform_poll_events(loop->platform) && host_close_quits(loop, ctx)) {
         loop->running = false;
         return false;
     }
