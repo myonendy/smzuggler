@@ -1,6 +1,7 @@
 # Copyright (c) 2026 General Arcade (Pte. Ltd.)
 # Copyright (C) 2026 The smzuggler contributors
 # Modified 2026-11-01: accept an optional child environment for isolated save IO.
+# Modified 2026-11-01: document DriverError, free_port, NwjsDriver and OutsiderDriver.
 # SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
 """Players the evaluator can drive.
 
@@ -30,6 +31,7 @@ from . import cdp
 
 
 class DriverError(Exception):
+    """Player launch, protocol or lifecycle failure; message is the diagnostic."""
     pass
 
 
@@ -38,6 +40,12 @@ class JsError(DriverError):
 
 
 def free_port():
+    """Return a free TCP port on localhost for a driver to bind.
+
+    Why: both players need a debugging port without racing a fixed number.
+    The ephemeral socket is closed before return; the OS may reuse the port.
+    Call from the CLI thread. Raises OSError if bind fails.
+    """
     s = socket.socket()
     s.bind(("127.0.0.1", 0))
     port = s.getsockname()[1]
@@ -91,6 +99,12 @@ def kill_tree(proc):
 
 
 class NwjsDriver:
+    """Drive the game's NW.js player over Chrome DevTools Protocol.
+
+    Why: the inherited comparison path talks to Game.exe the same way as a
+    Chrome inspector. evaluate, screenshot and close match the module contract.
+    The child process is owned until close().
+    """
     name = "original"
 
     def __init__(self, game_dir, prelude, log_path=None, exe=None, port=None,
@@ -200,6 +214,12 @@ class NwjsDriver:
 
 
 class OutsiderDriver:
+    """Drive the host in --control mode over the line protocol in game_loop.h.
+
+    Why: smzuggler scenarios need the same three operations as NW.js without
+    CDP. The fork entry point passes env so save-location plugins see only
+    scratch HOME/XDG directories. The child process is owned until close().
+    """
     name = "outsider"
 
     def __init__(self, exe, game_dir, prelude, width, height, shims_dir=None,
