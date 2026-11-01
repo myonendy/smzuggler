@@ -2,6 +2,7 @@
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
 Modified 2026-10-31: seed dom_shim.js inventory rows.
+Modified 2026-10-31: seed pixi_shim.js inventory rows.
 Compatibility inventory for browser, NW.js and Node replacements.
 See ../ARCHITECTURE.md for service ownership. Keep exact runtime names and
 shim attribution; statuses describe implementation, not conformance certification.
@@ -9,7 +10,10 @@ shim attribution; statuses describe implementation, not conformance certificatio
 
 # Compatibility surface
 
-`pixi_shim.js` is not seeded except for the required known gaps (M0-T010).
+Every dumped member has a row; `pixi_shim.js` rows describe Outsider's
+QuickJS-mode PIXI, which real-PIXI mode does not load (§4.2).
+Absent APIs such as `PIXI.Circle` are recorded in the notes of their parent
+row, because the table matches the dump exactly.
 Post-core/control shims currently install no members in the game-free dump.
 Names include aliases, internal members and constructor back-references
 retained by DEC-M0-T009b.
@@ -1014,7 +1018,1026 @@ dump and rejection of a stale `name` row through the CLI.
 | `webkitAudioContext.prototype.suspend` | stub | `src/shims/webaudio_shim.js` | - | No native effect; empty result or simulated state only. |
 | `webkitAudioContext.prototype.suspend.prototype.constructor` | stub | `src/shims/webaudio_shim.js` | - | No native effect; empty result or simulated state only. |
 | `window` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Alias of globalThis. |
-| `PIXI.Geometry` | stub | `src/shims/pixi_shim.js` | - | Stores attributes only; no native mesh draw path (§4.2). |
-| `PIXI.Buffer` | stub | `src/shims/pixi_shim.js` | - | Stores buffer data only; no native vertex buffer (§4.2). |
-| `PIXI.Program` | stub | `src/shims/pixi_shim.js` | - | Stores shader strings only; no program compilation (§4.2). |
-| `PIXI.Circle` | missing | `src/shims/pixi_shim.js` | - | Absent constructor (§5.4). |
+| `PIXI` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Namespace of the QuickJS-mode shim; no Circle, Ellipse, Polygon, RoundedRectangle or Mesh (§5.4). Inventory test only. |
+| `PIXI.Application` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Wires renderer, stage and ticker. |
+| `PIXI.Application.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Wires renderer, stage and ticker. |
+| `PIXI.Application.prototype.destroy` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Wires renderer, stage and ticker. |
+| `PIXI.Application.prototype.destroy.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Wires renderer, stage and ticker. |
+| `PIXI.Application.prototype.render` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Wires renderer, stage and ticker. |
+| `PIXI.Application.prototype.render.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Wires renderer, stage and ticker. |
+| `PIXI.Application.prototype.screen` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Wires renderer, stage and ticker. |
+| `PIXI.Application.prototype.start` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Wires renderer, stage and ticker. |
+| `PIXI.Application.prototype.start.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Wires renderer, stage and ticker. |
+| `PIXI.Application.prototype.stop` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Wires renderer, stage and ticker. |
+| `PIXI.Application.prototype.stop.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Wires renderer, stage and ticker. |
+| `PIXI.Application.prototype.ticker` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Wires renderer, stage and ticker. |
+| `PIXI.Application.prototype.view` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Wires renderer, stage and ticker. |
+| `PIXI.BLEND_MODES` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.ADD` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.ADD_NPM` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.COLOR` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.COLOR_BURN` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.COLOR_DODGE` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.DARKEN` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.DIFFERENCE` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.DST_ATOP` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.DST_IN` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.DST_OUT` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.DST_OVER` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.ERASE` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.EXCLUSION` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.HARD_LIGHT` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.HUE` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.LIGHTEN` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.LUMINOSITY` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.MULTIPLY` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.NONE` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.NORMAL` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.NORMAL_NPM` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.OVERLAY` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.SATURATION` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.SCREEN` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.SCREEN_NPM` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.SOFT_LIGHT` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.SRC_ATOP` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.SRC_IN` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.SRC_OUT` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.SRC_OVER` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.SUBTRACT` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BLEND_MODES.XOR` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; native blending covers a subset. |
+| `PIXI.BaseRenderTexture` | partial | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Size/valid fields only; storage is created by the renderer. |
+| `PIXI.BaseRenderTexture.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Size/valid fields only; storage is created by the renderer. |
+| `PIXI.BaseRenderTexture.prototype.destroy` | partial | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Size/valid fields only; storage is created by the renderer. |
+| `PIXI.BaseRenderTexture.prototype.destroy.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Size/valid fields only; storage is created by the renderer. |
+| `PIXI.BaseRenderTexture.prototype.resize` | partial | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Size/valid fields only; storage is created by the renderer. |
+| `PIXI.BaseRenderTexture.prototype.resize.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Size/valid fields only; storage is created by the renderer. |
+| `PIXI.BaseTexture` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native texture handle; image and canvas resources only. |
+| `PIXI.BaseTexture.from` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native texture handle; image and canvas resources only. |
+| `PIXI.BaseTexture.from.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native texture handle; image and canvas resources only. |
+| `PIXI.BaseTexture.fromCanvas` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native texture handle; image and canvas resources only. |
+| `PIXI.BaseTexture.fromCanvas.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native texture handle; image and canvas resources only. |
+| `PIXI.BaseTexture.prototype._ensureGLTexture` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native texture handle; image and canvas resources only. |
+| `PIXI.BaseTexture.prototype._ensureGLTexture.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native texture handle; image and canvas resources only. |
+| `PIXI.BaseTexture.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native texture handle; image and canvas resources only. |
+| `PIXI.BaseTexture.prototype.destroy` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native texture handle; image and canvas resources only. |
+| `PIXI.BaseTexture.prototype.destroy.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native texture handle; image and canvas resources only. |
+| `PIXI.BaseTexture.prototype.dispose` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native texture handle; image and canvas resources only. |
+| `PIXI.BaseTexture.prototype.dispose.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native texture handle; image and canvas resources only. |
+| `PIXI.BaseTexture.prototype.setRealSize` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native texture handle; image and canvas resources only. |
+| `PIXI.BaseTexture.prototype.setRealSize.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native texture handle; image and canvas resources only. |
+| `PIXI.BaseTexture.prototype.setResource` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native texture handle; image and canvas resources only. |
+| `PIXI.BaseTexture.prototype.setResource.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native texture handle; image and canvas resources only. |
+| `PIXI.BaseTexture.prototype.setSize` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native texture handle; image and canvas resources only. |
+| `PIXI.BaseTexture.prototype.setSize.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native texture handle; image and canvas resources only. |
+| `PIXI.BaseTexture.prototype.setStyle` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native texture handle; image and canvas resources only. |
+| `PIXI.BaseTexture.prototype.setStyle.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native texture handle; image and canvas resources only. |
+| `PIXI.BaseTexture.prototype.update` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native texture handle; image and canvas resources only. |
+| `PIXI.BaseTexture.prototype.update.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native texture handle; image and canvas resources only. |
+| `PIXI.Bounds` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Axis-aligned bounds accumulator. |
+| `PIXI.Bounds.prototype.addBounds` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Axis-aligned bounds accumulator. |
+| `PIXI.Bounds.prototype.addBounds.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Axis-aligned bounds accumulator. |
+| `PIXI.Bounds.prototype.addBoundsMask` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Axis-aligned bounds accumulator. |
+| `PIXI.Bounds.prototype.addBoundsMask.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Axis-aligned bounds accumulator. |
+| `PIXI.Bounds.prototype.addFrame` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Axis-aligned bounds accumulator. |
+| `PIXI.Bounds.prototype.addFrame.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Axis-aligned bounds accumulator. |
+| `PIXI.Bounds.prototype.addFrameMatrix` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Axis-aligned bounds accumulator. |
+| `PIXI.Bounds.prototype.addFrameMatrix.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Axis-aligned bounds accumulator. |
+| `PIXI.Bounds.prototype.addPoint` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Axis-aligned bounds accumulator. |
+| `PIXI.Bounds.prototype.addPoint.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Axis-aligned bounds accumulator. |
+| `PIXI.Bounds.prototype.addQuad` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Axis-aligned bounds accumulator. |
+| `PIXI.Bounds.prototype.addQuad.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Axis-aligned bounds accumulator. |
+| `PIXI.Bounds.prototype.clear` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Axis-aligned bounds accumulator. |
+| `PIXI.Bounds.prototype.clear.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Axis-aligned bounds accumulator. |
+| `PIXI.Bounds.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Axis-aligned bounds accumulator. |
+| `PIXI.Bounds.prototype.getRectangle` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Axis-aligned bounds accumulator. |
+| `PIXI.Bounds.prototype.getRectangle.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Axis-aligned bounds accumulator. |
+| `PIXI.Bounds.prototype.isEmpty` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Axis-aligned bounds accumulator. |
+| `PIXI.Bounds.prototype.isEmpty.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Axis-aligned bounds accumulator. |
+| `PIXI.Buffer` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores buffer data only; no native vertex buffer (§4.2). |
+| `PIXI.Buffer.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores buffer data only; no native vertex buffer (§4.2). |
+| `PIXI.Buffer.prototype.destroy` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores buffer data only; no native vertex buffer (§4.2). |
+| `PIXI.Buffer.prototype.destroy.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores buffer data only; no native vertex buffer (§4.2). |
+| `PIXI.Buffer.prototype.dispose` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores buffer data only; no native vertex buffer (§4.2). |
+| `PIXI.Buffer.prototype.dispose.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores buffer data only; no native vertex buffer (§4.2). |
+| `PIXI.Buffer.prototype.update` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores buffer data only; no native vertex buffer (§4.2). |
+| `PIXI.Buffer.prototype.update.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores buffer data only; no native vertex buffer (§4.2). |
+| `PIXI.Container` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype._calculateBounds` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.Container.prototype._calculateBounds.prototype.constructor` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.Container.prototype._render` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.Container.prototype._render.prototype.constructor` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.Container.prototype.addChild` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.addChild.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.addChildAt` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.addChildAt.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.calculateBounds` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.calculateBounds.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.containerUpdateTransform` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.containerUpdateTransform.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.destroy` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.destroy.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.getChildAt` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.getChildAt.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.getChildByName` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.getChildByName.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.getChildIndex` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.getChildIndex.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.height` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.onChildrenChange` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.Container.prototype.onChildrenChange.prototype.constructor` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.Container.prototype.removeChild` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.removeChild.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.removeChildAt` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.removeChildAt.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.removeChildren` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.removeChildren.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.render` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.render.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.renderAdvanced` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.renderAdvanced.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.setChildIndex` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.setChildIndex.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.sortChildren` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.sortChildren.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.swapChildren` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.swapChildren.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.updateTransform` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.updateTransform.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.Container.prototype.width` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
+| `PIXI.DisplayObject` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype._recursivePostUpdateTransform` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype._recursivePostUpdateTransform.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype._renderFiltered` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype._renderFiltered.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype._renderMasked` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype._renderMasked.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.calculateBounds` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.DisplayObject.prototype.calculateBounds.prototype.constructor` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.DisplayObject.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.destroy` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.destroy.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.displayObjectUpdateTransform` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.displayObjectUpdateTransform.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.getBounds` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.getBounds.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.getLocalBounds` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.getLocalBounds.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.localTransform` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.mask` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.pivot` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.position` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.render` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.DisplayObject.prototype.render.prototype.constructor` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.DisplayObject.prototype.rotation` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.scale` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.setParent` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.setParent.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.setTransform` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.setTransform.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.skew` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.toGlobal` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.toGlobal.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.toLocal` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.toLocal.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.updateTransform` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.updateTransform.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.worldTransform` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.worldVisible` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.x` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.y` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.DisplayObject.prototype.zIndex` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph node; drawn as quads, no WebGL state. |
+| `PIXI.FORMATS` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Constant table only. Inventory test only. |
+| `PIXI.FORMATS.ALPHA` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Constant table only. Inventory test only. |
+| `PIXI.FORMATS.LUMINANCE` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Constant table only. Inventory test only. |
+| `PIXI.FORMATS.LUMINANCE_ALPHA` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Constant table only. Inventory test only. |
+| `PIXI.FORMATS.RGB` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Constant table only. Inventory test only. |
+| `PIXI.FORMATS.RGBA` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Constant table only. Inventory test only. |
+| `PIXI.Filter` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | GLSL filter via the native filter compiler; fragment-only. |
+| `PIXI.Filter.defaultFragmentSrc` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | GLSL filter via the native filter compiler; fragment-only. |
+| `PIXI.Filter.defaultVertexSrc` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | GLSL filter via the native filter compiler; fragment-only. |
+| `PIXI.Filter.prototype.apply` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | GLSL filter via the native filter compiler; fragment-only. |
+| `PIXI.Filter.prototype.apply.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | GLSL filter via the native filter compiler; fragment-only. |
+| `PIXI.Filter.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | GLSL filter via the native filter compiler; fragment-only. |
+| `PIXI.Filter.prototype.destroy` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | GLSL filter via the native filter compiler; fragment-only. |
+| `PIXI.Filter.prototype.destroy.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | GLSL filter via the native filter compiler; fragment-only. |
+| `PIXI.Geometry` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores attributes only; no native mesh draw path (§4.2). |
+| `PIXI.Geometry.prototype.addAttribute` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores attributes only; no native mesh draw path (§4.2). |
+| `PIXI.Geometry.prototype.addAttribute.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores attributes only; no native mesh draw path (§4.2). |
+| `PIXI.Geometry.prototype.addIndex` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores attributes only; no native mesh draw path (§4.2). |
+| `PIXI.Geometry.prototype.addIndex.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores attributes only; no native mesh draw path (§4.2). |
+| `PIXI.Geometry.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores attributes only; no native mesh draw path (§4.2). |
+| `PIXI.Geometry.prototype.destroy` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores attributes only; no native mesh draw path (§4.2). |
+| `PIXI.Geometry.prototype.destroy.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores attributes only; no native mesh draw path (§4.2). |
+| `PIXI.Geometry.prototype.dispose` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores attributes only; no native mesh draw path (§4.2). |
+| `PIXI.Geometry.prototype.dispose.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores attributes only; no native mesh draw path (§4.2). |
+| `PIXI.Graphics` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype._calculateBounds` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype._calculateBounds.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype._fillSnapshot` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype._fillSnapshot.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.beginFill` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.beginFill.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.beginTextureFill` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.beginTextureFill.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.clear` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.clear.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.clone` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.clone.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.closePath` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.closePath.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.destroy` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.destroy.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.drawCircle` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.drawCircle.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.drawEllipse` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.drawEllipse.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.drawPolygon` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.drawPolygon.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.drawRect` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.drawRect.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.drawRoundedRect` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.drawRoundedRect.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.endFill` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.endFill.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.finishPoly` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.finishPoly.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.lineStyle` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.lineStyle.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.lineTo` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.lineTo.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.moveTo` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.moveTo.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.render` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.render.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.startPoly` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Graphics.prototype.startPoly.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Shape fills rasterised to quads; no tessellated meshes. |
+| `PIXI.Loader` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal resource loader over the XHR/Image shims. Inventory test only. |
+| `PIXI.Loader._plugins` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal resource loader over the XHR/Image shims. Inventory test only. |
+| `PIXI.Loader._plugins.length` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal resource loader over the XHR/Image shims. Inventory test only. |
+| `PIXI.Loader.prototype._finish` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal resource loader over the XHR/Image shims. Inventory test only. |
+| `PIXI.Loader.prototype._finish.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal resource loader over the XHR/Image shims. Inventory test only. |
+| `PIXI.Loader.prototype._loadResource` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal resource loader over the XHR/Image shims. Inventory test only. |
+| `PIXI.Loader.prototype._loadResource.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal resource loader over the XHR/Image shims. Inventory test only. |
+| `PIXI.Loader.prototype.add` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal resource loader over the XHR/Image shims. Inventory test only. |
+| `PIXI.Loader.prototype.add.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal resource loader over the XHR/Image shims. Inventory test only. |
+| `PIXI.Loader.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal resource loader over the XHR/Image shims. Inventory test only. |
+| `PIXI.Loader.prototype.destroy` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal resource loader over the XHR/Image shims. Inventory test only. |
+| `PIXI.Loader.prototype.destroy.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal resource loader over the XHR/Image shims. Inventory test only. |
+| `PIXI.Loader.prototype.load` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal resource loader over the XHR/Image shims. Inventory test only. |
+| `PIXI.Loader.prototype.load.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal resource loader over the XHR/Image shims. Inventory test only. |
+| `PIXI.Loader.prototype.pre` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal resource loader over the XHR/Image shims. Inventory test only. |
+| `PIXI.Loader.prototype.pre.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal resource loader over the XHR/Image shims. Inventory test only. |
+| `PIXI.Loader.prototype.reset` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal resource loader over the XHR/Image shims. Inventory test only. |
+| `PIXI.Loader.prototype.reset.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal resource loader over the XHR/Image shims. Inventory test only. |
+| `PIXI.Loader.prototype.use` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal resource loader over the XHR/Image shims. Inventory test only. |
+| `PIXI.Loader.prototype.use.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal resource loader over the XHR/Image shims. Inventory test only. |
+| `PIXI.Loader.registerPlugin` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal resource loader over the XHR/Image shims. Inventory test only. |
+| `PIXI.Loader.registerPlugin.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal resource loader over the XHR/Image shims. Inventory test only. |
+| `PIXI.Loader.shared` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal resource loader over the XHR/Image shims. Inventory test only. |
+| `PIXI.LoaderResource` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.LOAD_TYPE` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.LOAD_TYPE.AUDIO` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.LOAD_TYPE.IMAGE` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.LOAD_TYPE.VIDEO` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.LOAD_TYPE.XHR` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.STATUS_FLAGS` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.STATUS_FLAGS.COMPLETE` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.STATUS_FLAGS.DATA_URL` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.STATUS_FLAGS.LOADING` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.STATUS_FLAGS.NONE` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.TYPE` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.TYPE.AUDIO` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.TYPE.IMAGE` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.TYPE.JSON` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.TYPE.TEXT` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.TYPE.UNKNOWN` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.TYPE.VIDEO` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.TYPE.XML` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.XHR_RESPONSE_TYPE` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.XHR_RESPONSE_TYPE.BLOB` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.XHR_RESPONSE_TYPE.BUFFER` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.XHR_RESPONSE_TYPE.DEFAULT` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.XHR_RESPONSE_TYPE.DOCUMENT` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.XHR_RESPONSE_TYPE.JSON` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.XHR_RESPONSE_TYPE.TEXT` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource._determineLoadType` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource._determineLoadType.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource._imageExts` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource._imageExts.bmp` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource._imageExts.gif` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource._imageExts.jpeg` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource._imageExts.jpg` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource._imageExts.png` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource._imageExts.svg` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource._imageExts.webp` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.prototype.abort` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.prototype.abort.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.prototype.complete` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.prototype.complete.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Minimal loader resource; constants follow resource-loader. Inventory test only. |
+| `PIXI.LoaderResource.setExtensionLoadType` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.LoaderResource.setExtensionLoadType.prototype.constructor` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.LoaderResource.setExtensionXhrType` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.LoaderResource.setExtensionXhrType.prototype.constructor` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.Matrix` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.IDENTITY` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.IDENTITY.a` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.IDENTITY.b` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.IDENTITY.c` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.IDENTITY.d` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.IDENTITY.tx` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.IDENTITY.ty` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.TEMP_MATRIX` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.TEMP_MATRIX.a` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.TEMP_MATRIX.b` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.TEMP_MATRIX.c` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.TEMP_MATRIX.d` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.TEMP_MATRIX.tx` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.TEMP_MATRIX.ty` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.append` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.append.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.apply` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.apply.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.applyInverse` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.applyInverse.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.clone` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.clone.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.copyFrom` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.copyFrom.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.copyTo` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.copyTo.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.decompose` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.decompose.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.identity` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.identity.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.invert` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.invert.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.prepend` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.prepend.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.rotate` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.rotate.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.scale` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.scale.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.set` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.set.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.translate` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.Matrix.prototype.translate.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Affine matrix math as in PIXI 5.3.12. |
+| `PIXI.ObjectRenderer` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Base class for plugin renderers; no native draw path. Inventory test only. |
+| `PIXI.ObjectRenderer.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Base class for plugin renderers; no native draw path. Inventory test only. |
+| `PIXI.ObjectRenderer.prototype.destroy` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Base class for plugin renderers; no native draw path. Inventory test only. |
+| `PIXI.ObjectRenderer.prototype.destroy.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Base class for plugin renderers; no native draw path. Inventory test only. |
+| `PIXI.ObjectRenderer.prototype.flush` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.ObjectRenderer.prototype.flush.prototype.constructor` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.ObjectRenderer.prototype.render` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.ObjectRenderer.prototype.render.prototype.constructor` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.ObjectRenderer.prototype.start` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.ObjectRenderer.prototype.start.prototype.constructor` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.ObjectRenderer.prototype.stop` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.ObjectRenderer.prototype.stop.prototype.constructor` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.ObservablePoint` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Point with change callback. |
+| `PIXI.ObservablePoint.prototype.clone` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Point with change callback. |
+| `PIXI.ObservablePoint.prototype.clone.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Point with change callback. |
+| `PIXI.ObservablePoint.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Point with change callback. |
+| `PIXI.ObservablePoint.prototype.copyFrom` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Point with change callback. |
+| `PIXI.ObservablePoint.prototype.copyFrom.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Point with change callback. |
+| `PIXI.ObservablePoint.prototype.copyTo` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Point with change callback. |
+| `PIXI.ObservablePoint.prototype.copyTo.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Point with change callback. |
+| `PIXI.ObservablePoint.prototype.equals` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Point with change callback. |
+| `PIXI.ObservablePoint.prototype.equals.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Point with change callback. |
+| `PIXI.ObservablePoint.prototype.set` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Point with change callback. |
+| `PIXI.ObservablePoint.prototype.set.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Point with change callback. |
+| `PIXI.ObservablePoint.prototype.x` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Point with change callback. |
+| `PIXI.ObservablePoint.prototype.y` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Point with change callback. |
+| `PIXI.Point` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Plain point; no observers. |
+| `PIXI.Point.prototype.clone` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Plain point; no observers. |
+| `PIXI.Point.prototype.clone.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Plain point; no observers. |
+| `PIXI.Point.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Plain point; no observers. |
+| `PIXI.Point.prototype.copyFrom` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Plain point; no observers. |
+| `PIXI.Point.prototype.copyFrom.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Plain point; no observers. |
+| `PIXI.Point.prototype.copyTo` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Plain point; no observers. |
+| `PIXI.Point.prototype.copyTo.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Plain point; no observers. |
+| `PIXI.Point.prototype.equals` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Plain point; no observers. |
+| `PIXI.Point.prototype.equals.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Plain point; no observers. |
+| `PIXI.Point.prototype.set` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Plain point; no observers. |
+| `PIXI.Point.prototype.set.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Plain point; no observers. |
+| `PIXI.Program` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores shader strings only; no program compilation (§4.2). |
+| `PIXI.Program.from` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores shader strings only; no program compilation (§4.2). |
+| `PIXI.Program.from.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores shader strings only; no program compilation (§4.2). |
+| `PIXI.Program.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores shader strings only; no program compilation (§4.2). |
+| `PIXI.Rectangle` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.Rectangle.EMPTY` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.Rectangle.EMPTY.height` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.Rectangle.EMPTY.type` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.Rectangle.EMPTY.width` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.Rectangle.EMPTY.x` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.Rectangle.EMPTY.y` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.Rectangle.prototype.bottom` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.Rectangle.prototype.ceil` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.Rectangle.prototype.ceil.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.Rectangle.prototype.clone` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.Rectangle.prototype.clone.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.Rectangle.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.Rectangle.prototype.contains` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.Rectangle.prototype.contains.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.Rectangle.prototype.copyFrom` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.Rectangle.prototype.copyFrom.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.Rectangle.prototype.copyTo` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.Rectangle.prototype.copyTo.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.Rectangle.prototype.enlarge` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.Rectangle.prototype.enlarge.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.Rectangle.prototype.fit` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.Rectangle.prototype.fit.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.Rectangle.prototype.left` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.Rectangle.prototype.pad` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.Rectangle.prototype.pad.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.Rectangle.prototype.right` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.Rectangle.prototype.top` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Rectangle math as in PIXI 5.3.12. |
+| `PIXI.RenderTexture` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native render target (FBO) via the renderer API. |
+| `PIXI.RenderTexture.create` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native render target (FBO) via the renderer API. |
+| `PIXI.RenderTexture.create.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native render target (FBO) via the renderer API. |
+| `PIXI.RenderTexture.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native render target (FBO) via the renderer API. |
+| `PIXI.RenderTexture.prototype.destroy` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native render target (FBO) via the renderer API. |
+| `PIXI.RenderTexture.prototype.destroy.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native render target (FBO) via the renderer API. |
+| `PIXI.RenderTexture.prototype.framebuffer` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native render target (FBO) via the renderer API. |
+| `PIXI.RenderTexture.prototype.resize` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native render target (FBO) via the renderer API. |
+| `PIXI.RenderTexture.prototype.resize.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native render target (FBO) via the renderer API. |
+| `PIXI.Renderer` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Sprite-batch renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.Renderer._plugins` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Sprite-batch renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.Renderer.prototype._extractCanvas` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Sprite-batch renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.Renderer.prototype._extractCanvas.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Sprite-batch renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.Renderer.prototype._extractPixels` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Sprite-batch renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.Renderer.prototype._extractPixels.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Sprite-batch renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.Renderer.prototype._updateBackgroundColor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Sprite-batch renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.Renderer.prototype._updateBackgroundColor.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Sprite-batch renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.Renderer.prototype.clear` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Sprite-batch renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.Renderer.prototype.clear.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Sprite-batch renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.Renderer.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Sprite-batch renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.Renderer.prototype.destroy` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Sprite-batch renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.Renderer.prototype.destroy.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Sprite-batch renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.Renderer.prototype.height` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Sprite-batch renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.Renderer.prototype.render` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Sprite-batch renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.Renderer.prototype.render.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Sprite-batch renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.Renderer.prototype.reset` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.Renderer.prototype.reset.prototype.constructor` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.Renderer.prototype.resize` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Sprite-batch renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.Renderer.prototype.resize.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Sprite-batch renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.Renderer.prototype.width` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Sprite-batch renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.Renderer.registerPlugin` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Sprite-batch renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.Renderer.registerPlugin.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Sprite-batch renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.SCALE_MODES` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; nearest/linear sampling. |
+| `PIXI.SCALE_MODES.LINEAR` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; nearest/linear sampling. |
+| `PIXI.SCALE_MODES.NEAREST` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Constant table; nearest/linear sampling. |
+| `PIXI.Shader` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores program and uniforms only; never bound (§4.2). |
+| `PIXI.Shader.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores program and uniforms only; never bound (§4.2). |
+| `PIXI.Shader.prototype.destroy` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores program and uniforms only; never bound (§4.2). |
+| `PIXI.Shader.prototype.destroy.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores program and uniforms only; never bound (§4.2). |
+| `PIXI.Sprite` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.from` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.from.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.prototype._calculateBounds` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.prototype._calculateBounds.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.prototype._onAnchorUpdate` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.prototype._onAnchorUpdate.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.prototype._onTextureUpdate` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.prototype._onTextureUpdate.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.prototype._renderSelf` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.prototype._renderSelf.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.prototype.anchor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.prototype.calculateTrimmedVertices` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.prototype.calculateTrimmedVertices.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.prototype.calculateVertices` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.prototype.calculateVertices.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.prototype.containsPoint` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.prototype.containsPoint.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.prototype.destroy` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.prototype.destroy.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.prototype.getLocalBounds` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.prototype.getLocalBounds.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.prototype.height` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.prototype.render` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.prototype.render.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.prototype.texture` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.prototype.tint` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.Sprite.prototype.width` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Drawn as a native quad (drawQuad*). |
+| `PIXI.State` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Fields only; no GL state is applied (§4.2). |
+| `PIXI.State.for2d` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Fields only; no GL state is applied (§4.2). |
+| `PIXI.State.for2d.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Fields only; no GL state is applied (§4.2). |
+| `PIXI.State.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Fields only; no GL state is applied (§4.2). |
+| `PIXI.TYPES` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Constant table only. Inventory test only. |
+| `PIXI.TYPES.FLOAT` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Constant table only. Inventory test only. |
+| `PIXI.TYPES.UNSIGNED_BYTE` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Constant table only. Inventory test only. |
+| `PIXI.TYPES.UNSIGNED_SHORT` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Constant table only. Inventory test only. |
+| `PIXI.Text` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Rendered through the Canvas2D shim, uploaded as a texture. Inventory test only. |
+| `PIXI.Text.prototype._generateCanvas` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Rendered through the Canvas2D shim, uploaded as a texture. Inventory test only. |
+| `PIXI.Text.prototype._generateCanvas.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Rendered through the Canvas2D shim, uploaded as a texture. Inventory test only. |
+| `PIXI.Text.prototype._updateTexture` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Rendered through the Canvas2D shim, uploaded as a texture. Inventory test only. |
+| `PIXI.Text.prototype._updateTexture.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Rendered through the Canvas2D shim, uploaded as a texture. Inventory test only. |
+| `PIXI.Text.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Rendered through the Canvas2D shim, uploaded as a texture. Inventory test only. |
+| `PIXI.Text.prototype.destroy` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Rendered through the Canvas2D shim, uploaded as a texture. Inventory test only. |
+| `PIXI.Text.prototype.destroy.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Rendered through the Canvas2D shim, uploaded as a texture. Inventory test only. |
+| `PIXI.Text.prototype.getLocalBounds` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Rendered through the Canvas2D shim, uploaded as a texture. Inventory test only. |
+| `PIXI.Text.prototype.getLocalBounds.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Rendered through the Canvas2D shim, uploaded as a texture. Inventory test only. |
+| `PIXI.Text.prototype.render` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Rendered through the Canvas2D shim, uploaded as a texture. Inventory test only. |
+| `PIXI.Text.prototype.render.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Rendered through the Canvas2D shim, uploaded as a texture. Inventory test only. |
+| `PIXI.Text.prototype.resolution` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Rendered through the Canvas2D shim, uploaded as a texture. Inventory test only. |
+| `PIXI.Text.prototype.style` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Rendered through the Canvas2D shim, uploaded as a texture. Inventory test only. |
+| `PIXI.Text.prototype.text` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Rendered through the Canvas2D shim, uploaded as a texture. Inventory test only. |
+| `PIXI.Text.prototype.updateText` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Rendered through the Canvas2D shim, uploaded as a texture. Inventory test only. |
+| `PIXI.Text.prototype.updateText.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Rendered through the Canvas2D shim, uploaded as a texture. Inventory test only. |
+| `PIXI.TextStyle` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Subset of style fields mapped to a CSS font string. Inventory test only. |
+| `PIXI.TextStyle.prototype.clone` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Subset of style fields mapped to a CSS font string. Inventory test only. |
+| `PIXI.TextStyle.prototype.clone.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Subset of style fields mapped to a CSS font string. Inventory test only. |
+| `PIXI.TextStyle.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Subset of style fields mapped to a CSS font string. Inventory test only. |
+| `PIXI.TextStyle.prototype.toFontString` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Subset of style fields mapped to a CSS font string. Inventory test only. |
+| `PIXI.TextStyle.prototype.toFontString.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Subset of style fields mapped to a CSS font string. Inventory test only. |
+| `PIXI.Texture` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.EMPTY` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.EMPTY._baseTexture` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture._glTexture` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture._glTextures` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture._id` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture._listeners` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture._listeners.update` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture._listeners.update.0` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture._listeners.update.0.context` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture._listeners.update.0.fn` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture._listeners.update.0.fn.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture._listeners.update.0.once` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture._listeners.update.length` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture.alphaMode` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture.cacheId` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture.destroyed` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture.dirtyId` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture.dirtyStyleId` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture.format` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture.height` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture.isPowerOfTwo` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture.mipmap` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture.realHeight` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture.realWidth` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture.resolution` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture.resource` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture.scaleMode` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture.textureCacheIds` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture.textureCacheIds.length` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture.type` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture.uid` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture.valid` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture.width` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._baseTexture.wrapMode` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._frame` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._frame.height` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._frame.type` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._frame.width` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._frame.x` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._frame.y` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._id` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._listeners` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._rotate` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._updateID` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._uvs` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._uvs.x0` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._uvs.x1` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._uvs.x2` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._uvs.x3` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._uvs.y0` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._uvs.y1` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._uvs.y2` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY._uvs.y3` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY.defaultAnchor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY.defaultAnchor.x` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY.defaultAnchor.y` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY.destroy` | stub | `src/shims/pixi_shim.js` | - | No-op so the shared EMPTY texture survives destroy. |
+| `PIXI.Texture.EMPTY.destroy.prototype.constructor` | stub | `src/shims/pixi_shim.js` | - | No-op so the shared EMPTY texture survives destroy. |
+| `PIXI.Texture.EMPTY.destroyed` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY.emit` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY.emit.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY.noFrame` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY.on` | stub | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Returns this and discards the listener; no event registration. |
+| `PIXI.Texture.EMPTY.on.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Returns this and discards the listener; no event registration. |
+| `PIXI.Texture.EMPTY.once` | stub | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Returns this and discards the listener; no event registration. |
+| `PIXI.Texture.EMPTY.once.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Returns this and discards the listener; no event registration. |
+| `PIXI.Texture.EMPTY.orig` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY.orig.height` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY.orig.type` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY.orig.width` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY.orig.x` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY.orig.y` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY.requiresUpdate` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY.textureCacheIds` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY.textureCacheIds.length` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY.trim` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY.uid` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY.uvMatrix` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY.valid` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.WHITE` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.WHITE._baseTexture` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._baseTexture._glTexture` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._baseTexture._glTextures` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._baseTexture._id` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._baseTexture._listeners` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._baseTexture.alphaMode` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._baseTexture.cacheId` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._baseTexture.destroyed` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._baseTexture.dirtyId` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._baseTexture.dirtyStyleId` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._baseTexture.format` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._baseTexture.height` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._baseTexture.isPowerOfTwo` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._baseTexture.mipmap` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._baseTexture.realHeight` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._baseTexture.realWidth` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._baseTexture.resolution` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._baseTexture.resource` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._baseTexture.scaleMode` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._baseTexture.textureCacheIds` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._baseTexture.textureCacheIds.length` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._baseTexture.type` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._baseTexture.uid` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._baseTexture.valid` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._baseTexture.width` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._baseTexture.wrapMode` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._frame` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._frame.height` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._frame.type` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._frame.width` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._frame.x` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._frame.y` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._id` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._listeners` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._rotate` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._updateID` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._uvs` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._uvs.x0` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._uvs.x1` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._uvs.x2` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._uvs.x3` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._uvs.y0` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._uvs.y1` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._uvs.y2` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE._uvs.y3` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE.defaultAnchor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE.defaultAnchor.x` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE.defaultAnchor.y` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE.destroy` | stub | `src/shims/pixi_shim.js` | - | No-op so the shared WHITE texture survives destroy. |
+| `PIXI.Texture.WHITE.destroy.prototype.constructor` | stub | `src/shims/pixi_shim.js` | - | No-op so the shared WHITE texture survives destroy. |
+| `PIXI.Texture.WHITE.destroyed` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE.emit` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE.emit.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE.noFrame` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE.on` | stub | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Returns this and discards the listener; no event registration. |
+| `PIXI.Texture.WHITE.on.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Returns this and discards the listener; no event registration. |
+| `PIXI.Texture.WHITE.once` | stub | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Returns this and discards the listener; no event registration. |
+| `PIXI.Texture.WHITE.once.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Returns this and discards the listener; no event registration. |
+| `PIXI.Texture.WHITE.orig` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE.orig.height` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE.orig.type` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE.orig.width` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE.orig.x` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE.orig.y` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE.requiresUpdate` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE.textureCacheIds` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE.textureCacheIds.length` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE.trim` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE.uid` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE.uvMatrix` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE.valid` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.addToCache` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.addToCache.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.from` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.from.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.fromCanvas` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.fromCanvas.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.prototype._updateUvs` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.prototype._updateUvs.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.prototype.baseTexture` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.prototype.castToBaseTexture` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.prototype.castToBaseTexture.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.prototype.clone` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.prototype.clone.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.prototype.destroy` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.prototype.destroy.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.prototype.frame` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.prototype.height` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.prototype.onBaseTextureUpdated` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.prototype.onBaseTextureUpdated.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.prototype.rotate` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.prototype.update` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.prototype.update.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.prototype.width` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.removeFromCache` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Texture.removeFromCache.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Frame over a BaseTexture; no WebGL texture units. |
+| `PIXI.Ticker` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | JS ticker driven by the host frame loop. |
+| `PIXI.Ticker.prototype.add` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | JS ticker driven by the host frame loop. |
+| `PIXI.Ticker.prototype.add.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | JS ticker driven by the host frame loop. |
+| `PIXI.Ticker.prototype.addOnce` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | JS ticker driven by the host frame loop. |
+| `PIXI.Ticker.prototype.addOnce.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | JS ticker driven by the host frame loop. |
+| `PIXI.Ticker.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | JS ticker driven by the host frame loop. |
+| `PIXI.Ticker.prototype.destroy` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | JS ticker driven by the host frame loop. |
+| `PIXI.Ticker.prototype.destroy.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | JS ticker driven by the host frame loop. |
+| `PIXI.Ticker.prototype.remove` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | JS ticker driven by the host frame loop. |
+| `PIXI.Ticker.prototype.remove.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | JS ticker driven by the host frame loop. |
+| `PIXI.Ticker.prototype.start` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | JS ticker driven by the host frame loop. |
+| `PIXI.Ticker.prototype.start.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | JS ticker driven by the host frame loop. |
+| `PIXI.Ticker.prototype.stop` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | JS ticker driven by the host frame loop. |
+| `PIXI.Ticker.prototype.stop.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | JS ticker driven by the host frame loop. |
+| `PIXI.Ticker.prototype.update` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | JS ticker driven by the host frame loop. |
+| `PIXI.Ticker.prototype.update.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | JS ticker driven by the host frame loop. |
+| `PIXI.Ticker.shared` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | JS ticker driven by the host frame loop. |
+| `PIXI.Ticker.system` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | JS ticker driven by the host frame loop. |
+| `PIXI.TilingSprite` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Tiled quads; no WebGL repeat sampler. |
+| `PIXI.TilingSprite.from` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Tiled quads; no WebGL repeat sampler. |
+| `PIXI.TilingSprite.from.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Tiled quads; no WebGL repeat sampler. |
+| `PIXI.TilingSprite.prototype._calculateBounds` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Tiled quads; no WebGL repeat sampler. |
+| `PIXI.TilingSprite.prototype._calculateBounds.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Tiled quads; no WebGL repeat sampler. |
+| `PIXI.TilingSprite.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Tiled quads; no WebGL repeat sampler. |
+| `PIXI.TilingSprite.prototype.containsPoint` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Tiled quads; no WebGL repeat sampler. |
+| `PIXI.TilingSprite.prototype.containsPoint.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Tiled quads; no WebGL repeat sampler. |
+| `PIXI.TilingSprite.prototype.destroy` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Tiled quads; no WebGL repeat sampler. |
+| `PIXI.TilingSprite.prototype.destroy.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Tiled quads; no WebGL repeat sampler. |
+| `PIXI.TilingSprite.prototype.getLocalBounds` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Tiled quads; no WebGL repeat sampler. |
+| `PIXI.TilingSprite.prototype.getLocalBounds.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Tiled quads; no WebGL repeat sampler. |
+| `PIXI.TilingSprite.prototype.height` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Tiled quads; no WebGL repeat sampler. |
+| `PIXI.TilingSprite.prototype.render` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Tiled quads; no WebGL repeat sampler. |
+| `PIXI.TilingSprite.prototype.render.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Tiled quads; no WebGL repeat sampler. |
+| `PIXI.TilingSprite.prototype.width` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Tiled quads; no WebGL repeat sampler. |
+| `PIXI.Transform` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY._currentLocalID` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY._cx` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY._cy` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY._localID` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY._parentID` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY._rotation` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY._sx` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY._sy` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY._worldID` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.localTransform` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.localTransform.a` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.localTransform.b` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.localTransform.c` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.localTransform.d` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.localTransform.tx` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.localTransform.ty` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.pivot` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.pivot._x` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.pivot._y` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.pivot.cb` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.pivot.cb.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.pivot.scope` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.position` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.position._x` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.position._y` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.position.cb` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.position.cb.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.position.scope` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.scale` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.scale._x` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.scale._y` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.scale.cb` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.scale.cb.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.scale.scope` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.skew` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.skew._x` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.skew._y` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.skew.cb` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.skew.cb.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.skew.scope` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.worldTransform` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.worldTransform.a` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.worldTransform.b` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.worldTransform.c` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.worldTransform.d` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.worldTransform.tx` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.IDENTITY.worldTransform.ty` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.prototype.onChange` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.prototype.onChange.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.prototype.onSkewChange` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.prototype.onSkewChange.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.prototype.rotation` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.prototype.setFromMatrix` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.prototype.setFromMatrix.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.prototype.updateLocalTransform` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.prototype.updateLocalTransform.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.prototype.updateTransform` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.Transform.prototype.updateTransform.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Local/world transform update. |
+| `PIXI.VERSION` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Reports 5.3.12. Inventory test only. |
+| `PIXI.WRAP_MODES` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Constant table only. Inventory test only. |
+| `PIXI.WRAP_MODES.CLAMP` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Constant table only. Inventory test only. |
+| `PIXI.WRAP_MODES.MIRRORED_REPEAT` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Constant table only. Inventory test only. |
+| `PIXI.WRAP_MODES.REPEAT` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Constant table only. Inventory test only. |
+| `PIXI.WebGLRenderer` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Alias of Renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.WebGLRenderer._plugins` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Alias of Renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.WebGLRenderer.prototype._extractCanvas` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Alias of Renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.WebGLRenderer.prototype._extractCanvas.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Alias of Renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.WebGLRenderer.prototype._extractPixels` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Alias of Renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.WebGLRenderer.prototype._extractPixels.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Alias of Renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.WebGLRenderer.prototype._updateBackgroundColor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Alias of Renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.WebGLRenderer.prototype._updateBackgroundColor.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Alias of Renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.WebGLRenderer.prototype.clear` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Alias of Renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.WebGLRenderer.prototype.clear.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Alias of Renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.WebGLRenderer.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Alias of Renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.WebGLRenderer.prototype.destroy` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Alias of Renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.WebGLRenderer.prototype.destroy.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Alias of Renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.WebGLRenderer.prototype.height` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Alias of Renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.WebGLRenderer.prototype.render` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Alias of Renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.WebGLRenderer.prototype.render.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Alias of Renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.WebGLRenderer.prototype.reset` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.WebGLRenderer.prototype.reset.prototype.constructor` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.WebGLRenderer.prototype.resize` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Alias of Renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.WebGLRenderer.prototype.resize.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Alias of Renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.WebGLRenderer.prototype.width` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Alias of Renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.WebGLRenderer.registerPlugin` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Alias of Renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.WebGLRenderer.registerPlugin.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Alias of Renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI._renderSceneGraph` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Internal scene-graph walk used by the renderer. |
+| `PIXI._renderSceneGraph.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Internal scene-graph walk used by the renderer. |
+| `PIXI.filters` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.AlphaFilter` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.AlphaFilter.prototype.apply` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.AlphaFilter.prototype.apply.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.AlphaFilter.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.BlurFilter` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.BlurFilter.prototype.apply` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.BlurFilter.prototype.apply.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.BlurFilter.prototype.blur` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.BlurFilter.prototype.blurX` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.BlurFilter.prototype.blurY` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.BlurFilter.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.BlurFilterPass` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.BlurFilterPass.prototype.apply` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.filters.BlurFilterPass.prototype.apply.prototype.constructor` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.filters.BlurFilterPass.prototype.blur` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.BlurFilterPass.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype._copyMatrix` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype._copyMatrix.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype._loadMatrix` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype._loadMatrix.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype._multiply` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype._multiply.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype.apply` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype.apply.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype.brightness` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype.brightness.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype.contrast` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype.contrast.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype.desaturate` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype.desaturate.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype.grayscale` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype.grayscale.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype.greyscale` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype.greyscale.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype.hue` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype.hue.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype.negative` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype.negative.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype.reset` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype.reset.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype.saturate` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype.saturate.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype.sepia` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype.sepia.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype.tint` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.filters.ColorMatrixFilter.prototype.tint.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_filters.c` | Built-in filters mapped to native filter passes. |
+| `PIXI.groupD8` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.E` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.MIRROR_HORIZONTAL` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.MIRROR_VERTICAL` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.N` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.NE` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.NW` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.S` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.SE` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.SW` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.W` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.add` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.add.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.byDirection` | stub | `src/shims/pixi_shim.js` | - | Fixed 0; direction lookup not implemented. |
+| `PIXI.groupD8.byDirection.prototype.constructor` | stub | `src/shims/pixi_shim.js` | - | Fixed 0; direction lookup not implemented. |
+| `PIXI.groupD8.inv` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.inv.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.isVertical` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.isVertical.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.matrixAppendRotationInv` | stub | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Empty body; ignores the matrix, rotation and translation arguments. |
+| `PIXI.groupD8.matrixAppendRotationInv.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Empty body; ignores the matrix, rotation and translation arguments. |
+| `PIXI.groupD8.rotate180` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.rotate180.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.sub` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.sub.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.uX` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.uX.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.uY` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.uY.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.vX` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.vX.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.vY` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.vY.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.loader` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Shared Loader instance. Inventory test only. |
+| `PIXI.settings` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Settings object; few fields affect native rendering. |
+| `PIXI.settings.CREATE_IMAGE_BITMAP` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Settings object; few fields affect native rendering. |
+| `PIXI.settings.FILTER_RESOLUTION` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Settings object; few fields affect native rendering. |
+| `PIXI.settings.GC_MAX_CHECK_COUNT` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Settings object; few fields affect native rendering. |
+| `PIXI.settings.GC_MAX_IDLE` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Settings object; few fields affect native rendering. |
+| `PIXI.settings.GC_MODE` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Settings object; few fields affect native rendering. |
+| `PIXI.settings.MIPMAP_TEXTURES` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Settings object; few fields affect native rendering. |
+| `PIXI.settings.PREFER_ENV` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Settings object; few fields affect native rendering. |
+| `PIXI.settings.RENDER_OPTIONS` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Settings object; few fields affect native rendering. |
+| `PIXI.settings.RENDER_OPTIONS.antialias` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Settings object; few fields affect native rendering. |
+| `PIXI.settings.RENDER_OPTIONS.autoDensity` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Settings object; few fields affect native rendering. |
+| `PIXI.settings.RENDER_OPTIONS.backgroundColor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Settings object; few fields affect native rendering. |
+| `PIXI.settings.RENDER_OPTIONS.clearBeforeRender` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Settings object; few fields affect native rendering. |
+| `PIXI.settings.RENDER_OPTIONS.height` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Settings object; few fields affect native rendering. |
+| `PIXI.settings.RENDER_OPTIONS.preserveDrawingBuffer` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Settings object; few fields affect native rendering. |
+| `PIXI.settings.RENDER_OPTIONS.resolution` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Settings object; few fields affect native rendering. |
+| `PIXI.settings.RENDER_OPTIONS.transparent` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Settings object; few fields affect native rendering. |
+| `PIXI.settings.RENDER_OPTIONS.view` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Settings object; few fields affect native rendering. |
+| `PIXI.settings.RENDER_OPTIONS.width` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Settings object; few fields affect native rendering. |
+| `PIXI.settings.RESOLUTION` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Settings object; few fields affect native rendering. |
+| `PIXI.settings.ROUND_PIXELS` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Settings object; few fields affect native rendering. |
+| `PIXI.settings.SCALE_MODE` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Settings object; few fields affect native rendering. |
+| `PIXI.settings.SPRITE_MAX_TEXTURES` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Settings object; few fields affect native rendering. |
+| `PIXI.settings.STRICT_TEXTURE_CACHE` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Settings object; few fields affect native rendering. |
+| `PIXI.settings.TARGET_FPMS` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Settings object; few fields affect native rendering. |
+| `PIXI.settings.WRAP_MODE` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Settings object; few fields affect native rendering. |
+| `PIXI.utils` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.BaseTextureCache` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.EventEmitter` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.EventEmitter.prototype.addListener` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.EventEmitter.prototype.addListener.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.EventEmitter.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.EventEmitter.prototype.emit` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.EventEmitter.prototype.emit.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.EventEmitter.prototype.listenerCount` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.EventEmitter.prototype.listenerCount.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.EventEmitter.prototype.listeners` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.EventEmitter.prototype.listeners.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.EventEmitter.prototype.off` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.EventEmitter.prototype.off.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.EventEmitter.prototype.on` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.EventEmitter.prototype.on.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.EventEmitter.prototype.once` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.EventEmitter.prototype.once.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.EventEmitter.prototype.removeAllListeners` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.EventEmitter.prototype.removeAllListeners.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.EventEmitter.prototype.removeListener` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.EventEmitter.prototype.removeListener.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.TextureCache` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.createIndicesForQuads` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.createIndicesForQuads.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.destroyTextureCache` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.destroyTextureCache.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.hex2rgb` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.hex2rgb.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.hex2string` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.hex2string.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.isMobile` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isMobile.amazon` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isMobile.amazon.device` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isMobile.amazon.phone` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isMobile.amazon.tablet` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isMobile.android` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isMobile.android.device` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isMobile.android.phone` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isMobile.android.tablet` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isMobile.any` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isMobile.apple` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isMobile.apple.device` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isMobile.apple.ipod` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isMobile.apple.phone` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isMobile.apple.tablet` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isMobile.other` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isMobile.other.blackberry` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isMobile.other.blackberry10` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isMobile.other.chrome` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isMobile.other.device` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isMobile.other.firefox` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isMobile.other.opera` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isMobile.phone` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isMobile.tablet` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isMobile.windows` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isMobile.windows.device` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isMobile.windows.phone` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isMobile.windows.tablet` | stub | `src/shims/pixi_shim.js` | - | Fixed desktop answer; no user-agent parsing. |
+| `PIXI.utils.isWebGLSupported` | stub | `src/shims/pixi_shim.js` | - | Fixed true; the renderer is not WebGL. |
+| `PIXI.utils.isWebGLSupported.prototype.constructor` | stub | `src/shims/pixi_shim.js` | - | Fixed true; the renderer is not WebGL. |
+| `PIXI.utils.premultiplyTint` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.premultiplyTint.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.premultiplyTintToRgba` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.premultiplyTintToRgba.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.rgb2hex` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.rgb2hex.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.sign` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.sign.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.skipHello` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.utils.skipHello.prototype.constructor` | stub | `src/shims/pixi_shim.js` | - | No-op. |
+| `PIXI.utils.string2hex` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.string2hex.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.uid` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
+| `PIXI.utils.uid.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Helper subset of PIXI.utils. |
