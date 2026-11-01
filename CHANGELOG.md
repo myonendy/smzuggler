@@ -27,9 +27,8 @@ All notable changes to smzuggler. Outsider's own history is in its git log.
 - Verify literal `name` compatibility rows through the checker CLI, including stale-row rejection.
 - Recognize only the complete compatibility-table header, preserving the DOM `name` member.
 - Add compatibility-surface rows for every dump member credited to `dom_shim.js`.
-- Add compatibility-surface rows for every `pixi_shim.js` member, mark no-op
-  texture listeners and matrix helpers as stubs, and retain the missing Circle
-  row pending resolution of the checker/acceptance-criterion conflict (M0-T010).
+- Add compatibility-surface rows for every `pixi_shim.js` member; the full table
+  now passes `compat_check.py` (M0-T010).
 - Add `tools/share/make_bundle.py` and `smzuggler-rt --share-bundle` to pack a
   scrubbed zip of a run's logs, perf reports and frame times for sharing.
 - Add `tools/perf/binsize.py`, which reports stripped `smzuggler-rt`, shared-library

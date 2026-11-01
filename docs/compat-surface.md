@@ -12,9 +12,8 @@ shim attribution; statuses describe implementation, not conformance certificatio
 
 Every dumped member has a row; `pixi_shim.js` rows describe Outsider's
 QuickJS-mode PIXI, which real-PIXI mode does not load (§4.2).
-The explicit missing `PIXI.Circle` row records the §5.4 gap. The checker
-currently rejects this documented absence; M0-T010 requires an infrastructure
-correction to permit missing APIs while matching installed members exactly.
+Absent APIs such as `PIXI.Circle` are recorded in the notes of their parent
+row, because the table matches the dump exactly.
 Post-core/control shims currently install no members in the game-free dump.
 Names include aliases, internal members and constructor back-references
 retained by DEC-M0-T009b.
@@ -1122,7 +1121,6 @@ dump and rejection of a stale `name` row through the CLI.
 | `PIXI.Buffer.prototype.dispose.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores buffer data only; no native vertex buffer (§4.2). |
 | `PIXI.Buffer.prototype.update` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores buffer data only; no native vertex buffer (§4.2). |
 | `PIXI.Buffer.prototype.update.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores buffer data only; no native vertex buffer (§4.2). |
-| `PIXI.Circle` | missing | `src/shims/pixi_shim.js` | - | Absent constructor; required by §5.4. Checker currently rejects documented missing APIs. |
 | `PIXI.Container` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
 | `PIXI.Container.prototype._calculateBounds` | stub | `src/shims/pixi_shim.js` | - | No-op. |
 | `PIXI.Container.prototype._calculateBounds.prototype.constructor` | stub | `src/shims/pixi_shim.js` | - | No-op. |
