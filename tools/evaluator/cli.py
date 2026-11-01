@@ -1,6 +1,7 @@
 # Copyright (c) 2026 General Arcade (Pte. Ltd.)
 # Copyright (C) 2026 The smzuggler contributors
 # Modified 2026-11-01: add --prelude for the storage-preserving scenario prelude.
+# Modified 2026-11-01: document comparison helpers used by the fork entry point.
 # SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
 """Command line for the visual evaluator (see tools/visual_eval.py)."""
 
@@ -61,6 +62,12 @@ def pick_troop(game_dir):
 
 
 def find_outsider():
+    """Locate a built host so the comparison can launch without --outsider.
+
+    Walks Release then Debug layouts under the repository root. Returns an
+    owned path string, or None when no candidate exists. Call from the CLI
+    thread; never downloads or writes.
+    """
     for candidate in ("build-release/outsider.exe", "build/outsider.exe",
                       "build-release/outsider", "build/outsider"):
         path = os.path.join(ROOT, candidate)
@@ -70,6 +77,13 @@ def find_outsider():
 
 
 def ensure_converted(original, game_dir, log):
+    """Decrypt a packaged copy into game_dir when System.json is missing.
+
+    original is the NW.js folder. game_dir is the converted tree the host
+    reads. log is a callable taking one string. Converter non-zero exits are
+    ignored because missing movies are common without ffmpeg; SystemExit is
+    raised only when System.json is still absent. Call from the CLI thread.
+    """
     if os.path.isfile(os.path.join(game_dir, "data", "System.json")):
         return
     log("Converting %s -> %s" % (original, game_dir))
@@ -82,6 +96,15 @@ def ensure_converted(original, game_dir, log):
 
 
 def run_side(make_driver, side, steps, out_dir, log, env):
+    """Drive one player through the scenario and return serialisable results.
+
+    make_driver(log_path) must return a driver with close(). side is a
+    directory name under out_dir. steps is the loaded scenario list. log is
+    a callable taking one string. env is the runner extra mapping. Stale
+    PNG/PPM shots are removed first so a retry cannot keep an old capture.
+    The driver is always closed. Call from the CLI thread; raises whatever
+    the driver raises.
+    """
     side_dir = os.path.join(out_dir, side)
     os.makedirs(side_dir, exist_ok=True)
     for old in os.listdir(side_dir):          # no stale shots from earlier runs
@@ -99,6 +122,14 @@ def run_side(make_driver, side, steps, out_dir, log, env):
 
 
 def build_report(args, scenario, steps_by_side, width, height, out_dir):
+    """Compare captured shots and return the JSON-ready visual report dict.
+
+    args supplies name, original, game, tolerance, minor_pct and major_pct.
+    scenario is the loaded recipe. steps_by_side maps a side name to the
+    list from run_side. width and height are pixels from System.json. Diff
+    images are written under out_dir/diff. Call from the CLI thread after
+    both sides have finished or been loaded from a previous run.
+    """
     shots = []
     counts = {"match": 0, "minor": 0, "differ": 0, "missing": 0, "skipped": 0}
     diff_dir = os.path.join(out_dir, "diff")
