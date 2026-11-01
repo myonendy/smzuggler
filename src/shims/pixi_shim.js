@@ -368,6 +368,130 @@
 
     PIXI.Rectangle = Rectangle;
 
+    /* PIXI.SHAPES, PIXI.Circle, PIXI.Ellipse, PIXI.Polygon
+       Ported from PIXI 5.3.12 packages/math/src/shapes. Plugins such as
+       CGMZ_Core subclass Circle, so these follow PIXI's fields and edge
+       rules exactly. */
+
+    /* packages/constants/src/index.ts (SHAPES) */
+    PIXI.SHAPES = {
+        POLY: 0,
+        RECT: 1,
+        CIRC: 2,
+        ELIP: 3,
+        RREC: 4
+    };
+
+    /* packages/math/src/shapes/Circle.ts */
+    function Circle(x, y, radius) {
+        this.x = x || 0;
+        this.y = y || 0;
+        this.radius = radius || 0;
+        this.type = PIXI.SHAPES.CIRC;
+    }
+
+    /* Circle.ts clone() */
+    Circle.prototype.clone = function() {
+        return new Circle(this.x, this.y, this.radius);
+    };
+
+    /* Circle.ts contains(): points on the circumference are inside. */
+    Circle.prototype.contains = function(x, y) {
+        if (this.radius <= 0) return false;
+        var r2 = this.radius * this.radius;
+        var dx = (this.x - x);
+        var dy = (this.y - y);
+        dx *= dx;
+        dy *= dy;
+        return (dx + dy <= r2);
+    };
+
+    /* Circle.ts getBounds() */
+    Circle.prototype.getBounds = function() {
+        return new Rectangle(this.x - this.radius, this.y - this.radius,
+                             this.radius * 2, this.radius * 2);
+    };
+
+    PIXI.Circle = Circle;
+
+    /* packages/math/src/shapes/Ellipse.ts
+       width and height hold the half-width and half-height. */
+    function Ellipse(x, y, halfWidth, halfHeight) {
+        this.x = x || 0;
+        this.y = y || 0;
+        this.width = halfWidth || 0;
+        this.height = halfHeight || 0;
+        this.type = PIXI.SHAPES.ELIP;
+    }
+
+    /* Ellipse.ts clone() */
+    Ellipse.prototype.clone = function() {
+        return new Ellipse(this.x, this.y, this.width, this.height);
+    };
+
+    /* Ellipse.ts contains(): points on the boundary are inside. */
+    Ellipse.prototype.contains = function(x, y) {
+        if (this.width <= 0 || this.height <= 0) return false;
+        var normx = ((x - this.x) / this.width);
+        var normy = ((y - this.y) / this.height);
+        normx *= normx;
+        normy *= normy;
+        return (normx + normy <= 1);
+    };
+
+    /* Ellipse.ts getBounds(). PIXI 5.3.12 uses the half sizes as the
+       rectangle's width and height; kept as is for compatibility. */
+    Ellipse.prototype.getBounds = function() {
+        return new Rectangle(this.x - this.width, this.y - this.height,
+                             this.width, this.height);
+    };
+
+    PIXI.Ellipse = Ellipse;
+
+    /* packages/math/src/shapes/Polygon.ts
+       Accepts a flat number array, an array of points, or either as
+       separate arguments. A flat array passed in is used, not copied. */
+    function Polygon() {
+        var flat = Array.isArray(arguments[0]) ? arguments[0] :
+            Array.prototype.slice.call(arguments);
+        if (typeof flat[0] !== "number") {
+            var p = [];
+            for (var i = 0, il = flat.length; i < il; i++) {
+                p.push(flat[i].x, flat[i].y);
+            }
+            flat = p;
+        }
+        this.points = flat;
+        this.type = PIXI.SHAPES.POLY;
+        this.closeStroke = true;
+    }
+
+    /* Polygon.ts clone() */
+    Polygon.prototype.clone = function() {
+        var polygon = new Polygon(this.points.slice());
+        polygon.closeStroke = this.closeStroke;
+        return polygon;
+    };
+
+    /* Polygon.ts contains(): even-odd ray casting, so left/top edges
+       count as inside and right/bottom edges as outside. */
+    Polygon.prototype.contains = function(x, y) {
+        var inside = false;
+        var length = this.points.length / 2;
+        for (var i = 0, j = length - 1; i < length; j = i++) {
+            var xi = this.points[i * 2];
+            var yi = this.points[(i * 2) + 1];
+            var xj = this.points[j * 2];
+            var yj = this.points[(j * 2) + 1];
+            var intersect = ((yi > y) !== (yj > y)) &&
+                (x < ((xj - xi) * ((y - yi) / (yj - yi))) + xi);
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    };
+
+    PIXI.Polygon = Polygon;
+
     /* PIXI.BaseTexture */
 
     var _baseTextureId = 0;
