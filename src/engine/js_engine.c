@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-11-01: eval_file honours the bytecode cache dir when set.
+ * Modified 2026-11-01: add js_engine_get_jsb (NULL here; see js_engine.h).
  *
  * QuickJS runtime and the optional .jsc cache. See docs/data-dirs.md.
  * Engine state is owned by the caller on the main thread.
@@ -752,6 +753,15 @@ void js_engine_set_console_callback(JSEngine *engine, JSConsoleCallback cb, void
     if (!engine) return;
     engine->console_cb = cb;
     engine->console_userdata = userdata;
+}
+
+/** No jsb runtime in quickjs mode: the transitional QuickJS jsb backend
+ * creates its own JSContext and cannot adopt this engine's, so a runtime it
+ * made would not share the game's globals. Returns NULL; see js_engine.h. */
+struct jsb_runtime *js_engine_get_jsb(JSEngine *engine)
+{
+    (void)engine;
+    return NULL;
 }
 
 JSContext *js_engine_get_context(JSEngine *engine)

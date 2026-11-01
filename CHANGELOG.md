@@ -35,6 +35,11 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Implement `js_engine.h` on V8 (`src/engine/js_engine_v8.cc`, library
+  `smz_js_engine_v8` in v8 mode) with `ScriptOrigin` file names, console,
+  error stacks and a microtask checkpoint; add `js_engine_get_jsb()` and the
+  `js_engine_stack` and `js_engine_on_v8` tests (`docs/js-binding.md`,
+  "js_engine on V8").
 - Add zero-copy buffers to the `jsb` seam in both backends: `jsb_arg_bytes`
   (bytes of an ArrayBuffer, TypedArray or DataView argument in place),
   `jsb_new_external_buffer` (native memory as an ArrayBuffer, freed once by a

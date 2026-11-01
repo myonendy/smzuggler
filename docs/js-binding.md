@@ -161,6 +161,51 @@ How jsb applies them:
 * jsb is main-thread only. The one exception is a `jsb_free_fn`, which V8 may call from
   a GC helper thread (see "Buffers").
 
+## js_engine on V8
+`src/engine/js_engine_v8.cc` implements `src/engine/js_engine.h` on V8 (§4.1 item 3,
+card M1-T007). In v8 mode CMake builds it as `smz_js_engine_v8`, which defines
+`SMZ_JS_ENGINE_V8` for its users. Until `game_loop.c`, `error_handler.c` and the bindings
+are ported (M1-T009, M1-T011, M1-T016..T025) the runtime executable still links
+`js_engine.c`, because those files call QuickJS through `js_engine_get_context`; the
+v8-mode library serves every caller that needs only `js_engine.h`, starting with tests.
+
+- **Isolate and context** come from `jsb_runtime_create`; the engine picks them up inside
+  `jsb_runtime_setup`, so `js_engine_get_jsb()` returns a runtime whose modules land in
+  the same global object as the game's scripts. Isolate data slot 0 is jsb's, slot 1 the
+  engine's. ICU data comes from `SMZ_V8_ICU_DATA_PATH` (the `icudtl.dat` of
+  `SMZ_V8_DIR`).
+- **Script names**: every compile gets a `ScriptOrigin` with line and column offset 0, so
+  traces read `name:line:col` like NW.js DevTools. A file is named by its path relative
+  to the game root when the root is known (`js_engine_set_cache_dir`), else by the path
+  given. A SyntaxError's `stack` has no frame in V8, so the reported stack gets
+  `    at name:line:col` from the exception message.
+- **Errors** are reported as in QuickJS mode: the exception's `String()` form, then its
+  `stack`, both at level `error` through the console callback (or stderr).
+- **Microtasks**: `MicrotasksPolicy::kExplicit`; `js_engine_execute_pending_jobs` runs one
+  checkpoint, then reports rejections still unhandled (through
+  `__error_handler_dispatchRejection` when the shim is loaded). Its count is the number
+  of promise reaction jobs, taken from a promise hook; `queueMicrotask` callbacks are
+  not counted. It returns -1 if a microtask threw uncaught.
+- **`.jsc` cache**: same paths and mtime rule as `js_engine.c`. The file holds the
+  source and V8's code cache, because a V8 code cache only works with its own source
+  and `js_engine.h` promises that a hit runs what was cached. M1-T012 replaces it with
+  the hashed cache under `$XDG_CACHE_HOME`.
+- **Watchdog**: only the limit is stored; scripts are not interrupted on V8 until
+  M1-T008.
+- **`js_engine_get_context`** is declared only without `SMZ_JS_ENGINE_V8`. In quickjs
+  mode `js_engine_get_jsb()` returns NULL: the transitional backend creates its own
+  `JSContext` and has no way to adopt the engine's; that needs a change to
+  `jsb_quickjs.c`, so quickjs-mode callers keep `js_engine_get_context` meanwhile.
+- **Handles** (§15.8): every entry point opens its own `HandleScope`; the engine owns
+  exactly two kinds of `Global` (its context and pending rejections) and Resets them in
+  `js_engine_shutdown` before the isolate is disposed of.
+
+`tests/smz/test_js_engine_v8.c` (ctest `js_engine_stack`, both modes) checks that a
+throw in `foo.js` line 3 reports `foo.js:3` from a file, a string and a SyntaxError; in
+v8 mode also the game-relative name and that `js_engine_get_jsb()` sees the engine's
+globals. In v8 mode the unchanged `tests/test_js_engine.c` also runs on V8 as ctest
+`js_engine_on_v8` (`tests/smz/js_engine_v8.cmake`).
+
 ## Tests
 `tests/smz/test_jsb_core.c` (ctest `jsb_core`, both engine modes) defines a module from C, calls
 every getter, return and throw from JS, and checks values, wrong-type and

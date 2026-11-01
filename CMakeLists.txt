@@ -8,6 +8,7 @@
 # Modified 2026-11-01: add SMZ_JS_ENGINE and import prebuilt V8 (cmake/V8.cmake).
 # Modified 2026-11-01: build the jsb seam's V8 backend as smz_jsb (src/jsb/).
 # Modified 2026-11-01: build smz_jsb on the transitional QuickJS backend in quickjs mode.
+# Modified 2026-11-01: build js_engine.h on V8 as smz_js_engine_v8 in v8 mode.
 # Build orchestration; see docs/DECISIONS.md (DEC-M0-T001).
 
 cmake_minimum_required(VERSION 3.20)
@@ -333,6 +334,19 @@ else()
     endif()
 endif()
 target_include_directories(smz_jsb PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/jsb)
+
+# js_engine.h on V8 (spec section 4.1, docs/js-binding.md). Built in v8 mode
+# instead of js_engine.c for everything that uses only js_engine.h; the
+# runtime keeps js_engine.c until game_loop.c, error_handler.c and the
+# bindings stop calling QuickJS (M1-T009, M1-T011, M1-T016..T025).
+if(SMZ_JS_ENGINE STREQUAL "v8")
+    add_library(smz_js_engine_v8 STATIC src/engine/js_engine_v8.cc)
+    target_link_libraries(smz_js_engine_v8 PUBLIC smz_jsb)
+    target_include_directories(smz_js_engine_v8 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_definitions(smz_js_engine_v8
+        PUBLIC SMZ_JS_ENGINE_V8
+        PRIVATE SMZ_V8_ICU_DATA_PATH="${SMZ_V8_ICU_DATA}")
+endif()
 
 # Tests
 if(RMMZ_BUILD_TESTS)
