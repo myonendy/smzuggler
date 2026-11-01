@@ -18,6 +18,7 @@ Modified 2026-10-31: record the real process env and platform (U5).
 Modified 2026-10-31: record process.argv/cwd/exit, throwing require, plugin scan.
 Modified 2026-10-31: record opt-in --data-dir log path (U9).
 Modified 2026-11-01: record the .jsc cache-dir option (U10).
+Modified 2026-11-01: default logs, cache and config to smzuggler-rt data dirs.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 <!-- Records project changes for release review; keep entries free of private data. -->
@@ -27,6 +28,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Default logs, the `.jsc` cache and config to `$XDG_STATE_HOME` / `$XDG_CACHE_HOME` / `$XDG_CONFIG_HOME` `/smzuggler-rt` (HOME fallbacks when unset) so the game folder stays read-only; `--data-dir=PATH` still overrides the log directory.
 - Add `js_engine_set_cache_dir()` so the `.jsc` bytecode cache can live under the platform cache dir (`$XDG_CACHE_HOME/outsider/jsc`), keyed by the game-relative path, instead of beside each script (U10).
 - Add opt-in `--data-dir` / `--data-dir=PATH` so `debug.log` and `console.log` go to the platform state directory (or PATH) instead of the game directory (U9).
 - Log one `[PROF] missing: <Class>.<member>` warning per distinct missing renderer or plugin member a game reads, only when profiling is on (U14).

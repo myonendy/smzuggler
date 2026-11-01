@@ -1,6 +1,11 @@
 /*
  * Copyright (c) 2026 General Arcade (Pte. Ltd.)
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
+ * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-01: eval_file uses the cache dir when one is configured.
+ *
+ * QuickJS engine contract. See docs/data-dirs.md for the host cache path.
+ * Callers own the engine on the main thread.
  */
 
 #ifndef RMMZ_JS_ENGINE_H
@@ -30,11 +35,14 @@ char *js_engine_eval_string(JSEngine *engine, const char *script, const char *fi
 /* Free a string returned by js_engine_eval_string(). */
 void js_engine_free_string(char *str);
 
-/* Load and evaluate a JS file from disk. Returns true on success. */
+/* Load and evaluate a JS file from disk. Returns true on success. When a
+   cache dir is set, this uses js_engine_eval_file_cached() so .jsc files
+   never land next to the script. */
 bool js_engine_eval_file(JSEngine *engine, const char *filepath);
 
 /* Like js_engine_eval_file(), but caches compiled bytecode in a .jsc file next
-   to the source (invalidated by source mtime). Falls back to plain eval. */
+   to the source (invalidated by source mtime). With a cache dir the .jsc
+   lives under that dir. Falls back to plain eval. */
 bool js_engine_eval_file_cached(JSEngine *engine, const char *filepath);
 
 /* Opt-in read-only game folder (--data-dir): put .jsc caches under cache_dir,

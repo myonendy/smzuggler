@@ -4,6 +4,7 @@ Copyright (C) 2026 The smzuggler contributors
 Modified 2026-10-30: document runtime naming and format policy.
 Modified 2026-10-31: record the share-bundle last-run path.
 Modified 2026-10-31: record process.argv shape and throwing require.
+Modified 2026-11-01: default host data directories when SMZUGGLER_NAME is set.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 
@@ -325,3 +326,14 @@ approval (2026-11-01), the real run and its bundle move to a human checkpoint af
 `make_bundle.py` bundle from a synthetic run, check `$gameMap.mapId() === 92` directly,
 and prove the save and reload steps are not stubbed. The card may update ARCHITECTURE.md's
 evaluator rows. No gate is relaxed.
+
+## DEC-M0-T021 — Default host data directories when SMZUGGLER_NAME is set
+U9/U10's `--data-dir` stays opt-in in `rmmz_resolve_log_dir` so the upstream
+C test keeps writing logs to the game folder without the flag. When
+`SMZUGGLER_NAME` is defined, `src/main.c` ignores that default and uses
+`smz_data_dir()` (`SMZUGGLER_BIN` under the XDG bases, or `SDL_GetPrefPath`
+elsewhere). Empty or relative `XDG_*` values are treated as unset and fall
+back to `$HOME/.local/state` / `.cache` / `.config`; the resolver never
+mkdir's and never returns a cwd-relative path or a path under the game root.
+`--data-dir=PATH` still wins for logs when PATH is an absolute location
+outside the game folder.

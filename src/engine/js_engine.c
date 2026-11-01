@@ -1,6 +1,11 @@
 /*
  * Copyright (c) 2026 General Arcade (Pte. Ltd.)
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
+ * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-01: eval_file honours the bytecode cache dir when set.
+ *
+ * QuickJS runtime and the optional .jsc cache. See docs/data-dirs.md.
+ * Engine state is owned by the caller on the main thread.
  */
 
 #include "engine/js_engine.h"
@@ -411,10 +416,10 @@ void js_engine_free_string(char *str)
     free(str);
 }
 
-bool js_engine_eval_file(JSEngine *engine, const char *filepath)
+/** Read and evaluate filepath without writing a .jsc cache file.
+ * filepath is borrowed. Main thread. False on I/O or JS errors. */
+static bool eval_file_plain(JSEngine *engine, const char *filepath)
 {
-    if (!engine || !filepath) return false;
-
     js_engine_watchdog_arm(engine);
     FILE *f = fopen(filepath, "rb");
     if (!f) {
@@ -446,6 +451,16 @@ bool js_engine_eval_file(JSEngine *engine, const char *filepath)
     bool ok = js_engine_eval(engine, buf, filepath);
     free(buf);
     return ok;
+}
+
+/** Evaluate filepath, using the bytecode cache when a cache dir is set so
+ * the game folder is not written. filepath is borrowed. Main thread. */
+bool js_engine_eval_file(JSEngine *engine, const char *filepath)
+{
+    if (!engine || !filepath) return false;
+    if (engine->cache_dir && engine->cache_dir[0])
+        return js_engine_eval_file_cached(engine, filepath);
+    return eval_file_plain(engine, filepath);
 }
 
 /* Bytecode caching: <file>.js -> <file>.jsc, prefixed with the source mtime.
@@ -615,12 +630,15 @@ static bool write_file_binary(const char *path, const uint8_t *data, size_t size
     return written == size;
 }
 
+/** Compile filepath and store bytecode under the cache dir when set, else
+ * next to the script. filepath is borrowed. Main thread. False on I/O or JS
+ * errors; allocation failure falls back to an uncached eval. */
 bool js_engine_eval_file_cached(JSEngine *engine, const char *filepath)
 {
     if (!engine || !filepath) return false;
 
     char *cache_path = make_cache_path(engine, filepath);
-    if (!cache_path) return js_engine_eval_file(engine, filepath);
+    if (!cache_path) return eval_file_plain(engine, filepath);
 
     /* Use the cache only if its stored source mtime matches the current one. */
     int64_t src_mtime = 0, cache_mtime = 0;
