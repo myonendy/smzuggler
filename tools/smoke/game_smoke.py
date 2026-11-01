@@ -25,9 +25,6 @@ TIMEOUT_MARGIN = 4
 # install directories are named like "Proton 8.0" or "Proton - Experimental".
 STEAM_PARTS = {'steam', '.steam', 'steamapps', 'steamlibrary', 'compatdata', 'pfx'}
 
-# Where a failing run's log is kept, relative to the caller's XDG_STATE_HOME.
-FAILURE_LOG = Path('smzuggler-rt/smoke/runtime.log')
-
 
 def tree(root):
     """Return owned relative SHA-256 records on the driver thread; IO errors fail.
@@ -157,23 +154,6 @@ def execute(game, runtime, bwrap, frames, scratch):
                 return 124
 
 
-def keep_log(scratch):
-    """Copy a failing run's log under the caller's XDG_STATE_HOME.
-
-    The log may hold absolute paths, so it is kept on disk only and its
-    location is printed relative to $XDG_STATE_HOME. Never raises: a log that
-    cannot be kept is reported, and the run still fails on its own status.
-    """
-    state = os.environ.get('XDG_STATE_HOME') or str(Path.home() / '.local/state')
-    target = Path(state) / FAILURE_LOG
-    try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(scratch / 'runtime.log', target)
-        print(f'runtime log kept at $XDG_STATE_HOME/{FAILURE_LOG.as_posix()}')
-    except OSError as error:
-        print(f'runtime log not kept ({os_reason(error)})')
-
-
 def os_reason(error):
     """Name an OSError by type and errno only; its text may contain paths."""
     code = errno.errorcode.get(error.errno, 'no errno')
@@ -200,8 +180,8 @@ def main(args):
     """Return CLI status: 2 for setup, 1 for failed smoke, 0 for unchanged success.
 
     Only relative tree entries and path-free diagnostics are printed on this
-    thread. Temporary manifests/logs are removed on exit; a failing run's log
-    is kept under XDG_STATE_HOME first.
+    thread. Manifests and diagnostics stay inside scratch and are removed on
+    exit, including failures; the caller's XDG directories are never written.
     """
     try:
         game, runtime, bwrap, frames = configuration(args)
@@ -222,10 +202,7 @@ def main(args):
             status = execute(game, runtime, bwrap, frames, scratch)
             after = tree(game)
             (scratch / 'after.json').write_text(json.dumps(after, sort_keys=True))
-            result = report(before, after, frames, status)
-            if result != 0:
-                keep_log(scratch)
-            return result
+            return report(before, after, frames, status)
     except ValueError as error:
         print(f'smoke: {error}', file=sys.stderr)
         return 1

@@ -13,18 +13,17 @@ import tempfile
 import unittest
 
 SCRIPT = Path(__file__).resolve().parents[2] / 'tools/smoke/game_smoke.sh'
-KEPT_LOG = Path('smzuggler-rt/smoke/runtime.log')
 
 
 class GameSmoke(unittest.TestCase):
     """Check fail-closed setup, hashing, control input and runtime status."""
 
     def run_smoke(self, body, game_name='game', configured=True, native=False,
-                  kept_log=None):
+                  state_in_game=False):
         """Run isolated shell fixtures; return captured status without paths leaking.
 
-        `@RUN@` in the stub body becomes the host XDG_RUNTIME_DIR. When
-        `kept_log` is a bool, assert whether the failure log was kept.
+        `@RUN@` becomes the host XDG_RUNTIME_DIR. With state_in_game,
+        compare the entire game tree after return to catch driver writes.
         """
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -52,19 +51,25 @@ os.execv(command[0], command)
             env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'],
                        SMZUGGLER_RUNTIME=str(runtime), WAYLAND_DISPLAY='wayland-test',
                        XDG_RUNTIME_DIR=str(root / 'run'),
-                       XDG_STATE_HOME=str(root / 'state'))
+                       XDG_STATE_HOME=str(game if state_in_game else root / 'state'))
             env.pop('SMZUGGLER_GAME_DIR', None)
             env.pop('PULSE_SERVER', None)
             if configured:
                 env['SMZUGGLER_GAME_DIR'] = str(game)
+            before = {p.relative_to(game): p.read_bytes()
+                      for p in game.rglob('*') if p.is_file()}
             result = subprocess.run(['bash', str(SCRIPT), '7'], env=env,
                                     capture_output=True, text=True, timeout=15)
             self.assertNotIn(str(root), result.stdout + result.stderr)
             if native:
                 self.assertFalse((root / 'escape').exists())
                 self.assertEqual((game / 'data').read_text(), 'original')
-            if kept_log is not None:
-                self.assertEqual((root / 'state' / KEPT_LOG).is_file(), kept_log)
+            self.assertFalse((root / 'state').exists())
+            if state_in_game:
+                after = {p.relative_to(game): p.read_bytes()
+                         for p in game.rglob('*') if p.is_file()}
+                self.assertEqual(before, after)
+                self.assertFalse(any(p.is_dir() for p in game.rglob('*')))
             return result
 
     def test_good_runtime(self):
@@ -78,7 +83,7 @@ os.execv(command[0], command)
  read command
  test "$command" = '1 eval null' || exit 11
  echo log > "$XDG_STATE_HOME/log"
-''', kept_log=False)
+''')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('frames: 7; exit code: 0', result.stdout)
         self.assertIn('game dir unchanged', result.stdout)
@@ -88,16 +93,17 @@ os.execv(command[0], command)
         for command in ('echo bad > "$2/new"', 'echo bad > "$2/data"',
                         'rm "$2/data"'):
             with self.subTest(command=command):
-                result = self.run_smoke(command, kept_log=True)
+                result = self.run_smoke(command)
                 self.assertEqual(result.returncode, 1)
                 self.assertIn('game dir changed', result.stdout)
 
     def test_runtime_failure(self):
-        """Propagate a failing runtime and keep its log at a relative location."""
-        result = self.run_smoke('echo diagnostics; exit 17', kept_log=True)
+        """Propagate failure without persisting private diagnostics outside scratch."""
+        result = self.run_smoke('echo diagnostics; exit 17', state_in_game=True)
         self.assertEqual(result.returncode, 1)
         self.assertIn('exit code: 17', result.stdout)
-        self.assertIn('$XDG_STATE_HOME/' + KEPT_LOG.as_posix(), result.stdout)
+        self.assertIn('game dir unchanged', result.stdout)
+        self.assertNotIn('diagnostics', result.stdout + result.stderr)
 
     def test_unsafe_configuration(self):
         """Reject missing game configuration and Steam/Proton path components."""

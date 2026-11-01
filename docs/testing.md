@@ -73,9 +73,8 @@ requested frame count, runtime exit code and `game dir unchanged` or
 `game dir changed`. Any tree difference or nonzero child status fails the run.
 Runtime output is private scratch data and is deleted with the manifests on
 exit, so absolute paths from runtime diagnostics cannot leak into the report.
-On a failing run the log is first copied to
-`$XDG_STATE_HOME/smzuggler-rt/smoke/runtime.log` and only that relative
-location is printed.
+Diagnostics stay inside scratch on failures too; the driver never persists
+logs under the caller's XDG directories, even when they point into the game.
 A denied write that the child ignores cannot land outside scratch; a runtime
 that propagates a denied write fails through its exit status.
 
