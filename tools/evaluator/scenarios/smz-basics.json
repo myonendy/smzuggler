@@ -1,0 +1,18 @@
+{
+  "_header": "SPDX-License-Identifier: GPL-3.0-or-later; Copyright (C) 2026 The smzuggler contributors. Local control recipe for docs/testing.md; run serially with scratch storage, never against a store installation.",
+  "name": "title-map-menu-save",
+  "steps": [
+    {"wait_scene": "Scene_Title", "nudge": "ok", "shot": "title", "settle": 0},
+    {"new_game": true},
+    {"eval": "(function(){if($gameMap.mapId() !== 92) throw new Error('Expected map 92'); return true;})()"},
+    {"wait": 60, "shot": "map-60", "settle": 0},
+    {"wait": 240, "shot": "map-300", "settle": 0},
+    {"wait": 300, "shot": "map-600-hud", "settle": 0},
+    {"key": "menu"},
+    {"wait_scene": "Scene_Menu", "shot": "menu", "settle": 0},
+    {"pop": true},
+    {"eval": "Promise.resolve(DataManager.saveGame(1)).then(function(ok){if(ok === false) throw new Error('Save failed'); __ev.savedGameSystem = $gameSystem; $gameSystem._evaluatorReloadProbe = true; if(!StorageManager.exists(DataManager.makeSavename(1))) throw new Error('Slot 1 missing'); return true;})"},
+    {"eval": "Promise.resolve(DataManager.loadGame(1)).then(function(ok){if(ok === false || $gameSystem === __ev.savedGameSystem || $gameSystem._evaluatorReloadProbe) throw new Error('Reload failed'); $gameSystem.onAfterLoad(); SceneManager.goto(Scene_Map); return true;})"},
+    {"wait_scene": "Scene_Map", "shot": "reload", "settle": 0}
+  ]
+}

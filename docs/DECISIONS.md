@@ -4,6 +4,7 @@ Copyright (C) 2026 The smzuggler contributors
 Modified 2026-10-30: document runtime naming and format policy.
 Modified 2026-10-31: record the share-bundle last-run path.
 Modified 2026-10-31: record process.argv shape and throwing require.
+Modified 2026-11-01: record evaluator scratch-root isolation.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 
@@ -325,3 +326,25 @@ approval (2026-11-01), the real run and its bundle move to a human checkpoint af
 `make_bundle.py` bundle from a synthetic run, check `$gameMap.mapId() === 92` directly,
 and prove the save and reload steps are not stubbed. The card may update ARCHITECTURE.md's
 evaluator rows. No gate is relaxed.
+
+## DEC-M0-T015 — isolate the evaluator's writable game root
+The inherited host derives saves and logs from its game root. The local scenario entry
+point therefore copies inputs beneath the run directory, excluding owner saves and logs.
+Symlinks become independent copies so host writes cannot follow them back to the original
+game. This costs one local game copy per run but adds no tool dependency and avoids
+changing runtime modules outside the card's scope. The read-only smoke's bubblewrap mount
+is not reused because save and reload need a writable save directory. The map step checks
+`$gameMap.mapId() === 92` directly, as §10 names that map, instead of trusting the
+configured start map. Control-mode perf samples keep native 0.1 ms precision and are
+diagnostic; they cannot establish the later device acceptance gate. See
+[local scenario instructions](testing.md#local-title-map-menu-and-save-scenarios).
+
+## DEC-M0-T015b — cut storage stubs from the prelude instead of restoring them
+Upstream's evaluator prelude stubs `StorageManager.saveObject`, `loadObject` and `exists`,
+which turns the save and reload steps into no-ops. Rather than patching `prelude.js` to stub
+and later restore them, `smzuggler.py` loads the upstream file without its storage section,
+cut between upstream's own section headers, and fails loudly if those headers move.
+`prelude.js` stays identical to upstream, a test can show the loaded text has no stub, and
+the inherited CLI's new `--prelude` option lets the NW.js reference run use the same text.
+Bundle README step lines are appended by the entry point because the share packager's
+README has no step section.

@@ -1,4 +1,6 @@
 # Copyright (c) 2026 General Arcade (Pte. Ltd.)
+# Copyright (C) 2026 The smzuggler contributors
+# Modified 2026-11-01: add --prelude for the storage-preserving scenario prelude.
 # SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
 """Command line for the visual evaluator (see tools/visual_eval.py)."""
 
@@ -148,6 +150,11 @@ def build_report(args, scenario, steps_by_side, width, height, out_dir):
 
 
 def main(argv=None):
+    """Run the NW.js/Outsider comparison; argv defaults to sys.argv, returns an exit code.
+
+    --prelude exists so smzuggler's scenarios, which save and reload a slot,
+    can run in NW.js with a prelude that does not stub StorageManager.
+    """
     parser = argparse.ArgumentParser(
         prog="visual_eval.py",
         description="Run the same scenes in the original NW.js player and in Outsider, "
@@ -160,6 +167,9 @@ def main(argv=None):
     parser.add_argument("--scenario", default=os.path.join(HERE, "scenarios", "default.json"),
                         help="scenario JSON (default: scenarios/default.json)")
     parser.add_argument("--out", help="output folder (default build/eval/<name>)")
+    parser.add_argument("--prelude", default=os.path.join(HERE, "prelude.js"),
+                        help="prelude script (default: prelude.js; smzuggler's save scenario "
+                             "needs the output of python3 -m tools.evaluator.smzuggler --print-prelude)")
     parser.add_argument("--skip-original", action="store_true",
                         help="reuse the original's screenshots from a previous run")
     parser.add_argument("--skip-outsider", action="store_true",
@@ -194,7 +204,7 @@ def main(argv=None):
 
     width, height = game_resolution(args.game if os.path.isdir(args.game) else args.original)
     scenario = load_scenario(args.scenario)
-    with open(os.path.join(HERE, "prelude.js"), "r", encoding="utf-8") as f:
+    with open(args.prelude, "r", encoding="utf-8") as f:
         prelude = f.read()
     env = {"auto_troop": pick_troop(args.game)}
     log("Game %s at %dx%d, scenario %s (%d steps), output %s" % (

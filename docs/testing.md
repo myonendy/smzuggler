@@ -1,6 +1,8 @@
 <!--
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
+Modified 2026-11-01: document isolated evaluator scenarios, the storage-preserving
+prelude, step summaries and local NW.js references.
 
 Local and CI validation of the QuickJS baseline, part of build infrastructure.
 Keep the game-free suite independent of any installed game; do not bypass skips.
@@ -88,3 +90,85 @@ on dev-laptop after at least two minutes unplugged, with battery at least 50%
 and `powerprofilesctl get` reporting `power-saver`. If the game copy or GUI is
 unavailable, report `BLOCKED: needs dev-laptop GUI run`; stub runs are not real
 game evidence. A human wires the gate after that run (DEC-SETUP-006).
+
+## Local title, map, menu and save scenarios
+
+M0-T015 adds `tools/evaluator/scenarios/smz-basics.json`, loaded by the
+upstream evaluator's scenario schema. Run its guarded host entry point:
+
+```sh
+python3 -m tools.evaluator.smzuggler --dry-run
+python3 -m tools.evaluator.smzuggler --battery-gate-confirmed
+```
+
+Set `SMZUGGLER_GAME_DIR` to a separate local test copy, never a store install.
+The dry run prints resolved input, runtime and output paths without writing.
+Both lexical and resolved paths containing `steamapps` or `compatdata` are
+refused, including symlinks through those components. State and game roots
+must not overlap. `--runtime` selects a locally built host if needed.
+Before the real command, the owner verifies on dev-laptop that the battery is
+at least 50%, AC has been disconnected for at least two minutes, and
+`powerprofilesctl get` reports `power-saver`. The confirmation flag records
+that manual check; it does not measure or replace it.
+
+Each session creates a fresh directory under
+`$XDG_STATE_HOME/smzuggler-rt/evaluator/` (default
+`~/.local/state/smzuggler-rt/evaluator/`). The host runs against a disposable
+copy of the inputs under this run's output directory. Copies dereference
+symlinks and exclude top-level owner save directories, save files and runtime
+logs. Reserve enough space for a complete test copy per session. The host only
+receives the scratch game root; its saves and logs therefore stay beneath the
+run directory. Nothing is written into the original game directory. Unlike the
+read-only smoke above, this route needs a writable save directory, so it uses
+a scratch copy instead of a read-only bubblewrap mount.
+
+The route waits for title, starts a new game, checks `$gameMap.mapId() === 92`
+directly (not the configured start map), captures 60/300/600 additional
+logical frames after map readiness (the last includes the HUD), opens the main
+menu, saves slot 1, checks that the slot exists, reloads it (requiring a
+replacement game-system object) and requests `nw.Window.get().close()`. The
+process must exit with status zero; forced cleanup does not count as a clean
+close. After the steps, the entry point also checks that a slot-1 file exists
+in the scratch copy's `save/` directory. Readiness can advance frames, so
+these capture offsets are relative to readiness, not engine boot.
+
+The upstream `prelude.js` stubs `StorageManager.saveObject`, `loadObject` and
+`exists` so its own scenarios never touch player data. That would make save
+and reload no-ops, so the entry point loads the prelude without that section
+(`--print-prelude` shows exactly what is loaded). This is safe only because the
+host sees a scratch copy without owner saves.
+
+`summary.json` records logical frame counts and status per step without game
+text or screenshots. `runtime.log`, native phase averages in `perf.json`,
+`frame-times.csv`, `steps.csv` and captures stay in the run directory. Native
+`--perf 1` reports one-frame timings rounded to 0.1 ms; control-mode samples
+are diagnostic evidence, not the later device performance acceptance gate.
+The share packager runs locally with explicit screenshot inclusion, scans
+staged output and writes `bundle.zip` only on success. The archive names
+the JSON reports `perf-report-evaluator.json` and `perf-report-steps.json`
+(the step list wrapped in an object) to match the packager's report
+allowlist. Scratch inputs and saves are excluded. Its `README.txt` lists the
+scrubbed contents, and the entry point then appends a pass/fail line per step
+(step indices and fixed status words only). No upload or posting occurs;
+screenshots and reference captures must never be committed.
+`tests/tools/test_scenario_bundle.py` packs a synthetic run in this layout
+with the real packager.
+
+For NW.js reference captures, the owner uses another disposable local test
+copy with no personal saves, on the same battery configuration. Make the
+assets read-only and keep only that copy's scratch save directory writable.
+Write the storage-preserving prelude with
+`python3 -m tools.evaluator.smzuggler --print-prelude > <ref-dir>/prelude.js`,
+then run the inherited evaluator (`python3 -m tools.evaluator.cli`) against
+the copy with `--scenario tools/evaluator/scenarios/smz-basics.json`,
+`--prelude <ref-dir>/prelude.js`, `--skip-outsider` and `--out <ref-dir>`,
+where `<ref-dir>` is a separate directory under the evaluator state root. Its
+NW.js profile is created under that output directory. Never run this recipe on
+the original store directory. Inspect and compare the captures locally using
+the inherited comparison/report workflow; do not add any reference image to git.
+
+If the game copy or GUI is unavailable, the entry point reports
+**BLOCKED: needs dev-laptop GUI run** and exits non-zero. The real run and its
+bundle are the owner's checkpoint after merge (docs/FORGE.md,
+DEC-M0-T015-OWNER-RUN); the owner keeps the real `summary.json`, bundle path
+and archive README summary locally and attaches them to that checkpoint.
