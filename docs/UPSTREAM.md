@@ -27,7 +27,7 @@ no new test infrastructure or unrelated paths may enter an offer.
 | U9 | Optional data-dir moves logs to state dir (§5.6) | `src/main.c`, `tests/test_file_io.c` | — | planned | up/U9-data-dir | — | 50–100 lines; C test |
 | U10 | Data-dir moves jsc cache to cache dir (§5.6) | `src/engine/js_engine.c`, `tests/test_js_engine.c` | U9 | planned | up/U10-cache-dir | — | 50–100 lines; C test |
 | U11 | canPlayType reflects build decoders (§5.7) | `src/shims/dom_shim.js`, `tests/test_dom_shim.c` | — | planned | up/U11-play-type | — | <30 lines; shim unit test |
-| U12 | Pin SoLoud and SDL_shadercross (App. A) | `third_party/CMakeLists.txt` | — | planned | up/U12-dependency-pins | — | <20 lines; CI build |
+| U12 | Pin SoLoud and SDL_shadercross (App. A) | `third_party/CMakeLists.txt` | — | ready to cut | up/U12-pin-soloud-shadercross | — | <20 lines; CI build |
 | U13 | Canvas2D text fix if root cause is upstream (§5.5) | `src/rendering/canvas2d.c`, `src/rendering/font_manager.c`, `src/shims/canvas2d_shim.js`, `tests/test_canvas2d.c`, `tests/test_font.c` | — | planned | up/U13-text | — | Size unknown; golden test; confirm exact root cause before cutting |
 | U14 | Optional missing-member PROF warnings (§5.4) | `src/shims/pixi_shim.js` | — | planned | up/U14-profile-warnings | — | <80 lines; optional |
 | Issue only | UltraMode7 needs Geometry/Buffer/Shader/Mesh (§5.4) | — | — | planned | — | — | File missing-renderer-API report only; no implementation |

@@ -36,8 +36,8 @@ FetchContent_MakeAvailable(quickjs)
 FetchContent_Declare(
     soloud
     GIT_REPOSITORY https://github.com/jarikomppa/soloud.git
-    GIT_TAG        master
-    GIT_SHALLOW    TRUE
+    # Pinned 2026-10-31 from upstream master (local dependency cache).
+    GIT_TAG        e82fd32c1f62183922f08c14c814a02b58db1873
 )
 FetchContent_GetProperties(soloud)
 if(NOT soloud_POPULATED)
@@ -148,7 +148,8 @@ if(RMMZ_RUNTIME_SHADERS)
     FetchContent_Declare(
         sdl_shadercross
         GIT_REPOSITORY https://github.com/libsdl-org/SDL_shadercross.git
-        GIT_TAG        main
+        # Pinned 2026-10-31 from upstream main (local dependency cache).
+        GIT_TAG        1ff05bec573988a98ef9e0260b4da44f512b8367
         GIT_SUBMODULES ""
     )
     FetchContent_GetProperties(sdl_shadercross)
