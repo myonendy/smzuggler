@@ -1,5 +1,6 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
+Modified 2026-10-31: record process.argv/cwd/exit and throwing require.
 Shim inventory and ordering contract for the loader and diagnostic walker.
 Keep this order aligned with src/engine/script_loader.c; no game is required.
 -->
@@ -75,3 +76,14 @@ outside the loader's shim sequence, so it is outside this inventory.
 and navigator members, row structure, strict sorting and identical successive
 in-process runs without device bindings. This diagnostic is the runtime input
 for the compatibility table described in spec §15.4.
+
+`storage_shim.js` finishes the §5.3 `process` surface: `process.argv` is
+Chrome/NW.js-shaped (`chrome`, `index.html`), `process.cwd()` is the game
+root, `process.mainModule.filename` is `<root>/index.html` (game-relative
+when the root is empty), and `process.exit(code)` sets `process.exitCode`
+then takes the same quit path as `nw.App.quit()`. Unknown `require()` names
+throw `Error` with `code: 'MODULE_NOT_FOUND'`; `fs`, `path` and `nw.gui`
+still load. `tests/smz/test_process_shim.c` asserts those values.
+`tools/compat/scan_requires.py` counts `require(` and `process.*` in
+`js/plugins/*.js` of `SMZUGGLER_GAME_DIR` and prints plugin basenames and
+counts only.

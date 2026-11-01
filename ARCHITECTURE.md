@@ -218,6 +218,7 @@ changes together.
 | `src/video/` | Video decode, playback timing and drawing; upstream. |
 | `tools/` | Build, packaging and evaluation utilities; mixed upstream and fork. |
 | `tools/commitmsg/` | Commit subject checks and fixtures; fork. |
+| `tools/compat/` | Plugin require/process surface scanner; fork. |
 | `tools/doclint/` | Source documentation, Markdown and docs-touched checks; fork. |
 | `tools/evaluator/` | Runtime evaluation driver support; upstream. |
 | `tools/evaluator/scenarios/` | Evaluation scenario definitions; upstream. |
