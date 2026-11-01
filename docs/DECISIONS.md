@@ -8,6 +8,7 @@ Modified 2026-11-01: record evaluator scratch-root isolation.
 Modified 2026-11-01: record evaluator game-process XDG isolation.
 Modified 2026-11-01: default host data directories when SMZUGGLER_NAME is set.
 Modified 2026-11-01: record Map 92 report owner-run and JS-time gap definitions.
+Modified 2026-11-01: propose the V8 pin (DEC-M1-T001).
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 
@@ -411,3 +412,15 @@ to M0-T022. Workers cannot run on battery with `power-saver` or with real graphi
 writes the checklist and a step-by-step recipe, marks game-run items `pending owner run`, and
 the owner does the dev-laptop run after merge and updates `docs/milestones/M0.md`. M0-T022 now
 depends on U15. No gate is relaxed.
+
+## DEC-M1-T001 — proposed V8 pin 13.6.233.8 (owner approval required)
+Proposed answer to §11 Q9: V8 tag `13.6.233.8`, the branch of Chrome 136 and the Node.js 24
+LTS line. A long-lived non-Chromium embedder builds it with the system C++ library, it has the
+Fast API calls and code cache M1 needs, and a fixed tag makes `gclient sync` reproducible. The
+tag was chosen offline; `tools/v8/build_v8.sh` checks it against `include/v8-version.h` and
+stops on a mismatch. With it: `v8_enable_i18n_support=true` with a separate `icudtl.dat`
+(v0.2's Q8 recommendation; data size revisited in M6), pointer compression on (matches
+Chrome/NW.js, smaller heap) and the V8 sandbox off (it forbids the no-copy external
+ArrayBuffers of `jsb`). Reasons per arg are in docs/build-v8.md. **This is a proposal: the
+owner must approve the pin at checkpoint H1, and run the build once on dev-laptop, before
+M1-T002 merges.**

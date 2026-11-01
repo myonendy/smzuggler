@@ -25,6 +25,7 @@ Modified 2026-11-01: default logs, cache and config to smzuggler-rt data dirs.
 Modified 2026-11-01: record the Map 92 profile report tool and owner-run recipe.
 Modified 2026-11-01: record the M0 exit observation checklist.
 Modified 2026-11-01: record guarded save reads (U15).
+Modified 2026-11-01: record the V8 build script and proposed pin.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 <!-- Records project changes for release review; keep entries free of private data. -->
@@ -34,6 +35,9 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Add `tools/v8/build_v8.sh`, which builds the proposed V8 pin 13.6.233.8 as a
+  static monolith into `$SMZ_DEPS_DIR/v8/<version>/` with a `v8-config.cmake`
+  manifest; `--print-args` shows the GN args (`docs/build-v8.md`, DEC-M1-T001).
 - Add the §9 M0 exit checklist `docs/milestones/M0.md` (local gates pass;
   game-run items `pending owner run`, hosted CI `pending push`) and the owner
   run recipe `docs/milestones/m0-exit-recipe.md` (battery and `power-saver`

@@ -230,6 +230,7 @@ changes together.
 | `tools/share/` | Offline run-bundle packager with privacy scrubbing; fork. |
 | `tools/smoke/` | Read-only game smoke runner with scratch XDG storage; fork. |
 | `tools/upstream/` | Isolated, offline upstream offer extraction; fork. |
+| `tools/v8/` | Pinned V8 static-monolith build into `$SMZ_DEPS_DIR` ([V8 build](docs/build-v8.md)); fork. |
 
 ## Where do I start?
 
