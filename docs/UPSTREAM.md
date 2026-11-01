@@ -17,7 +17,7 @@ no new test infrastructure or unrelated paths may enter an offer.
 | PR | Change | Files (exact extraction allowlist) | Depends | Status | Branch | Upstream link | Notes (merge / carried commits) |
 |---|---|---|---|---|---|---|---|
 | U1 | Document tag lookup includes head/body/html (§5.1) | `src/shims/dom_shim.js`, `tests/test_dom_shim.c` | — | ready to cut | up/U1-document-tags | — | Singleton identity, case-insensitive tags and wildcard covered by QuickJS shim tests |
-| U2 | Element subtree tag/id/class selectors (§5.1, §5.7) | `src/shims/dom_shim.js`, `tests/test_dom_shim.c` | — | planned | up/U2-element-selectors | — | 100–200 lines; shim unit test |
+| U2 | Element subtree tag/id/class selectors (§5.1, §5.7) | `src/shims/dom_shim.js`, `tests/test_dom_shim.c` | — | ready to cut | up/U2-element-selectors | — | Tree-order tag/id/class, compounds, comma lists and syntax errors covered by QuickJS shim tests |
 | U3 | Window EventEmitter and window methods (§5.2) | `src/shims/storage_shim.js`, `tests/test_storage.c` | — | planned | up/U3-window-events | — | 100–150 lines; shim unit test |
 | U4 | SDL close event and forced quit (§5.2) | `src/platform/platform_sdl3.c`, `src/engine/game_loop.c`, `src/shims/storage_shim.js`, `tests/test_game_loop.c`, `tests/test_storage.c` | U3 | planned | up/U4-close-delivery | — | 50–120 lines; C and control-mode tests |
 | U5 | Process environment, platform, versions, arch, timing and nextTick (§5.3) | `src/shims/storage_shim.js`, `src/bindings/bind_platform.c`, `tests/test_storage.c` | — | planned | up/U5-process | — | 80–150 lines; shim unit test |
@@ -31,6 +31,14 @@ no new test infrastructure or unrelated paths may enter an offer.
 | U13 | Canvas2D text fix if root cause is upstream (§5.5) | `src/rendering/canvas2d.c`, `src/rendering/font_manager.c`, `src/shims/canvas2d_shim.js`, `tests/test_canvas2d.c`, `tests/test_font.c` | — | planned | up/U13-text | — | Size unknown; golden test; confirm exact root cause before cutting |
 | U14 | Optional missing-member PROF warnings (§5.4) | `src/shims/pixi_shim.js` | — | planned | up/U14-profile-warnings | — | <80 lines; optional |
 | Issue only | UltraMode7 needs Geometry/Buffer/Shader/Mesh (§5.4) | — | — | planned | — | — | File missing-renderer-API report only; no implementation |
+
+U2 queries walk connected document elements or an element's descendants in tree
+order, excluding the element receiver. Results are array snapshots. The supported
+selector subset is tags (including `*`), IDs, classes, compounds and comma lists;
+identifiers use ASCII letters/underscore followed by letters, digits, underscore
+or hyphen. Other syntax, including combinators, attributes and escapes, throws an
+Error named `SyntaxError`. The head singleton is attached before body so document
+queries use the same traversal as element queries.
 
 ## Building and opening offers (§8.2)
 

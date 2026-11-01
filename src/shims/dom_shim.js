@@ -522,16 +522,81 @@
         return { x: 0, y: 0, width: w, height: h, top: 0, left: 0, right: w, bottom: h };
     };
 
+    /* Parse the supported subset completely before searching, so invalid queries
+     * fail even on empty subtrees. Escapes and combinators are unsupported. */
+    function parseSimpleSelectors(selector) {
+        var parts = String(selector).split(",");
+        var selectors = [];
+        for (var i = 0; i < parts.length; i++) {
+            var part = parts[i].replace(/^\s+|\s+$/g, "");
+            if (!/^(?:[a-zA-Z_][a-zA-Z0-9_-]*|\*)?(?:[.#][a-zA-Z_][a-zA-Z0-9_-]*)*$/.test(part) || !part) {
+                var error = new Error("Unsupported selector: " + selector);
+                error.name = "SyntaxError";
+                throw error;
+            }
+            selectors.push(part.match(/^[^.#]+|[.#][^.#]+/g));
+        }
+        return selectors;
+    }
+
+    /* Match class tokens rather than substrings; IDs and classes are case-sensitive. */
+    function matchesSimpleSelector(element, tokens) {
+        for (var i = 0; i < tokens.length; i++) {
+            var token = tokens[i];
+            if (token.charAt(0) === "#") {
+                if (element.id !== token.substring(1)) return false;
+            } else if (token.charAt(0) === ".") {
+                var classes = String(element.className || "").split(/\s+/);
+                if (classes.indexOf(token.substring(1)) < 0) return false;
+            } else if (token !== "*" && element.tagName !== token.toUpperCase()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /* Walk once in tree order, excluding an element query's receiver. Results
+     * are snapshots, and comma-list matches appear only once per element. */
+    function collectSimpleMatches(root, selectors, results, includeRoot) {
+        if (includeRoot && root.nodeType === 1) {
+            for (var i = 0; i < selectors.length; i++) {
+                if (matchesSimpleSelector(root, selectors[i])) {
+                    results.push(root);
+                    break;
+                }
+            }
+        }
+        for (var j = 0; j < root.children.length; j++) {
+            collectSimpleMatches(root.children[j], selectors, results, true);
+        }
+        return results;
+    }
+
+    /* Element queries include descendants only, even for detached elements. */
     HTMLElement.prototype.querySelector = function(selector) {
-        return null;
+        return this.querySelectorAll(selector)[0] || null;
     };
 
+    /* Return a snapshot of descendants matching the supported selector subset. */
     HTMLElement.prototype.querySelectorAll = function(selector) {
-        return [];
+        return collectSimpleMatches(this, parseSimpleSelectors(selector), [], false);
     };
 
+    /* Tag names are case-insensitive; wildcard includes every descendant element. */
     HTMLElement.prototype.getElementsByTagName = function(tag) {
-        return [];
+        var upper = String(tag).toUpperCase();
+        var results = [];
+        function visit(parent) {
+            for (var i = 0; i < parent.children.length; i++) {
+                var child = parent.children[i];
+                if (child.nodeType === 1 && (upper === "*" || child.tagName === upper)) {
+                    results.push(child);
+                }
+                visit(child);
+            }
+        }
+        visit(this);
+        return results;
     };
 
     HTMLElement.prototype.focus = function() {};
@@ -1259,6 +1324,7 @@
     _documentElement.appendChild(_body);
 
     var _head = new HTMLElement("HEAD");
+    _documentElement.insertBefore(_head, _body);
 
     /* Pre-create elements from index.html that plugins expect to exist. */
     var _refresherCanvas = new HTMLCanvasElement();
@@ -1347,19 +1413,14 @@
             return [];
         },
 
+        /* Document queries include the root and only connected descendants. */
         querySelector: function(selector) {
-            if (selector === "body") return _body;
-            if (selector === "html") return _documentElement;
-            if (selector === "head") return _head;
-            if (selector.charAt(0) === "#") {
-                return this.getElementById(selector.substring(1));
-            }
-            return null;
+            return this.querySelectorAll(selector)[0] || null;
         },
 
+        /* Use tree order rather than the element creation registry. */
         querySelectorAll: function(selector) {
-            var single = this.querySelector(selector);
-            return single ? [single] : [];
+            return collectSimpleMatches(_documentElement, parseSimpleSelectors(selector), [], true);
         },
 
         addEventListener: function(type, listener, options) {

@@ -1227,6 +1227,51 @@ static void test_base64(void)
     destroy_test_ctx(tc);
 }
 
+/* Simple selectors search descendants in tree order, including detached subtrees. */
+static void test_element_queries(void)
+{
+    TestCtx *tc = create_test_ctx();
+    if (!tc) { TEST(dom_setup); FAIL("engine setup"); return; }
+    TEST(element_queries);
+    char *r = js_engine_eval_string(tc->engine,
+        "(function() {"
+        "var root=document.createElement('section'), a=document.createElement('div');"
+        "var b=document.createElement('p'), c=document.createElement('div');"
+        "root.id='scope'; root.className='a'; a.id='first'; a.className='a ab';"
+        "b.id='nested'; b.className='a b'; c.id='last'; c.className='ab';"
+        "root.appendChild(a); a.appendChild(b); root.appendChild(c);"
+        "a.appendChild(document.createTextNode('text'));"
+        "function ids(xs) { return xs.map(function(x){return x.id;}).join(','); }"
+        "function check(ok) { if(!ok) throw new Error('query mismatch'); }"
+        "check(ids(root.getElementsByTagName('DIV'))==='first,last');"
+        "check(ids(root.getElementsByTagName('*'))==='first,nested,last');"
+        "check(ids(root.querySelectorAll('div'))==='first,last');"
+        "check(root.querySelector('#nested')===b);"
+        "check(ids(root.querySelectorAll('.a'))==='first,nested');"
+        "check(root.querySelector('div.a#first.ab')===a);"
+        "check(root.querySelector('div.b')===null);"
+        "check(ids(root.querySelectorAll('#last, .a, div'))==='first,nested,last');"
+        "check(root.querySelector('#scope')===null && a.querySelector('#last')===null);"
+        "check(document.querySelector('#first')===null);"
+        "document.body.appendChild(root);"
+        "check(document.querySelector('head')===document.head);"
+        "check(document.querySelector('html')===document.documentElement);"
+        "check(document.querySelector('section.a#scope')===root);"
+        "check(ids(document.querySelectorAll('#last, p.b, #first'))==='first,nested,last');"
+        "check(document.querySelectorAll('head, body')[0]===document.head);"
+        "var bad=['div > p','[x]','','div,','div p',':hover'];"
+        "var contexts=[root,document], methods=['querySelector','querySelectorAll'];"
+        "for(var i=0;i<bad.length;i++) for(var j=0;j<contexts.length;j++)"
+        "for(var k=0;k<methods.length;k++) { var caught=false;"
+        "try { contexts[j][methods[k]](bad[i]); }"
+        "catch(e) { caught=e.name==='SyntaxError' && !!e.message; } check(caught); }"
+        "document.body.removeChild(root); check(document.querySelector('#first')===null);"
+        "return 'ok'; })()", "test");
+    if (r && strcmp(r, "ok") == 0) { PASS(); } else { FAIL(r ? r : "NULL"); }
+    js_engine_free_string(r);
+    destroy_test_ctx(tc);
+}
+
 /* Main */
 
 int main(void)
@@ -1261,6 +1306,7 @@ int main(void)
     test_inserted_scripts();
     test_document();
     test_document_tags();
+    test_element_queries();
 
     printf("\n-- navigator --\n");
     test_navigator();
