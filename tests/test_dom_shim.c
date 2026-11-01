@@ -969,7 +969,9 @@ static void test_navigator(void)
     TEST(navigator_platform);
     r = js_engine_eval_string(tc->engine,
         "navigator.platform", "test");
-    if (r && strcmp(r, "Win32") == 0) { PASS(); } else { FAIL(r ? r : "NULL"); }
+    /* The host OS decides the value; see test_navigator_os. */
+    if (r && (strcmp(r, "Win32") == 0 || strcmp(r, "MacIntel") == 0 ||
+              strncmp(r, "Linux ", 6) == 0)) { PASS(); } else { FAIL(r ? r : "NULL"); }
     js_engine_free_string(r);
 
     TEST(navigator_language);
@@ -977,6 +979,113 @@ static void test_navigator(void)
         "navigator.language", "test");
     if (r && strcmp(r, "en-US") == 0) { PASS(); } else { FAIL(r ? r : "NULL"); }
     js_engine_free_string(r);
+
+    destroy_test_ctx(tc);
+}
+
+/* Tests: navigator.platform/userAgent follow the host OS */
+
+#if defined(_WIN32)
+#define TARGET_PLATFORM "win32"
+#elif defined(__APPLE__)
+#define TARGET_PLATFORM "darwin"
+#elif defined(__ANDROID__)
+#define TARGET_PLATFORM "android"
+#else
+#define TARGET_PLATFORM "linux"
+#endif
+
+#if defined(__aarch64__) || defined(_M_ARM64)
+#define TARGET_ARCH "arm64"
+#define TARGET_MACHINE "aarch64"
+#elif defined(__i386__) || defined(_M_IX86)
+#define TARGET_ARCH "ia32"
+#define TARGET_MACHINE "i686"
+#else
+#define TARGET_ARCH "x64"
+#define TARGET_MACHINE "x86_64"
+#endif
+
+#if defined(_WIN32)
+#define TARGET_NAV_PLATFORM "Win32"
+#define TARGET_UA_OS "Windows NT 10.0; Win64; x64"
+#elif defined(__APPLE__)
+#define TARGET_NAV_PLATFORM "MacIntel"
+#define TARGET_UA_OS "Macintosh; Intel Mac OS X 10_15_7"
+#elif defined(__ANDROID__)
+#define TARGET_NAV_PLATFORM "Linux " TARGET_MACHINE
+#define TARGET_UA_OS "Linux; Android 10; K"
+#else
+#define TARGET_NAV_PLATFORM "Linux " TARGET_MACHINE
+#define TARGET_UA_OS "X11; Linux " TARGET_MACHINE
+#endif
+
+#define UA_TAIL ") Outsider/1.0 Chrome/120.0.0.0"
+
+static void expect_eval(TestCtx *tc, const char *code, const char *want)
+{
+    char *r = js_engine_eval_string(tc->engine, code, "test");
+    if (r && strcmp(r, want) == 0) { PASS(); } else { FAIL(r ? r : "NULL"); }
+    js_engine_free_string(r);
+}
+
+static void test_navigator_os(void)
+{
+    TestCtx *tc = create_test_ctx();
+    if (!tc) { TEST(dom_setup); FAIL("engine setup"); return; }
+
+    TEST(navigator_os_matches_compile_target);
+    expect_eval(tc,
+        "globalThis.process = { platform: '" TARGET_PLATFORM "',"
+        " arch: '" TARGET_ARCH "' };\n"
+        "navigator.platform", TARGET_NAV_PLATFORM);
+
+    TEST(navigator_userAgent_matches_compile_target);
+    expect_eval(tc, "navigator.userAgent",
+        "Mozilla/5.0 (" TARGET_UA_OS UA_TAIL);
+
+    TEST(navigator_appVersion_matches_userAgent);
+    expect_eval(tc, "String('Mozilla/' + navigator.appVersion === navigator.userAgent)",
+        "true");
+
+    TEST(navigator_linux_x64);
+    expect_eval(tc,
+        "process = { platform: 'linux', arch: 'x64' };\n"
+        "navigator.platform + '|' + navigator.userAgent",
+        "Linux x86_64|Mozilla/5.0 (X11; Linux x86_64" UA_TAIL);
+
+    TEST(navigator_linux_arm64);
+    expect_eval(tc,
+        "process = { platform: 'linux', arch: 'arm64' };\n"
+        "navigator.platform + '|' + navigator.userAgent",
+        "Linux aarch64|Mozilla/5.0 (X11; Linux aarch64" UA_TAIL);
+
+    TEST(navigator_darwin_arm64_is_MacIntel);
+    expect_eval(tc,
+        "process = { platform: 'darwin', arch: 'arm64' };\n"
+        "navigator.platform + '|' + navigator.userAgent",
+        "MacIntel|Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7" UA_TAIL);
+
+    TEST(navigator_win32);
+    expect_eval(tc,
+        "process = { platform: 'win32', arch: 'x64' };\n"
+        "navigator.platform + '|' + navigator.userAgent",
+        "Win32|Mozilla/5.0 (Windows NT 10.0; Win64; x64" UA_TAIL);
+
+    TEST(navigator_android);
+    expect_eval(tc,
+        "process = { platform: 'android', arch: 'arm64' };\n"
+        "navigator.platform + '|' + navigator.userAgent",
+        "Linux aarch64|Mozilla/5.0 (Linux; Android 10; K" UA_TAIL);
+
+    TEST(navigator_without_process_keeps_chrome_token);
+    expect_eval(tc,
+        "delete globalThis.process;\n"
+        "var ua = navigator.userAgent, pl = navigator.platform;\n"
+        "String(ua.indexOf('Chrome/120.0.0.0') > 0 &&"
+        " (pl === 'Win32' ? ua.indexOf('Windows NT') > 0"
+        " : ua.indexOf('(X11; ' + pl + ')') > 0))",
+        "true");
 
     destroy_test_ctx(tc);
 }
@@ -1428,6 +1537,7 @@ int main(void)
 
     printf("\n-- navigator --\n");
     test_navigator();
+    test_navigator_os();
 
     printf("\n-- DOM Manipulation --\n");
     test_dom_manipulation();

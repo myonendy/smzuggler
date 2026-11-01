@@ -13,15 +13,62 @@
 
     var _gamepads = [null, null, null, null];
 
-    var navigator = {
-        /* RPG Maker MZ looks for "Chrome" in the user agent to enable WebGL;
-           "nwjs" is deliberately absent so NW.js-only paths stay off. */
-        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Outsider/1.0 Chrome/120.0.0.0",
+    /* RPG Maker MZ looks for "Chrome" in the user agent to enable WebGL;
+       "nwjs" is deliberately absent so NW.js-only paths stay off. */
+    var UA_PRODUCT = "Outsider/1.0 Chrome/120.0.0.0";
 
+    /* Node's process.platform/arch, read at access time because
+       storage_shim.js defines process after this shim runs. Without
+       process, the shape of the game root path is the only hint the
+       engine offers: a drive letter means Windows. */
+    function hostOs() {
+        var p = globalThis.process;
+        if (p && typeof p.platform === "string") {
+            return { platform: p.platform, arch: String(p.arch || "x64") };
+        }
+        var root = "";
+        if (typeof __native_io !== "undefined" && __native_io.getGameRoot) {
+            root = String(__native_io.getGameRoot() || "");
+        }
+        if (/^[A-Za-z]:/.test(root) || root.indexOf("\\") >= 0) {
+            return { platform: "win32", arch: "x64" };
+        }
+        return { platform: "linux", arch: "x64" };
+    }
+
+    /* Machine names as Chrome's navigator.platform spells them on Linux. */
+    function linuxMachine(arch) {
+        if (arch === "x64") return "x86_64";
+        if (arch === "arm64") return "aarch64";
+        if (arch === "ia32") return "i686";
+        if (arch === "arm") return "armv7l";
+        return arch;
+    }
+
+    /* navigator.platform as Chrome reports it for the host OS. */
+    function chromePlatform(os) {
+        if (os.platform === "win32") return "Win32";
+        if (os.platform === "darwin") return "MacIntel";
+        return "Linux " + linuxMachine(os.arch);
+    }
+
+    /* The parenthesised OS part of Chrome's user agent. Chrome freezes
+       the macOS and Windows versions it reports, so these are fixed. */
+    function chromeOsToken(os) {
+        if (os.platform === "win32") return "Windows NT 10.0; Win64; x64";
+        if (os.platform === "darwin") return "Macintosh; Intel Mac OS X 10_15_7";
+        if (os.platform === "android") return "Linux; Android 10; K";
+        return "X11; Linux " + linuxMachine(os.arch);
+    }
+
+    function appVersion() {
+        return "5.0 (" + chromeOsToken(hostOs()) + ") " + UA_PRODUCT;
+    }
+
+    var navigator = {
         /* RPG Maker MZ checks this for standalone app detection. */
         standalone: true,
 
-        platform: "Win32",
         language: "en-US",
         languages: ["en-US", "en"],
         maxTouchPoints: 0,
@@ -33,7 +80,6 @@
         product: "Gecko",
         productSub: "20030107",
         appName: "Netscape",
-        appVersion: "5.0 (Windows NT 10.0; Win64; x64) Outsider/1.0",
         appCodeName: "Mozilla",
 
         getGamepads: function() {
@@ -67,6 +113,23 @@
 
         sendBeacon: function() { return false; }
     };
+
+    /* Getters, so the values follow process.platform once it exists. */
+    Object.defineProperty(navigator, "userAgent", {
+        get: function() { return "Mozilla/" + appVersion(); },
+        enumerable: true,
+        configurable: true
+    });
+    Object.defineProperty(navigator, "appVersion", {
+        get: appVersion,
+        enumerable: true,
+        configurable: true
+    });
+    Object.defineProperty(navigator, "platform", {
+        get: function() { return chromePlatform(hostOs()); },
+        enumerable: true,
+        configurable: true
+    });
 
     /* Gamepad slot updates, called from native input. */
 
