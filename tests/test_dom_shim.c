@@ -1362,6 +1362,34 @@ static void test_element_queries(void)
     destroy_test_ctx(tc);
 }
 
+/* Capability claims must follow the compiled decoders, including codec parameters. */
+static void test_media_can_play_type(void)
+{
+    TestCtx *tc = create_test_ctx();
+    if (!tc) { TEST(media_setup); FAIL("engine setup"); return; }
+    TEST(media_can_play_type);
+    ASSERT(js_is_true(tc,
+        "(function () { var tags = ['audio', 'video'];"
+        "var cases = [['video/mpeg', 'maybe'],"
+        "['video/mpeg; codecs=\"mpeg1\"', 'probably'],"
+        "['audio/ogg', 'maybe'], ['audio/ogg; codecs=\"vorbis\"', 'probably'],"
+        "['audio/wav', 'maybe'], ['audio/wav; codecs=\"1\"', 'probably'],"
+        "['video/webm; codecs=\"vp9,opus\"', ''], ['video/webm', ''],"
+        "['audio/webm; codecs=\"opus\"', ''], ['video/mp4', ''],"
+        "['audio/mp4', ''], ['audio/mp3', ''], ['audio/mpeg', ''],"
+        "['audio/ogg; codecs=\"opus\"', ''], ['audio/wav; codecs=\"mp3\"', ''],"
+        "['video/mpeg; codecs=\"vp9\"', ''], ['application/ogg', ''],"
+        "['bogus/ogg', ''], ['audio/ogg-extra', ''], ['', ''],"
+        "[' AUDIO/OGG ; codecs=\"vorbis\" ', 'probably']];"
+        "for (var t = 0; t < tags.length; t++) {"
+        "var el = document.createElement(tags[t]);"
+        "for (var i = 0; i < cases.length; i++) {"
+        "if (el.canPlayType(cases[i][0]) !== cases[i][1]) return 'false';"
+        "}} return 'true'; })()"));
+    PASS();
+    destroy_test_ctx(tc);
+}
+
 /* Main */
 
 int main(void)
@@ -1415,6 +1443,7 @@ int main(void)
 
     printf("\n-- Base64 --\n");
     test_base64();
+    test_media_can_play_type();
 
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
 

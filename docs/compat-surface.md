@@ -42,8 +42,8 @@ dump and rejection of a stale `name` row through the CLI.
 | `Array.prototype.contains` | partial | `src/shims/plugin_compat.js` | `tests/smz/test_dump_surface.c` | Compatibility polyfill; inventory test only. |
 | `Array.prototype.contains.prototype.constructor` | partial | `src/shims/plugin_compat.js` | `tests/smz/test_dump_surface.c` | Compatibility polyfill; inventory test only. |
 | `Audio` | stub | `src/shims/dom_shim.js` | `-` | Alias of HTMLAudioElement; no decoder or mixer. |
-| `Audio.prototype.canPlayType` | stub | `src/shims/dom_shim.js` | `-` | Fixed probably for ogg/wav/mp3; ignores the build decoder (U11). |
-| `Audio.prototype.canPlayType.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Fixed probably for ogg/wav/mp3; ignores the build decoder (U11). |
+| `Audio.prototype.canPlayType` | stub | `src/shims/dom_shim.js` | `-` | Chrome-style answer from the build's decoder table: MPEG-1, Ogg Vorbis, WAV (U11). |
+| `Audio.prototype.canPlayType.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Chrome-style answer from the build's decoder table: MPEG-1, Ogg Vorbis, WAV (U11). |
 | `Audio.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Alias of HTMLAudioElement; no decoder or mixer. |
 | `Audio.prototype.load` | stub | `src/shims/dom_shim.js` | `-` | No-op; no media fetch. |
 | `Audio.prototype.load.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op; no media fetch. |
@@ -199,8 +199,8 @@ dump and rejection of a stale `name` row through the CLI.
 | `GainNode.prototype._applyParam.prototype.constructor` | partial | `src/shims/webaudio_shim.js` | `tests/test_webaudio.c` | Native mixer subset; automation and graph semantics limited. |
 | `GainNode.prototype.constructor` | partial | `src/shims/webaudio_shim.js` | `tests/test_webaudio.c` | Native mixer subset; automation and graph semantics limited. |
 | `HTMLAudioElement` | stub | `src/shims/dom_shim.js` | `-` | AUDIO element stub; MZ playback uses WebAudio. |
-| `HTMLAudioElement.prototype.canPlayType` | stub | `src/shims/dom_shim.js` | `-` | Fixed probably for ogg/wav/mp3; ignores the build decoder (U11). |
-| `HTMLAudioElement.prototype.canPlayType.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Fixed probably for ogg/wav/mp3; ignores the build decoder (U11). |
+| `HTMLAudioElement.prototype.canPlayType` | stub | `src/shims/dom_shim.js` | `-` | Chrome-style answer from the build's decoder table: MPEG-1, Ogg Vorbis, WAV (U11). |
+| `HTMLAudioElement.prototype.canPlayType.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Chrome-style answer from the build's decoder table: MPEG-1, Ogg Vorbis, WAV (U11). |
 | `HTMLAudioElement.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | AUDIO element stub; MZ playback uses WebAudio. |
 | `HTMLAudioElement.prototype.load` | stub | `src/shims/dom_shim.js` | `-` | No-op; no media fetch. |
 | `HTMLAudioElement.prototype.load.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op; no media fetch. |
@@ -295,8 +295,8 @@ dump and rejection of a stale `name` row through the CLI.
 | `HTMLVideoElement.prototype._finishAsync.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Delayed loadeddata then ended so wait-mode does not hang. |
 | `HTMLVideoElement.prototype._openNative` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Tries .mpg then original src; false when unplayable. |
 | `HTMLVideoElement.prototype._openNative.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Tries .mpg then original src; false when unplayable. |
-| `HTMLVideoElement.prototype.canPlayType` | stub | `src/shims/dom_shim.js` | `-` | maybe for webm/mp4/ogg when the player exists; not Chrome 117 (U11). |
-| `HTMLVideoElement.prototype.canPlayType.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | maybe for webm/mp4/ogg when the player exists; not Chrome 117 (U11). |
+| `HTMLVideoElement.prototype.canPlayType` | stub | `src/shims/dom_shim.js` | `-` | Chrome-style answer from the build's decoder table: MPEG-1, Ogg Vorbis, WAV (U11). |
+| `HTMLVideoElement.prototype.canPlayType.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Chrome-style answer from the build's decoder table: MPEG-1, Ogg Vorbis, WAV (U11). |
 | `HTMLVideoElement.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | VIDEO element backed by the native MPEG-1 player. |
 | `HTMLVideoElement.prototype.load` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Opens native or schedules the missing-file ended path. |
 | `HTMLVideoElement.prototype.load.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Opens native or schedules the missing-file ended path. |
