@@ -23,7 +23,7 @@ Modified 2026-11-01: record NW.js reference-recipe scratch HOME/XDG exports.
 Modified 2026-11-01: record the .jsc cache-dir option (U10).
 Modified 2026-11-01: default logs, cache and config to smzuggler-rt data dirs.
 Modified 2026-11-01: record the Map 92 profile report tool and owner-run recipe.
-Modified 2026-11-01: record the M0 exit checklist.
+Modified 2026-11-01: record the M0 exit checklist as blocked.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 <!-- Records project changes for release review; keep entries free of private data. -->
@@ -33,8 +33,9 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
-- Record the M0 exit checklist and scrubbed local-run evidence in
-  `docs/milestones/M0.md`.
+- Record the M0 exit checklist in `docs/milestones/M0.md` as BLOCKED: Linux
+  `$XDG_DATA_HOME/<dir_save_name>/` still fails `existsSync` on the absolute
+  path, and the §14.4 power-saver run has not been made.
 - Add `tools/perf/map92_report.py`, which turns a Map 92 attribution run,
   GameLoopStats log, frame-time CSV and §14.4 machine-state snapshot into the
   M0 QuickJS profile report, plus the owner-run recipe
