@@ -641,6 +641,218 @@ static void test_js_bindings(void)
     cleanup_test_dir();
 }
 
+/* Save-path guard */
+
+static int guard_log_count = 0;
+static char guard_log_last[8192];
+
+static void guard_log_cb(const char *message)
+{
+    guard_log_count++;
+    snprintf(guard_log_last, sizeof(guard_log_last), "%s", message);
+}
+
+/* Run file_io_check_write_path and require the verdict plus exactly one log
+   line on refusal and none on success. */
+static void expect_write_check(const char *path, bool expect_ok)
+{
+    guard_log_count = 0;
+    guard_log_last[0] = '\0';
+    bool ok = file_io_check_write_path(path);
+    int want_logs = expect_ok ? 0 : 1;
+    if (ok == expect_ok && guard_log_count == want_logs) {
+        PASS();
+    } else {
+        char msg[9000];
+        snprintf(msg, sizeof(msg), "%s: ok=%d logs=%d (%s)", path, ok,
+                 guard_log_count, guard_log_last);
+        FAIL(msg);
+    }
+}
+
+static void test_save_guard_paths(const char *root, const char *outside)
+{
+    char path[TEST_PATH_MAX * 2];
+
+    TEST(guard_absolute_outside_root_allowed);
+    snprintf(path, sizeof(path), "%s/file1.rmmzsave", outside);
+    expect_write_check(path, true);
+
+    TEST(guard_missing_dirs_outside_root_allowed);
+    snprintf(path, sizeof(path), "%s/not/yet/made/file1.rmmzsave", outside);
+    expect_write_check(path, true);
+
+    TEST(guard_relative_refused);
+    expect_write_check("save/file1.rmmzsave", false);
+
+    TEST(guard_relative_dotdot_refused);
+    expect_write_check("../outside/file1.rmmzsave", false);
+
+    TEST(guard_inside_root_refused);
+    snprintf(path, sizeof(path), "%s/save/file1.rmmzsave", root);
+    expect_write_check(path, false);
+
+    TEST(guard_root_itself_refused);
+    expect_write_check(root, false);
+
+    TEST(guard_root_dotdot_root_refused);
+    snprintf(path, sizeof(path), "%s/../root/x", root);
+    expect_write_check(path, false);
+
+    TEST(guard_missing_dir_dotdot_into_root_refused);
+    snprintf(path, sizeof(path), "%s/../missing/../root/x", root);
+    expect_write_check(path, false);
+
+    TEST(guard_sibling_prefix_allowed);
+    snprintf(path, sizeof(path), "%s2/file1.rmmzsave", root);
+    expect_write_check(path, true);
+}
+
+#ifndef _WIN32
+static void test_save_guard_symlinks(const char *root, const char *outside)
+{
+    char link_out[TEST_PATH_MAX * 2], link_in[TEST_PATH_MAX * 2];
+    char path[TEST_PATH_MAX * 3];
+    snprintf(link_out, sizeof(link_out), "%s/to_outside", root);
+    snprintf(link_in, sizeof(link_in), "%s/to_root", outside);
+
+    TEST(guard_symlink_in_root_to_outside_allowed);
+    if (symlink(outside, link_out) != 0) {
+        FAIL("symlink() failed");
+    } else {
+        snprintf(path, sizeof(path), "%s/file1.rmmzsave", link_out);
+        expect_write_check(path, true);
+    }
+
+    TEST(guard_symlink_outside_to_root_refused);
+    if (symlink(root, link_in) != 0) {
+        FAIL("symlink() failed");
+    } else {
+        snprintf(path, sizeof(path), "%s/file1.rmmzsave", link_in);
+        expect_write_check(path, false);
+    }
+
+    /* Remove the links first so cleanup does not recurse through them. */
+    unlink(link_out);
+    unlink(link_in);
+}
+#endif
+
+static void test_save_guard_js_refusals(JSEngine *engine, const char *root);
+
+static void test_save_guard_js(const char *root, const char *outside)
+{
+    JSEngine *engine = js_engine_init();
+    if (!engine) {
+        TEST(guard_js_engine_init);
+        FAIL("failed to create JS engine");
+        return;
+    }
+    JSContext *ctx = js_engine_get_context(engine);
+    bind_io_register(ctx);
+    char js[TEST_PATH_MAX * 4];
+
+    TEST(guard_js_write_outside_root);
+    snprintf(js, sizeof(js),
+        "__native_io.mkdirSync('%s/saves');"
+        "__native_io.writeFileSync('%s/saves/file1.rmmzsave_', 'data');"
+        "__native_io.renameSync('%s/saves/file1.rmmzsave_', '%s/saves/file1.rmmzsave');",
+        outside, outside, outside, outside);
+    guard_log_count = 0;
+    bool ok = js_engine_eval(engine, js, "test");
+    char rd[TEST_PATH_MAX * 2];
+    snprintf(rd, sizeof(rd), "%s/saves/file1.rmmzsave", outside);
+    char *text = file_io_read_text(rd, NULL);
+    if (ok && text && strcmp(text, "data") == 0 && guard_log_count == 0) {
+        PASS();
+    } else {
+        FAIL(text ? text : "save not written outside the root");
+    }
+    free(text);
+
+    test_save_guard_js_refusals(engine, root);
+    js_engine_shutdown(engine);
+}
+
+static void test_save_guard_js_refusals(JSEngine *engine, const char *root)
+{
+    char js[TEST_PATH_MAX * 4];
+    char rd[TEST_PATH_MAX * 2];
+
+    TEST(guard_js_relative_write_throws_write_error);
+    guard_log_count = 0;
+    char *result = js_engine_eval_string(engine,
+        "try { __native_io.writeFileSync('save/file1.rmmzsave', 'x'); 'no_error'; }"
+        "catch (e) { e.message; }", "test");
+    snprintf(rd, sizeof(rd), "%s/save/file1.rmmzsave", root);
+    if (result && strncmp(result, "failed to write file", 20) == 0 &&
+        guard_log_count == 1 && !file_io_exists(rd) &&
+        !file_io_exists("save/file1.rmmzsave")) {
+        PASS();
+    } else {
+        FAIL(result ? result : "NULL");
+    }
+    js_engine_free_string(result);
+
+    TEST(guard_js_inside_root_binary_write_throws);
+    snprintf(js, sizeof(js),
+        "try { __native_io.writeFileBinary('%s/x.bin', new ArrayBuffer(2)); 'no_error'; }"
+        "catch (e) { e.message; }", root);
+    guard_log_count = 0;
+    result = js_engine_eval_string(engine, js, "test");
+    snprintf(rd, sizeof(rd), "%s/x.bin", root);
+    if (result && strncmp(result, "failed to write file", 20) == 0 &&
+        guard_log_count == 1 && !file_io_exists(rd)) {
+        PASS();
+    } else {
+        FAIL(result ? result : "NULL");
+    }
+    js_engine_free_string(result);
+
+    TEST(guard_js_reads_unchanged);
+    snprintf(rd, sizeof(rd), "%s/data.json", root);
+    file_io_write_text(rd, "{}");
+    guard_log_count = 0;
+    result = js_engine_eval_string(engine, "__native_io.readFileSync('data.json')", "test");
+    if (result && strcmp(result, "{}") == 0 && guard_log_count == 0) {
+        PASS();
+    } else {
+        FAIL(result ? result : "NULL");
+    }
+    js_engine_free_string(result);
+}
+
+static void test_save_guard(void)
+{
+    char root[TEST_PATH_MAX * 2], outside[TEST_PATH_MAX * 2];
+    setup_test_dir();
+    snprintf(root, sizeof(root), "%s/root", test_dir);
+    snprintf(outside, sizeof(outside), "%s/outside", test_dir);
+    file_io_mkdir(root);
+    file_io_mkdir(outside);
+    file_io_set_game_root(root);
+    file_io_set_log_fn(guard_log_cb);
+
+    TEST(guard_off_by_default);
+    if (!file_io_write_guard_enabled()) {
+        PASS();
+    } else {
+        FAIL("guard enabled before file_io_set_write_guard(true)");
+    }
+
+    test_save_guard_paths(root, outside);
+#ifndef _WIN32
+    test_save_guard_symlinks(root, outside);
+#endif
+    file_io_set_write_guard(true);
+    test_save_guard_js(root, outside);
+    file_io_set_write_guard(false);
+
+    file_io_set_log_fn(NULL);
+    file_io_set_game_root(NULL);
+    cleanup_test_dir();
+}
+
 /* Main */
 
 int main(void)
@@ -667,6 +879,9 @@ int main(void)
 
     printf("\n-- JS Bindings --\n");
     test_js_bindings();
+
+    printf("\n-- Save-Path Guard --\n");
+    test_save_guard();
 
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
 

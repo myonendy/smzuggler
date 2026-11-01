@@ -6,6 +6,7 @@
 #include "io/file_io.h"
 
 #include <errno.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -239,6 +240,124 @@ bool file_io_resolve_path(const char *relative_path, char *out, size_t out_size)
     size_t len = strlen(relative_path);
     if (len >= out_size) return false;
     memcpy(out, relative_path, len + 1);
+    return true;
+}
+
+/* Save-path guard */
+
+static bool s_write_guard = false;
+static FileIoLogFn s_log_fn = NULL;
+
+void file_io_set_write_guard(bool enabled)
+{
+    s_write_guard = enabled;
+}
+
+bool file_io_write_guard_enabled(void)
+{
+    return s_write_guard;
+}
+
+void file_io_set_log_fn(FileIoLogFn fn)
+{
+    s_log_fn = fn;
+}
+
+static void log_error(const char *fmt, ...)
+{
+    char msg[3 * MAX_PATH_LEN];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(msg, sizeof(msg), fmt, ap);
+    va_end(ap);
+    if (s_log_fn) {
+        s_log_fn(msg);
+    } else {
+        fprintf(stderr, "[ERROR] %s\n", msg);
+    }
+}
+
+static bool is_sep(char c)
+{
+    return c == '/' || c == '\\';
+}
+
+/* "/x", "\\x" and "C:/x" are absolute; "C:x" is relative to the drive's cwd. */
+static bool path_is_absolute(const char *path)
+{
+    if (is_sep(path[0])) return true;
+    return path[0] != '\0' && path[1] == ':' && is_sep(path[2]);
+}
+
+static char *real_path_alloc(const char *path)
+{
+#ifdef _WIN32
+    return _fullpath(NULL, path, 0);
+#else
+    return realpath(path, NULL);
+#endif
+}
+
+/* Canonicalise an absolute path that may not exist yet: resolve the longest
+   existing prefix with realpath(), then append the rest with "." and ".."
+   applied lexically. Fails if the rest climbs above that prefix. */
+static bool canonical_path(const char *path, char *out, size_t out_size)
+{
+    char head[MAX_PATH_LEN];
+    size_t len = strlen(path);
+    if (len >= sizeof(head)) return false;
+    memcpy(head, path, len + 1);
+
+    size_t cut = len;
+    for (;;) {
+        head[cut] = '\0';
+        char *real = real_path_alloc(head);
+        if (real) {
+            char tail[MAX_PATH_LEN];
+            bool ok = normalize_components(path + cut, tail, sizeof(tail));
+            size_t rlen = strlen(real);
+            const char *sep = (tail[0] && rlen > 0 && !is_sep(real[rlen - 1])) ? "/" : "";
+            int written = ok ? snprintf(out, out_size, "%s%s%s", real, sep, tail) : -1;
+            free(real);
+            if (written < 0 || (size_t)written >= out_size) return false;
+            for (char *c = out; *c; c++)
+                if (*c == '\\') *c = '/';
+            return true;
+        }
+        size_t prev = cut;
+        while (cut > 1 && is_sep(head[cut - 1])) cut--;
+        while (cut > 0 && !is_sep(head[cut - 1])) cut--;
+        if (cut == 0 || cut == prev) return false;
+    }
+}
+
+/* True if the canonical `path` is the game root or below it. */
+static bool path_inside_root(const char *path)
+{
+    if (s_game_root[0] == '\0') return false;
+    size_t root_len = strlen(s_game_root);
+    if (!path_has_prefix(path, s_game_root)) return false;
+    if (is_sep(s_game_root[root_len - 1])) return true;   /* "/" or "C:/" */
+    return path[root_len] == '\0' || is_sep(path[root_len]);
+}
+
+bool file_io_check_write_path(const char *path)
+{
+    if (!path || !path_is_absolute(path)) {
+        log_error("file_io: refusing write to relative path \"%s\": "
+                  "save paths must be absolute", path ? path : "(null)");
+        return false;
+    }
+    char real[MAX_PATH_LEN];
+    if (!canonical_path(path, real, sizeof(real))) {
+        log_error("file_io: refusing write to \"%s\": the path cannot be resolved", path);
+        return false;
+    }
+    if (path_inside_root(real)) {
+        log_error("file_io: refusing write to \"%s\": it resolves to \"%s\", "
+                  "inside the game root \"%s\"", path, real, s_game_root);
+        return false;
+    }
     return true;
 }
 
