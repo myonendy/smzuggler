@@ -1025,8 +1025,11 @@ static void test_navigator(void)
 static void expect_eval(TestCtx *tc, const char *code, const char *want)
 {
     char *r = js_engine_eval_string(tc->engine, code, "test");
-    if (r && strcmp(r, want) == 0) { PASS(); } else { FAIL(r ? r : "NULL"); }
+    int ok = r && strcmp(r, want) == 0;
+    if (!ok) printf("got \"%s\", want \"%s\"; ", r ? r : "NULL", want);
     js_engine_free_string(r);
+    ASSERT(ok);
+    PASS();
 }
 
 static void test_navigator_os(void)
