@@ -15,6 +15,7 @@ Modified 2026-10-31: record PIXI.Circle, Ellipse and Polygon (U8).
 Modified 2026-10-31: record the nw.Window EventEmitter (U3).
 Modified 2026-10-31: record the real process env and platform (U5).
 Modified 2026-10-31: record process.argv/cwd/exit, throwing require, plugin scan.
+Modified 2026-10-31: record opt-in --data-dir log path (U9).
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 <!-- Records project changes for release review; keep entries free of private data. -->
@@ -24,6 +25,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Add opt-in `--data-dir` / `--data-dir=PATH` so `debug.log` and `console.log` go to the platform state directory (or PATH) instead of the game directory (U9).
 - Give `process.argv` Chrome/NW.js-shaped `[chrome, index.html]` values, keep `cwd()` and `mainModule.filename` on the game root, route `process.exit(code)` through the clean quit path, and throw `MODULE_NOT_FOUND` from unknown `require()`; add `tools/compat/scan_requires.py` to count plugin `require`/`process` uses.
 - Make `process.env` a snapshot of the real environment and `process.platform`/`arch` the real OS and CPU, and add `versions`, `hrtime` and `nextTick`, so saves no longer go to `undefined/.local/share` (U5).
 - Add PIXI.Circle, Ellipse and Polygon with PIXI 5.3.12 clone, contains, getBounds and type (U8).

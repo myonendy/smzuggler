@@ -11,6 +11,100 @@
  * See docs/DECISIONS.md (DEC-M0-T001) for identity ownership.
  */
 
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#if !defined(__linux__) || defined(__ANDROID__)
+#include <SDL3/SDL.h>
+#endif
+
+#ifndef RMMZ_DATA_APP
+#define RMMZ_DATA_APP "outsider"
+#endif
+
+/** Drop a trailing slash so later joins do not produce empty path segments. */
+static void rmmz_trim_slash(char *path)
+{
+    size_t n;
+    if (!path) return;
+    n = strlen(path);
+    while (n > 1 && (path[n - 1] == '/' || path[n - 1] == '\\'))
+        path[--n] = '\0';
+}
+
+/** Fill OUT with the platform state dir used by --data-dir without PATH.
+ * Linux (not Android) uses $XDG_STATE_HOME/<app> or $HOME/.local/state/<app>
+ * when XDG_STATE_HOME is unset; other platforms use SDL_GetPrefPath.
+ * out is caller-owned. Returns false if the environment/pref path is missing
+ * or the result does not fit. */
+static bool rmmz_platform_state_dir(char *out, size_t out_size)
+{
+#if defined(__linux__) && !defined(__ANDROID__)
+    char prefix[1024];
+    const char *base = getenv("XDG_STATE_HOME");
+    int n;
+    if (base && base[0]) {
+        n = snprintf(prefix, sizeof(prefix), "%s", base);
+        if (n <= 0 || (size_t)n >= sizeof(prefix)) return false;
+        rmmz_trim_slash(prefix);
+        n = snprintf(out, out_size, "%s/%s", prefix, RMMZ_DATA_APP);
+        return n > 0 && (size_t)n < out_size;
+    }
+    base = getenv("HOME");
+    if (!base || !base[0]) return false;
+    n = snprintf(prefix, sizeof(prefix), "%s", base);
+    if (n <= 0 || (size_t)n >= sizeof(prefix)) return false;
+    rmmz_trim_slash(prefix);
+    n = snprintf(out, out_size, "%s/.local/state/%s", prefix, RMMZ_DATA_APP);
+    return n > 0 && (size_t)n < out_size;
+#else
+    char *pref = SDL_GetPrefPath("", RMMZ_DATA_APP);
+    int n;
+    if (!pref || !out || out_size == 0) {
+        if (pref) SDL_free(pref);
+        return false;
+    }
+    n = snprintf(out, out_size, "%s", pref);
+    SDL_free(pref);
+    if (n <= 0 || (size_t)n >= out_size) return false;
+    rmmz_trim_slash(out);
+    return true;
+#endif
+}
+
+/** Resolve the directory that debug.log and console.log are written to.
+ * use_data_dir is the opt-in --data-dir flag; data_dir_path is PATH when
+ * --data-dir=PATH was given, otherwise NULL (platform state dir). game_dir
+ * is the --game path, or NULL. Without the flag the game directory is used
+ * and an empty result means logs stay in the working directory, matching
+ * the historical default. out is caller-owned. Returns false if the path
+ * does not fit in out_size. */
+bool rmmz_resolve_log_dir(bool use_data_dir, const char *data_dir_path,
+                          const char *game_dir, char *out, size_t out_size)
+{
+    int n;
+    if (!out || out_size == 0) return false;
+    out[0] = '\0';
+    if (use_data_dir) {
+        if (data_dir_path && data_dir_path[0]) {
+            n = snprintf(out, out_size, "%s", data_dir_path);
+            if (n <= 0 || (size_t)n >= out_size) return false;
+            rmmz_trim_slash(out);
+            return true;
+        }
+        return rmmz_platform_state_dir(out, out_size);
+    }
+    if (game_dir && game_dir[0]) {
+        n = snprintf(out, out_size, "%s", game_dir);
+        return n > 0 && (size_t)n < out_size;
+    }
+    return true;
+}
+
+#ifndef RMMZ_TEST_DATA_DIR
+
 #include "platform/platform.h"
 #include "smzuggler/dump_surface.h"
 #include "engine/js_engine.h"
@@ -249,6 +343,8 @@ int main(int argc, char *argv[])
     const char *dump_path = NULL;
     bool share_requested = false;
     const char *share_path = NULL;
+    bool use_data_dir = false;
+    const char *data_dir_path = NULL;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--dump-surface") == 0) {
@@ -293,6 +389,12 @@ int main(int argc, char *argv[])
             control_mode = true;
         } else if (strcmp(argv[i], "--no-audio") == 0) {
             no_audio = 1;
+        } else if (strcmp(argv[i], "--data-dir") == 0) {
+            /* Opt-in: write logs under the platform state dir, not the game. */
+            use_data_dir = true;
+        } else if (strncmp(argv[i], "--data-dir=", 11) == 0) {
+            use_data_dir = true;
+            data_dir_path = argv[i] + 11;
         } else if (argv[i][0] != '-') {
             /* Positional argument: treat as game directory. */
             game_dir = argv[i];
@@ -342,15 +444,21 @@ int main(int argc, char *argv[])
         }
     }
 
-    /* Determine log file paths — if a game directory is known, put them there. */
+    /* Determine log file paths. --data-dir sends them to the state dir
+       (or PATH); without it they stay in the game directory. */
     const char *log_path = "debug.log";
     const char *console_log_path = "console.log";
     char log_path_buf[1024];
     char console_log_buf[1024];
-    if (game_dir) {
-        snprintf(log_path_buf, sizeof(log_path_buf), "%s/debug.log", game_dir);
+    char log_dir_buf[1024];
+    if (rmmz_resolve_log_dir(use_data_dir, data_dir_path, game_dir,
+                             log_dir_buf, sizeof(log_dir_buf)) &&
+        log_dir_buf[0]) {
+        if (use_data_dir)
+            file_io_mkdir(log_dir_buf);
+        snprintf(log_path_buf, sizeof(log_path_buf), "%s/debug.log", log_dir_buf);
         log_path = log_path_buf;
-        snprintf(console_log_buf, sizeof(console_log_buf), "%s/console.log", game_dir);
+        snprintf(console_log_buf, sizeof(console_log_buf), "%s/console.log", log_dir_buf);
         console_log_path = console_log_buf;
     }
 
@@ -565,3 +673,5 @@ int main(int argc, char *argv[])
     error_handler_shutdown();
     return exit_status;
 }
+
+#endif /* RMMZ_TEST_DATA_DIR */

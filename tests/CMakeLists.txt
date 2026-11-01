@@ -78,6 +78,24 @@ target_link_libraries(test_file_io PRIVATE
 
 add_test(NAME file_io COMMAND test_file_io)
 
+# Opt-in --data-dir log path resolution (compiles main.c without main())
+add_executable(test_data_dir
+    test_data_dir.c
+    ${CMAKE_SOURCE_DIR}/src/main.c
+)
+
+target_compile_definitions(test_data_dir PRIVATE RMMZ_TEST_DATA_DIR)
+
+target_include_directories(test_data_dir PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+if(WIN32 OR APPLE)
+    target_link_libraries(test_data_dir PRIVATE SDL3::SDL3 ${RMMZ_SYS_LIBS})
+endif()
+
+add_test(NAME data_dir COMMAND test_data_dir)
+
 # XMLHttpRequest shim tests (JS shim loaded via C harness, needs QuickJS + I/O)
 add_executable(test_xhr
     test_xhr.c

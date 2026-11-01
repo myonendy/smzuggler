@@ -24,7 +24,7 @@ no new test infrastructure or unrelated paths may enter an offer.
 | U6 | OS-consistent navigator identity (§5.3) | `src/shims/navigator_shim.js`, `tests/test_dom_shim.c` | — | ready to cut | up/U6-navigator-platform | — | Chrome-format platform/UA for linux (x64/arm64), darwin, win32 and android from process.platform/arch, Chrome/120.0.0.0 kept, in QuickJS shim tests; U5 makes process.platform real |
 | U7 | Refuse relative and game-root save writes (§5.3) | `src/bindings/bind_io.c`, `src/io/file_io.c`, `src/io/file_io.h`, `tests/test_file_io.c` | — | ready to cut | up/U7-refuse-bad-save-paths | — | Opt-in `file_io_set_write_guard(true)`; write/mkdir/unlink/rename must be absolute and outside the root after `..`/symlink resolution, one error logged per refusal, reads unchanged; C tests in `test_file_io.c`. Nothing enables the guard yet (needs a `main.c` call) |
 | U8 | PIXI Circle/Ellipse/Polygon methods and type (§5.4) | `src/shims/pixi_shim.js`, `tests/test_pixi_shim.c` | — | ready to cut | up/U8-shapes | — | Circle/Ellipse/Polygon constructors, SHAPES type, clone independence, contains edge rules and getBounds match PIXI 5.3.12 in QuickJS shim tests; Polygon accepts a flat array, point objects and varargs, with closeStroke |
-| U9 | Optional data-dir moves logs to state dir (§5.6) | `src/main.c`, `tests/test_file_io.c` | — | planned | up/U9-data-dir | — | 50–100 lines; C test |
+| U9 | Optional data-dir moves logs to state dir (§5.6) | `src/main.c`, `tests/test_data_dir.c`, `tests/CMakeLists.txt` | — | ready to cut | up/U9-data-dir-logs | — | Opt-in `--data-dir` / `--data-dir=PATH`; logs go to `$XDG_STATE_HOME/outsider` (`$HOME/.local/state/outsider` when unset) or `SDL_GetPrefPath` elsewhere, or PATH; without the flag they stay in the game dir. C tests in `test_data_dir.c` |
 | U10 | Data-dir moves jsc cache to cache dir (§5.6) | `src/engine/js_engine.c`, `tests/test_js_engine.c` | U9 | planned | up/U10-cache-dir | — | 50–100 lines; C test |
 | U11 | canPlayType reflects build decoders (§5.7) | `src/shims/dom_shim.js`, `tests/test_dom_shim.c` | — | ready to cut | up/U11-canplaytype | — | MPEG-1/Vorbis/WAV maybe or probably; webm, VP9, Opus, MP4 and MP3 answer '' in QuickJS shim tests |
 | U12 | Pin SoLoud and SDL_shadercross (App. A) | `third_party/CMakeLists.txt` | — | ready to cut | up/U12-pin-soloud-shadercross | — | <20 lines; CI build |
@@ -78,6 +78,13 @@ before that tick. The `__native_process` part is `static inline` in
 neither SDL nor `bind_platform.c`; the tests call `bind_platform_register_process()`
 directly. Without the binding the shim keeps its old values (`linux`, empty env)
 and falls back to a millisecond `hrtime`.
+
+U9 is opt-in. `--data-dir` sends `debug.log` and `console.log` to the platform
+state directory (`$XDG_STATE_HOME/outsider`, or `$HOME/.local/state/outsider`
+when that variable is unset; `SDL_GetPrefPath("", "outsider")` on Windows,
+macOS and Android). `--data-dir=PATH` uses PATH instead. Without the flag the
+logs stay in the game directory. `rmmz_resolve_log_dir()` is the testable
+resolution; the C test covers the flag, PATH, XDG unset, and the default.
 
 ## Building and opening offers (§8.2)
 
