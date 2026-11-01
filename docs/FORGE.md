@@ -60,6 +60,8 @@ Agents cannot change gates or `forge.toml`. A human does these when the card mer
   and make a share bundle with `tools/share/make_bundle.py`; check the per-step summary;
 - after M0-T018: do the Map 92 profiling run from `docs/perf/m0-map92-profile-recipe.md`,
   commit the generated `docs/perf/m0-map92-profile.md` and make a share bundle;
+- after M0-T022: do the M0 exit run from `docs/milestones/m0-exit-recipe.md` (battery,
+  `power-saver`, test copy) and change its `pending owner run` lines in `docs/milestones/M0.md`;
 - H1 after M1-T001: approve the V8 pin and build V8 once;
 - H2 after M1-T002: build and test both engine modes in `build.sh`/`test.sh`;
 - H3 after M1-T027: switch `build.sh` to V8 only.

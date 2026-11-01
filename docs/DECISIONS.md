@@ -396,3 +396,18 @@ is testable and the owner's report is comparable to Gate G1:
 - **Gap** is `|attributed − GameLoopStats| / GameLoopStats`, as a percent.
   More than 15% writes a FLAG in the report; the process still exits 0. p95
   frame time uses nearest-rank.
+
+## DEC-U15-SAVE-READS — save reads go where save writes may go
+M0-T022's run showed that with the U7 guard on, `existsSync` and the other read calls still
+reject absolute paths outside the game root, so the save never lands in
+`$XDG_DATA_HOME/<dir_save_name>/` and could not be read back. U15 lets those read calls take an
+absolute path outside the root only when the guard is on and the write guard would accept the
+same path. Guard off, relative paths and paths inside the root behave as before. Owner approved
+(2026-11-01). It is an upstream-candidate change; nothing is sent upstream automatically.
+
+## DEC-M0-T022-OWNER-RUN — the owner does the M0 exit run
+With the owner's approval (2026-11-01), DEC-M0-T015-OWNER-RUN and DEC-M0-T018-OWNER-RUN extend
+to M0-T022. Workers cannot run on battery with `power-saver` or with real graphics, so the card
+writes the checklist and a step-by-step recipe, marks game-run items `pending owner run`, and
+the owner does the dev-laptop run after merge and updates `docs/milestones/M0.md`. M0-T022 now
+depends on U15. No gate is relaxed.
