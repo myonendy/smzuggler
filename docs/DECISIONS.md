@@ -340,3 +340,18 @@ mkdir's and never returns a cwd-relative path or a path under the game root.
 `--data-dir=PATH` still wins for logs when PATH is an absolute location
 outside the game folder; a bare `--data-dir` uses the state dir. `--data-dir`
 does not move cache or config.
+
+## DEC-M0-T015-SAVE-ISOLATION — M0-T015 isolates the game's whole environment
+M0-T015 blocked again after the owner-run change. The last review found that since U5 made
+`process.env` a real snapshot, the evaluator started the game with the owner's environment,
+so the game's save-location plugin would target the owner's real save folder (the write
+guard refused it this time). The card now requires the game process to get scratch `HOME`
+and `XDG_*` directories under the evaluator's output root, a save check that looks in that
+scratch XDG tree, tests for both, and a clean boot-error path. Owner approved 2026-11-01.
+
+## DEC-M0-T018-OWNER-RUN — M0-T018 builds the report tool; the owner runs it
+With the owner's approval (2026-11-01), DEC-M0-T015-OWNER-RUN extends to M0-T018. The card
+now builds and tests `tools/perf/map92_report.py` on synthetic inputs and writes the run
+recipe; it must not commit real-looking profile numbers. The owner does the dev-laptop
+profiling run after merge and commits `docs/perf/m0-map92-profile.md` (docs/FORGE.md).
+No gate is relaxed.
