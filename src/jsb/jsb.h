@@ -14,7 +14,8 @@
  * - This header is plain C11 and never includes C++ or V8 headers.
  * - A jsb_ctx and every jsb_val obtained through it are valid only until the
  *   native call (or setup callback) that received the ctx returns. Never
- *   store either in a struct, a global or a static.
+ *   store either in a struct, a global or a static. To keep a JS function,
+ *   make a jsb_callback, which has one owner who frees it.
  * - Strings passed in are copied; strings read out go into caller buffers.
  * - Only the main thread, the one that created the runtime, calls jsb.
  */
@@ -240,6 +241,118 @@ jsb_val *jsb_new_external_buffer(jsb_ctx *ctx, void *data, size_t len,
  * is ignored, reported on stderr, and -1 is returned. Main thread only;
  * never call it from a jsb_free_fn. */
 int64_t jsb_adjust_external_memory(jsb_ctx *ctx, int64_t change);
+
+/* ---- Persistent callbacks ---------------------------------------------- */
+
+/* A persistent handle to a JS function, kept by C beyond the native call
+ * that received the function (audio `onended`, video events).
+ *
+ * Why: a jsb_val dies with its call, but an event fires frames later. The
+ * handle is a small value: copy it freely, and zero-initialise it
+ * (`jsb_callback cb = {0};`) for "no callback". Its fields are private to
+ * jsb. A handle is checked on every use: once freed, every copy of it is
+ * refused, even after jsb reuses the slot. It belongs to one runtime and
+ * must not be used after jsb_runtime_destroy, which releases them all. */
+typedef struct jsb_callback {
+    jsb_runtime *rt;
+    uint32_t slot;
+    uint32_t gen;
+} jsb_callback;
+
+/* Kinds of value a C caller passes to or gets back from a callback. */
+typedef enum jsb_type {
+    JSB_TYPE_UNDEFINED,
+    JSB_TYPE_NULL,
+    JSB_TYPE_BOOL,
+    JSB_TYPE_NUMBER,
+    JSB_TYPE_STRING,
+    JSB_TYPE_OBJECT /* results only: any object, function or symbol */
+} jsb_type;
+
+/* One callback argument built in C. Only the field for `type` is read;
+ * `str` is NUL-terminated UTF-8, borrowed for the call and copied. */
+typedef struct jsb_cval {
+    jsb_type type;
+    bool b;
+    double num;
+    const char *str;
+} jsb_cval;
+
+/* A callback's return value as seen from C.
+ *
+ * The caller sets `str`/`str_cap` to a buffer (or NULL/0) before the call.
+ * A String result is copied there as UTF-8, truncated to `str_cap` - 1
+ * bytes and NUL-terminated; `str_len` gets its full byte length, so
+ * `str_len >= str_cap` means it was truncated. Objects only report their
+ * type: no JS object reaches C through a result. */
+typedef struct jsb_result {
+    jsb_type type;
+    bool b;
+    double num;
+    char *str;
+    size_t str_cap;
+    size_t str_len;
+} jsb_result;
+
+/* What jsb_callback_call returns. */
+typedef enum jsb_status {
+    JSB_OK = 0,
+    JSB_ERR_THREW = -1,  /* the function threw; the error handler got it */
+    JSB_ERR_HANDLE = -2, /* zero, freed or stale handle; nothing ran */
+    JSB_ERR_ARG = -3     /* bad argc/argv from C; nothing ran */
+} jsb_status;
+
+/* Receives every exception thrown by a function run through
+ * jsb_callback_call. `message` is String(exception) and `stack` its
+ * `stack` property, or "" when it has none (both UTF-8, valid only during
+ * the call). `user` is jsb_set_error_handler's. Runs on the main thread
+ * before jsb_callback_call returns; it must not call jsb on that runtime. */
+typedef void (*jsb_error_fn)(const char *message, const char *stack,
+                             void *user);
+
+/* Routes callback exceptions of `rt` to `fn(message, stack, user)`.
+ *
+ * Why: an event callback has no JS caller to throw to, and an exception
+ * must never cross into C (spec section 4.1). The engine's error handler
+ * registers here, so a failing `onended` is reported like any uncaught
+ * error. NULL `fn` restores the default, which prints both on stderr.
+ * Main thread only. */
+void jsb_set_error_handler(jsb_runtime *rt, jsb_error_fn fn, void *user);
+
+/* Makes a persistent handle to the function `fn` (from `ctx`) in `*out`.
+ *
+ * Why: this is how a binding keeps a JS callback past its own call (the
+ * JS_DupValue of Outsider's audio and video bindings). The handle keeps the
+ * function alive until jsb_callback_free. Returns false after a TypeError
+ * on `ctx` when `fn` is NULL or not callable; `*out` is then zeroed. Works
+ * in native calls and setup callbacks. Main thread only. */
+bool jsb_callback_new(jsb_ctx *ctx, jsb_val *fn, jsb_callback *out);
+
+/* Calls the function behind `cb` with `argc` arguments from `argv` and
+ * `this` undefined, in its own handle scope.
+ *
+ * Why: events driven by the host (audio end, video state) run JS from C
+ * with no native call around them. Works both outside any call and inside
+ * a native call. `argv` may be NULL when `argc` is 0; `argc` must be 0..64.
+ * `ret` may be NULL; otherwise it receives the result (see jsb_result).
+ * An exception thrown by the function is caught, passed to the runtime's
+ * error handler, and JSB_ERR_THREW returned; it never reaches C or an
+ * enclosing JS caller. A zero, freed or stale `cb` is JSB_ERR_HANDLE and a
+ * bad `argc`/`argv` (or JSB_TYPE_OBJECT argument) JSB_ERR_ARG, both
+ * printed on stderr. On any error `ret->type` is JSB_TYPE_UNDEFINED. The
+ * handle stays valid even if the function frees it. Main thread only. */
+jsb_status jsb_callback_call(jsb_callback cb, int argc, const jsb_cval *argv,
+                             jsb_result *ret);
+
+/* Releases the function behind `*cb` and zeroes `*cb`.
+ *
+ * Why: each handle has exactly one owner, which frees it when the event can
+ * no longer fire (spec section 15.8); the function is then garbage once JS
+ * drops it too. Every other copy of the handle becomes invalid. Returns
+ * false, after a message on stderr, for a zero, freed or stale handle, so a
+ * double free is reported rather than corrupting anything. Main thread
+ * only; never from a jsb_free_fn. */
+bool jsb_callback_free(jsb_callback *cb);
 
 #ifdef __cplusplus
 }

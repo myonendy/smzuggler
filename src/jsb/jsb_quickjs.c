@@ -16,7 +16,8 @@
  * owns one reference to its JSValue, kept in chunks that never move, and the
  * ctx frees them all when the call ends; so, as with V8 Locals, no jsb_val
  * outlives its call. Only jsb_runtime holds engine objects beyond a call (the
- * JSRuntime and JSContext), and jsb_runtime_destroy frees them. Main thread
+ * JSRuntime, the JSContext and one reference per live jsb_callback), and
+ * jsb_runtime_destroy frees them; jsb_callback_free drops a callback's. Main thread
  * only: QuickJS runtimes are not thread-safe.
  */
 #include "jsb.h"
@@ -24,6 +25,7 @@
 #include <quickjs.h>
 
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,6 +36,12 @@
 
 /* Number of jsb_vals per chunk; a typical binding call needs a handful. */
 #define JSB_CHUNK_VALS 16
+
+/* Most arguments jsb_callback_call takes (jsb.h); events pass a few. */
+#define JSB_MAX_CB_ARGS 64
+
+/* "No free callback slot" in jsb_runtime's free list. */
+#define JSB_NO_SLOT UINT32_MAX
 
 /* A JS value handle; owns one reference to `value` until its ctx ends. */
 struct jsb_val {
@@ -62,12 +70,24 @@ struct jsb_ctx {
     jsb_chunk *last;
 };
 
+/* One jsb_callback slot. A live slot owns one reference to `fn`; a free
+ * one holds JS_UNDEFINED and links the free list through `next_free`.
+ * `gen` changes on every reuse, so stale handles to a reused slot fail. */
+typedef struct cb_slot {
+    JSValue fn;
+    uint32_t gen;
+    bool live;
+    uint32_t next_free;
+} cb_slot;
+
 /* The engine instance. `fns` maps a function's QuickJS magic number to the
  * jsb_fn it calls; it only grows and is freed with the runtime. `dv_get`
  * holds the intrinsic DataView.prototype getters for buffer, byteOffset and
  * byteLength (QuickJS has no C API for DataView), taken before any user
  * script runs so that script cannot replace them. `external_bytes` is the
- * jsb_adjust_external_memory total. */
+ * jsb_adjust_external_memory total. `cbs` holds the jsb_callback slots
+ * (grown, never shrunk; `cb_free` heads the free list) and `on_error` the
+ * jsb_set_error_handler handler, NULL for the stderr default. */
 struct jsb_runtime {
     JSRuntime *qrt;
     JSContext *js;
@@ -76,6 +96,12 @@ struct jsb_runtime {
     int fn_cap;
     JSValue dv_get[3];
     int64_t external_bytes;
+    cb_slot *cbs;
+    uint32_t cb_count;
+    uint32_t cb_cap;
+    uint32_t cb_free;
+    jsb_error_fn on_error;
+    void *error_user;
 };
 
 /* What jsb_new_external_buffer's free function needs; owned by QuickJS's
@@ -320,6 +346,7 @@ jsb_runtime *jsb_runtime_create(const char *argv0, const char *icu_data_path) {
         return NULL;
     }
     for (int i = 0; i < 3; i++) rt->dv_get[i] = JS_UNDEFINED;
+    rt->cb_free = JSB_NO_SLOT;
     rt->qrt = JS_NewRuntime();
     rt->js = rt->qrt ? JS_NewContext(rt->qrt) : NULL;
     if (!rt->js) {
@@ -335,10 +362,14 @@ jsb_runtime *jsb_runtime_create(const char *argv0, const char *icu_data_path) {
     return rt;
 }
 
-/* See jsb.h. Frees the context before the runtime, as QuickJS requires;
- * that runs the free function of every live external buffer. */
+/* See jsb.h. Releases live callbacks, then frees the context before the
+ * runtime, as QuickJS requires; that runs the free function of every live
+ * external buffer. */
 void jsb_runtime_destroy(jsb_runtime *rt) {
     if (!rt) return;
+    for (uint32_t i = 0; i < rt->cb_count; i++)
+        JS_FreeValue(rt->js, rt->cbs[i].fn);
+    free(rt->cbs);
     for (int i = 0; i < 3 && rt->js; i++) JS_FreeValue(rt->js, rt->dv_get[i]);
     if (rt->js) JS_FreeContext(rt->js);
     if (rt->qrt) JS_FreeRuntime(rt->qrt);
@@ -722,4 +753,211 @@ int64_t jsb_adjust_external_memory(jsb_ctx *ctx, int64_t change) {
     }
     rt->external_bytes += change;
     return rt->external_bytes;
+}
+
+/* ---- Persistent callbacks ---------------------------------------------- */
+
+/* Returns the live slot `cb` names, or NULL after printing that `what` got
+ * a zero, freed or stale handle. */
+static cb_slot *cb_lookup(jsb_callback cb, const char *what) {
+    jsb_runtime *rt = cb.rt;
+    if (rt && cb.slot < rt->cb_count && rt->cbs[cb.slot].live &&
+        rt->cbs[cb.slot].gen == cb.gen)
+        return &rt->cbs[cb.slot];
+    fprintf(stderr, "jsb: %s: zero, freed or stale callback handle\n", what);
+    return NULL;
+}
+
+/* Returns the index of a free callback slot of `rt`, growing the table if
+ * none is free, or JSB_NO_SLOT when memory runs out. */
+static uint32_t cb_take_slot(jsb_runtime *rt) {
+    if (rt->cb_free != JSB_NO_SLOT) {
+        uint32_t i = rt->cb_free;
+        rt->cb_free = rt->cbs[i].next_free;
+        return i;
+    }
+    if (rt->cb_count == rt->cb_cap) {
+        if (rt->cb_cap >= JSB_NO_SLOT / 2) return JSB_NO_SLOT;
+        uint32_t cap = rt->cb_cap ? rt->cb_cap * 2 : 16;
+        cb_slot *grown = realloc(rt->cbs, (size_t)cap * sizeof *grown);
+        if (!grown) return JSB_NO_SLOT;
+        rt->cbs = grown;
+        rt->cb_cap = cap;
+    }
+    rt->cbs[rt->cb_count].gen = 0;
+    rt->cbs[rt->cb_count].fn = JS_UNDEFINED;
+    return rt->cb_count++;
+}
+
+/* See jsb.h: jsb_set_error_handler. */
+void jsb_set_error_handler(jsb_runtime *rt, jsb_error_fn fn, void *user) {
+    rt->on_error = fn;
+    rt->error_user = fn ? user : NULL;
+}
+
+/* See jsb.h: jsb_callback_new. The slot takes a new reference to the
+ * function; the jsb_val keeps its own until the call ends. */
+bool jsb_callback_new(jsb_ctx *ctx, jsb_val *fn, jsb_callback *out) {
+    memset(out, 0, sizeof *out);
+    if (!fn || !JS_IsFunction(ctx->js, fn->value)) {
+        jsb_throw_type(ctx, "jsb_callback_new: not a function");
+        return false;
+    }
+    jsb_runtime *rt = ctx->rt;
+    uint32_t i = cb_take_slot(rt);
+    if (i == JSB_NO_SLOT) {
+        jsb_throw_range(ctx, "jsb_callback_new: out of memory");
+        return false;
+    }
+    cb_slot *slot = &rt->cbs[i];
+    slot->fn = JS_DupValue(ctx->js, fn->value);
+    slot->gen = slot->gen == UINT32_MAX ? 1 : slot->gen + 1;
+    slot->live = true;
+    out->rt = rt;
+    out->slot = i;
+    out->gen = slot->gen;
+    return true;
+}
+
+/* Returns whether `argc`/`argv` are what jsb_callback_call accepts: argc
+ * in 0..JSB_MAX_CB_ARGS, argv present when needed, and only primitive
+ * types, strings non-NULL. Prints the first problem. */
+static bool cb_args_ok(int argc, const jsb_cval *argv) {
+    if (argc < 0 || argc > JSB_MAX_CB_ARGS || (argc > 0 && !argv)) {
+        fprintf(stderr, "jsb: jsb_callback_call: bad argc %d or NULL argv\n",
+                argc);
+        return false;
+    }
+    for (int i = 0; i < argc; i++) {
+        if (argv[i].type > JSB_TYPE_STRING ||
+            (argv[i].type == JSB_TYPE_STRING && !argv[i].str)) {
+            fprintf(stderr, "jsb: jsb_callback_call: argument %d has a bad "
+                            "type or a NULL string\n", i + 1);
+            return false;
+        }
+    }
+    return true;
+}
+
+/* Converts a C argument (checked by cb_args_ok) to a new JSValue. A string
+ * QuickJS cannot allocate becomes undefined. */
+static JSValue cb_arg_value(JSContext *js, const jsb_cval *v) {
+    JSValue s;
+    switch (v->type) {
+    case JSB_TYPE_NULL: return JS_NULL;
+    case JSB_TYPE_BOOL: return JS_NewBool(js, v->b);
+    case JSB_TYPE_NUMBER: return JS_NewFloat64(js, v->num);
+    case JSB_TYPE_STRING:
+        s = JS_NewString(js, v->str);
+        if (!JS_IsException(s)) return s;
+        clear_exception(js);
+        return JS_UNDEFINED;
+    default: return JS_UNDEFINED;
+    }
+}
+
+/* Copies the string `value` into ret's caller buffer (truncated,
+ * NUL-terminated) and sets its full length; unreadable text is empty. */
+static void cb_result_str(JSContext *js, JSValueConst value,
+                          jsb_result *ret) {
+    size_t n = 0;
+    const char *text = JS_ToCStringLen(js, &n, value);
+    if (!text) {
+        clear_exception(js);
+        n = 0;
+    }
+    ret->str_len = n;
+    if (ret->str && ret->str_cap > 0) {
+        size_t k = n < ret->str_cap - 1 ? n : ret->str_cap - 1;
+        if (k) memcpy(ret->str, text, k);
+        ret->str[k] = '\0';
+    }
+    if (text) JS_FreeCString(js, text);
+}
+
+/* Fills `ret` (may be NULL) from the callback's result `value`
+ * (borrowed). Symbols and BigInts report as JSB_TYPE_OBJECT, as on V8. */
+static void cb_result(JSContext *js, JSValueConst value, jsb_result *ret) {
+    if (!ret) return;
+    ret->str_len = 0;
+    if (JS_IsUndefined(value)) {
+        ret->type = JSB_TYPE_UNDEFINED;
+    } else if (JS_IsNull(value)) {
+        ret->type = JSB_TYPE_NULL;
+    } else if (JS_IsBool(value)) {
+        ret->type = JSB_TYPE_BOOL;
+        ret->b = JS_ToBool(js, value) > 0;
+    } else if (JS_IsNumber(value)) {
+        ret->type = JSB_TYPE_NUMBER;
+        JS_ToFloat64(js, &ret->num, value);
+    } else if (JS_IsString(value)) {
+        ret->type = JSB_TYPE_STRING;
+        cb_result_str(js, value, ret);
+    } else {
+        ret->type = JSB_TYPE_OBJECT;
+    }
+}
+
+/* Takes the pending exception of `rt` and gives its String() form and its
+ * `stack` (or "") to the runtime's error handler, or prints them. */
+static void cb_report(jsb_runtime *rt) {
+    char message[512], stack[2048];
+    JSValue exc = JS_GetException(rt->js);
+    to_buffer(rt->js, exc, message, sizeof message);
+    stack[0] = '\0';
+    if (JS_IsObject(exc)) {
+        JSValue st = JS_GetPropertyStr(rt->js, exc, "stack");
+        if (JS_IsException(st))
+            clear_exception(rt->js);
+        else if (JS_IsString(st))
+            to_buffer(rt->js, st, stack, sizeof stack);
+        JS_FreeValue(rt->js, st);
+    }
+    JS_FreeValue(rt->js, exc);
+    if (rt->on_error)
+        rt->on_error(message, stack, rt->error_user);
+    else
+        fprintf(stderr, "jsb: callback threw: %s\n%s\n", message, stack);
+}
+
+/* See jsb.h: jsb_callback_call. The function is duplicated for the call,
+ * so it survives the callback freeing its own handle, and the slot table
+ * is not touched after JS ran (JS may grow it). */
+jsb_status jsb_callback_call(jsb_callback cb, int argc, const jsb_cval *argv,
+                             jsb_result *ret) {
+    if (ret) ret->type = JSB_TYPE_UNDEFINED;
+    cb_slot *slot = cb_lookup(cb, "jsb_callback_call");
+    if (!slot) return JSB_ERR_HANDLE;
+    if (!cb_args_ok(argc, argv)) return JSB_ERR_ARG;
+    jsb_runtime *rt = cb.rt;
+    JSValue fn = JS_DupValue(rt->js, slot->fn);
+    JSValue args[JSB_MAX_CB_ARGS];
+    for (int i = 0; i < argc; i++) args[i] = cb_arg_value(rt->js, &argv[i]);
+    JSValue result = JS_Call(rt->js, fn, JS_UNDEFINED, argc, args);
+    for (int i = 0; i < argc; i++) JS_FreeValue(rt->js, args[i]);
+    JS_FreeValue(rt->js, fn);
+    if (JS_IsException(result)) {
+        cb_report(rt);
+        return JSB_ERR_THREW;
+    }
+    cb_result(rt->js, result, ret);
+    JS_FreeValue(rt->js, result);
+    return JSB_OK;
+}
+
+/* See jsb.h: jsb_callback_free. Dropping the reference may collect the
+ * function at once (QuickJS counts references), running finalizers. */
+bool jsb_callback_free(jsb_callback *cb) {
+    cb_slot *slot = cb_lookup(*cb, "jsb_callback_free");
+    jsb_runtime *rt = cb->rt;
+    uint32_t index = cb->slot;
+    memset(cb, 0, sizeof *cb);
+    if (!slot) return false;
+    JSValue fn = slot->fn;
+    slot->fn = JS_UNDEFINED;
+    slot->live = false;
+    slot->next_free = rt->cb_free;
+    rt->cb_free = index;
+    JS_FreeValue(rt->js, fn);
+    return true;
 }

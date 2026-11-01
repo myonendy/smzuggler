@@ -26,6 +26,7 @@ Modified 2026-11-01: record the Map 92 profile report tool and owner-run recipe.
 Modified 2026-11-01: record the M0 exit observation checklist.
 Modified 2026-11-01: record guarded save reads (U15).
 Modified 2026-11-01: record the V8 build script and proposed pin.
+Modified 2026-11-01: record jsb persistent callbacks.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 <!-- Records project changes for release review; keep entries free of private data. -->
@@ -40,6 +41,12 @@ All notable changes to smzuggler. Outsider's own history is in its git log.
   error stacks and a microtask checkpoint; add `js_engine_get_jsb()` and the
   `js_engine_stack` and `js_engine_on_v8` tests (`docs/js-binding.md`,
   "js_engine on V8").
+- Add persistent callbacks to the `jsb` seam in both backends:
+  `jsb_callback_new`, `jsb_callback_call` (C-built arguments and result, own
+  handle scope), `jsb_callback_free` (generation-checked handles, so freed
+  and stale copies are refused) and `jsb_set_error_handler`, which receives
+  every callback exception instead of C; with the `jsb_callbacks` test
+  (`docs/js-binding.md`, "Persistent callbacks"; DEC-M1-T006).
 - Add zero-copy buffers to the `jsb` seam in both backends: `jsb_arg_bytes`
   (bytes of an ArrayBuffer, TypedArray or DataView argument in place),
   `jsb_new_external_buffer` (native memory as an ArrayBuffer, freed once by a
