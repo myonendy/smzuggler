@@ -4,6 +4,7 @@
 # Modified 2026-10-30: configure runtime identity and diagnostic privacy.
 # Modified 2026-10-31: build and stage the headless shim inventory.
 # Modified 2026-10-31: restore Outsider's copyright and SPDX lines (spec section 12).
+# Modified 2026-11-01: compile host data-directory resolution into the runtime.
 # Build orchestration; see docs/DECISIONS.md (DEC-M0-T001).
 
 cmake_minimum_required(VERSION 3.20)
@@ -169,6 +170,7 @@ set(RMMZ_RUNTIME_SOURCES
     src/engine/error_handler.c
     src/smzuggler/dump_surface.c
     src/smzuggler/log_scrub.c
+    src/smzuggler/data_dirs.c
     src/engine/script_loader.c
     src/io/file_io.c
     src/bindings/bind_io.c

@@ -6,6 +6,7 @@
  * Modified 2026-10-31: dispatch headless surface inventory before startup.
  * Modified 2026-10-31: dispatch --share-bundle to the packager.
  * Modified 2026-10-31: return process.exitCode after a clean quit.
+ * Modified 2026-11-01: default logs, .jsc cache and config to host data dirs.
  *
  * Runtime entry point; owns startup and shutdown on the main thread.
  * See docs/DECISIONS.md (DEC-M0-T001) for identity ownership.
@@ -119,6 +120,9 @@ bool rmmz_resolve_log_dir(int argc, char **argv, const char *game_dir,
 #ifndef RMMZ_TEST_DATA_DIR
 
 #include "platform/platform.h"
+#ifdef SMZUGGLER_NAME
+#include "smzuggler/data_dirs.h"
+#endif
 #include "smzuggler/dump_surface.h"
 #include "engine/js_engine.h"
 #include "engine/game_loop.h"
@@ -356,6 +360,13 @@ int main(int argc, char *argv[])
     const char *dump_path = NULL;
     bool share_requested = false;
     const char *share_path = NULL;
+#ifdef SMZUGGLER_NAME
+    SmzHostDirs host_dirs = {0};
+#else
+    char log_path_buf[1024];
+    char console_log_buf[1024];
+    char log_dir_buf[1024];
+#endif
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--dump-surface") == 0) {
@@ -402,7 +413,7 @@ int main(int argc, char *argv[])
             no_audio = 1;
         } else if (strcmp(argv[i], "--data-dir") == 0 ||
                    strncmp(argv[i], "--data-dir=", 11) == 0) {
-            /* Opt-in log dir. rmmz_resolve_log_dir reads argv after game_dir. */
+            /* Log dir. smz_host_dirs / rmmz_resolve_log_dir read argv later. */
             continue;
         } else if (argv[i][0] != '-') {
             /* Positional argument: treat as game directory. */
@@ -453,14 +464,21 @@ int main(int argc, char *argv[])
         }
     }
 
-    /* Determine log file paths. --data-dir / --data-dir=PATH (scanned from
-       argv) send them to the state dir or PATH; without the flag they stay
-       in the game directory. */
-    const char *log_path = "debug.log";
-    const char *console_log_path = "console.log";
-    char log_path_buf[1024];
-    char console_log_buf[1024];
-    char log_dir_buf[1024];
+    /* Determine log file paths. smzuggler always uses the host state dir
+       (or --data-dir=PATH). Upstream without SMZUGGLER_NAME keeps logs in
+       the game directory unless --data-dir is passed. */
+    const char *log_path = NULL;
+    const char *console_log_path = NULL;
+#ifdef SMZUGGLER_NAME
+    smz_host_dirs(argc, argv, game_dir, &host_dirs);
+    if (host_dirs.log_dir[0]) {
+        file_io_mkdir(host_dirs.log_dir);
+        log_path = host_dirs.debug_log;
+        console_log_path = host_dirs.console_log;
+    }
+#else
+    log_path = "debug.log";
+    console_log_path = "console.log";
     if (rmmz_resolve_log_dir(argc, argv, game_dir, log_dir_buf,
                              sizeof(log_dir_buf)) &&
         log_dir_buf[0]) {
@@ -472,6 +490,7 @@ int main(int argc, char *argv[])
         snprintf(console_log_buf, sizeof(console_log_buf), "%s/console.log", log_dir_buf);
         console_log_path = console_log_buf;
     }
+#endif
 
     /* GUI-subsystem builds start without stdout/stderr; attach to the parent
        console if there is one, otherwise capture raw output to console.log. */
@@ -482,6 +501,10 @@ int main(int argc, char *argv[])
 
     error_handler_init(log_path, LOG_INFO);
     error_handler_log(LOG_INFO, SMZUGGLER_NAME " (RPG Maker MZ native runtime) starting");
+#ifdef SMZUGGLER_NAME
+    if (host_dirs.config_dir[0])
+        error_handler_log(LOG_INFO, "Config directory %s", host_dirs.config_dir);
+#endif
 
     /* Validate the game directory before opening a window, so a bad launch
        (wrong path, bare double-click) produces a clear error instead of a
@@ -543,6 +566,10 @@ int main(int argc, char *argv[])
         return 1;
     }
     error_handler_log(LOG_INFO, "QuickJS engine initialized");
+#ifdef SMZUGGLER_NAME
+    if (host_dirs.jsc_dir[0])
+        js_engine_set_cache_dir(js, host_dirs.jsc_dir, game_dir);
+#endif
     if (watchdog_ms > 0) {
         js_engine_set_watchdog(js, (unsigned)watchdog_ms);
         error_handler_log(LOG_INFO, "Script watchdog enabled: %d ms", watchdog_ms);
@@ -589,6 +616,9 @@ int main(int argc, char *argv[])
     bind_video_register(js_engine_get_context(js));
 
     file_io_set_game_root(game_dir);
+#ifdef SMZUGGLER_NAME
+    file_io_set_write_guard(true);
+#endif
 
     int scripts_ok = 1;
     error_handler_log(LOG_INFO, "Loading game from: %s", game_dir);

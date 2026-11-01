@@ -58,6 +58,8 @@ Agents cannot change gates or `forge.toml`. A human does these when the card mer
 - after M0-T016: add `game_smoke` (dev-laptop only);
 - after M0-T015: run the evaluator scenarios once on dev-laptop (battery, `power-saver`, test copy)
   and make a share bundle with `tools/share/make_bundle.py`; check the per-step summary;
+- after M0-T018: do the Map 92 profiling run from `docs/perf/m0-map92-profile-recipe.md`,
+  commit the generated `docs/perf/m0-map92-profile.md` and make a share bundle;
 - H1 after M1-T001: approve the V8 pin and build V8 once;
 - H2 after M1-T002: build and test both engine modes in `build.sh`/`test.sh`;
 - H3 after M1-T027: switch `build.sh` to V8 only.

@@ -6,6 +6,7 @@ Modified 2026-10-31: record the share-bundle last-run path.
 Modified 2026-10-31: record process.argv shape and throwing require.
 Modified 2026-11-01: record evaluator scratch-root isolation.
 Modified 2026-11-01: record evaluator game-process XDG isolation.
+Modified 2026-11-01: default host data directories when SMZUGGLER_NAME is set.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 
@@ -339,6 +340,19 @@ is not reused because save and reload need a writable save directory. The map st
 configured start map. Control-mode perf samples keep native 0.1 ms precision and are
 diagnostic; they cannot establish the later device acceptance gate. See
 [local scenario instructions](testing.md#local-title-map-menu-and-save-scenarios).
+## DEC-M0-T021 — Default host data directories when SMZUGGLER_NAME is set
+U9/U10's `--data-dir` stays opt-in in `rmmz_resolve_log_dir` so the upstream
+C test keeps writing logs to the game folder without the flag. When
+`SMZUGGLER_NAME` is defined, `src/main.c` ignores that default and uses
+`smz_host_dirs()` (`SMZUGGLER_BIN` under the XDG bases, or `SDL_GetPrefPath`
+elsewhere). That helper always resolves the config directory as well as logs
+and the `.jsc` cache, even though reading the config file is a later card.
+Empty or relative `XDG_*` values are treated as unset and fall
+back to `$HOME/.local/state` / `.cache` / `.config`; the resolver never
+mkdir's and never returns a cwd-relative path or a path under the game root.
+`--data-dir=PATH` still wins for logs when PATH is an absolute location
+outside the game folder; a bare `--data-dir` uses the state dir. `--data-dir`
+does not move cache or config.
 
 ## DEC-M0-T015-SAVE-ISOLATION — M0-T015 isolates the game's whole environment
 M0-T015 blocked again after the owner-run change. The last review found that since U5 made
@@ -358,3 +372,9 @@ name. `prelude.js` stays identical to upstream, a test can show the loaded text 
 the inherited CLI's new `--prelude` option lets the NW.js reference run use the same text.
 Bundle README step lines are appended by the entry point because the share packager's
 README has no step section.
+## DEC-M0-T018-OWNER-RUN — M0-T018 builds the report tool; the owner runs it
+With the owner's approval (2026-11-01), DEC-M0-T015-OWNER-RUN extends to M0-T018. The card
+now builds and tests `tools/perf/map92_report.py` on synthetic inputs and writes the run
+recipe; it must not commit real-looking profile numbers. The owner does the dev-laptop
+profiling run after merge and commits `docs/perf/m0-map92-profile.md` (docs/FORGE.md).
+No gate is relaxed.
