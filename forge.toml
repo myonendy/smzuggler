@@ -123,7 +123,7 @@ skip_markers = ['#if 0', 'DISABLED_', '\bSKIP\(', 'SKIP_WITHOUT_', '@unittest\.s
                 'pytest\.mark\.skip']
 test_detection = ['getenv\("(TEST|CI|FORGE|RMMZ_TEST|SMZUGGLER_TEST)', 'FORGE_TEST', '#ifdef\s+TEST',
                   'os\.environ.*(FORGE|CI)\b']
-assert_regex = '\b(ASSERT\w*|CHECK|assert)\(|self\.assert\w+\(|\bassert\s'
+assert_regex = '\b(ASSERT\w*|CHECK|FAIL|assert)\(|self\.assert\w+\(|\bassert\s'   # FAIL( is upstream's C test check (DEC-U9-FAIL-ASSERT)
 max_file_lines = 5100              # OWNER: upstream src/shims/pixi_shim.js is 4928 lines and the
                                    # generated shaders header 5017; lower once those are split
 max_diff_lines = 1500

@@ -4,7 +4,7 @@ title = "Game scenarios for tools/evaluator"
 milestone = 0
 deps = ["M0-T001", "M0-T023"]
 agent = "any"
-owns = ["tools/evaluator/**", "tests/tools/test_scenarios.py"]
+owns = ["tools/evaluator/**", "tests/tools/test_scenarios.py", "tests/tools/test_scenario_bundle.py", "ARCHITECTURE.md"]
 docs = ["docs/testing.md", "CHANGELOG.md"]
 tests_required = true
 may_edit_tests = false
@@ -15,10 +15,12 @@ Add smzuggler scenarios to tools/evaluator for the §10 / §14.6 basics: boot �
 ## Acceptance criteria
 - [ ] `tests/tools/test_scenarios.py` validates every new scenario file against the evaluator's schema and asserts none contains an absolute path, a game name or a save file.
 - [ ] A dry run (`--dry-run`) prints the resolved paths and refuses a game dir that looks like a Steam or Proton folder (`steamapps`, `compatdata`).
-- [ ] The run's outputs (logs, perf reports, frame-time CSVs, screenshots) are packaged with `tools/share/make_bundle.py` (M0-T023) and the bundle is written without a privacy hit; the bundle path and its README.txt summary are in the card report. Nothing is posted anywhere by the card.
-- [ ] The real run is executed once and its scrubbed summary (frame counts, pass/fail per step; no screenshots) is attached to the card report.
+- [ ] A run's output directory has the layout `tools/share/make_bundle.py` (M0-T023) accepts. A new test `tests/tools/test_scenario_bundle.py` builds a synthetic run directory in that layout (a log, a perf report, a frame-time CSV and a placeholder screenshot, all fake data), calls the real `make_bundle.py` on it, and asserts the bundle is written, contains README.txt with a pass/fail summary per step, and has no privacy hit. Nothing is posted anywhere by the card.
+- [ ] The map step checks `$gameMap.mapId() === 92` directly, not the game's configured start map, and a test asserts that check is in the scenario.
+- [ ] Save and reload really write to and read from the scratch save directory: the prelude the scenarios load does not stub `StorageManager.saveObject`, `loadObject` or `exists`, and a test inspects that prelude to prove it.
+- [ ] ARCHITECTURE.md's rows for `tools/evaluator/` and `tools/evaluator/scenarios/` are updated for the fork entry point and the new scenarios; no other row changes.
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment.
 - [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
 
 ## Notes
-Spec §9 M0, §10, §14.6. Runs on dev-laptop on battery with `power-saver` (unplugged ≥ 2 min, `powerprofilesctl get` = power-saver, battery ≥ 50%), against the test copy of the game in `SMZUGGLER_GAME_DIR`, never the Steam folder. If the agent cannot open a window or reach the game copy, it stops and reports `BLOCKED: needs dev-laptop GUI run` instead of faking results. Scenario names use neutral words (title, map, menu, save), never the game's title.
+Spec §9 M0, §10, §14.6. Implement and test everything above without a game window or the game copy; forge workers have neither. The real run (dev-laptop, battery, `power-saver`, test copy in `SMZUGGLER_GAME_DIR`, never the Steam folder) and its bundle are the owner's after-merge checkpoint in docs/FORGE.md (DEC-M0-T015-OWNER-RUN), so the card report does not need real-run evidence and must not fake any. Keep the work already on the branch and finish it rather than starting over. Scenario names use neutral words (title, map, menu, save), never the game's title.
