@@ -12,21 +12,21 @@
  */
 #include "jsb.h"
 
+#include <assert.h>
+
 #include <stdio.h>
 #include <string.h>
 
-static int g_failures;
-
-/* Runs `src` and checks that it completes with String(result) == `expect`;
- * counts and prints a failure otherwise. */
+/* Runs `src` and asserts that it completes with String(result) == `expect`;
+ * prints the mismatch first so a failing assert says what went wrong. */
 static void expect_js(jsb_runtime *rt, const char *src, const char *expect) {
     char out[512];
     bool ok = jsb_runtime_eval(rt, src, "test_jsb_core.js", out, sizeof out);
-    if (!ok || strcmp(out, expect) != 0) {
+    if (!ok || strcmp(out, expect) != 0)
         fprintf(stderr, "FAIL: %s\n  expected %s, got %s%s\n", src, expect,
                 ok ? "" : "exception ", out);
-        g_failures++;
-    }
+    assert(ok);
+    assert(strcmp(out, expect) == 0);
 }
 
 /* Returns arg0 + 1 as int32 (tests jsb_arg_i32 and jsb_ret_i32). */
@@ -173,30 +173,18 @@ static void test_errors(jsb_runtime *rt) {
 int main(int argc, char **argv) {
     (void)argc;
     jsb_runtime *rt = jsb_runtime_create(argv[0], SMZ_V8_ICU_DATA_PATH);
-    if (!rt) {
-        fprintf(stderr, "FAIL: jsb_runtime_create\n");
-        return 1;
-    }
+    assert(rt != NULL);
     bool broken_defined = true;
-    if (!jsb_runtime_setup(rt, setup, &broken_defined)) {
-        fprintf(stderr, "FAIL: module setup\n");
-        g_failures++;
-    }
-    if (broken_defined) {
-        fprintf(stderr, "FAIL: failing init reported success\n");
-        g_failures++;
-    }
+    assert(jsb_runtime_setup(rt, setup, &broken_defined));
+    assert(!broken_defined); /* a failing init must report failure */
     expect_js(rt, "typeof __native_broken", "undefined");
     expect_js(rt, "typeof __native_test", "object");
     test_getters(rt);
     test_errors(rt);
     char out[64];
-    if (jsb_runtime_eval(rt, "throw new RangeError('top')", "x.js", out, sizeof out) ||
-        strcmp(out, "RangeError: top") != 0) {
-        fprintf(stderr, "FAIL: eval exception reporting gave %s\n", out);
-        g_failures++;
-    }
+    assert(!jsb_runtime_eval(rt, "throw new RangeError('top')", "x.js", out, sizeof out));
+    assert(strcmp(out, "RangeError: top") == 0);
     jsb_runtime_destroy(rt);
-    printf("test_jsb_core: %d failure(s)\n", g_failures);
-    return g_failures ? 1 : 0;
+    printf("test_jsb_core: all checks passed\n");
+    return 0;
 }

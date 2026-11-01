@@ -14,6 +14,9 @@
 #error "this check must be compiled as C"
 #endif
 
+/* The build pins C11 without extensions; fail loudly if that ever changes. */
+_Static_assert(__STDC_VERSION__ >= 201112L, "jsb.h must be checked as C11");
+
 /* A binding-shaped function, so the jsb_fn typedef is exercised as C. */
 static void check_fn(jsb_ctx *ctx) { jsb_ret_undefined(ctx); }
 
