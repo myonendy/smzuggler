@@ -1227,48 +1227,138 @@ static void test_base64(void)
     destroy_test_ctx(tc);
 }
 
-/* Simple selectors search descendants in tree order, including detached subtrees. */
+/* Helper: build a detached tree section#scope.a > [div#first.a.ab > p#nested.a.b, div#last.ab] */
+
+static void build_query_tree(TestCtx *tc)
+{
+    char *r = js_engine_eval_string(tc->engine,
+        "var qRoot = document.createElement('section');\n"
+        "var qA = document.createElement('div');\n"
+        "var qB = document.createElement('p');\n"
+        "var qC = document.createElement('div');\n"
+        "qRoot.id = 'scope'; qRoot.className = 'a';\n"
+        "qA.id = 'first'; qA.className = 'a ab';\n"
+        "qB.id = 'nested'; qB.className = 'a b';\n"
+        "qC.id = 'last'; qC.className = 'ab';\n"
+        "qRoot.appendChild(qA); qA.appendChild(qB); qRoot.appendChild(qC);\n"
+        "qA.appendChild(document.createTextNode('text'));\n"
+        "function qIds(xs) { return xs.map(function (x) { return x.id; }).join(','); }\n"
+        "'built'", "test");
+    js_engine_free_string(r);
+}
+
+/* Tests: element getElementsByTagName searches only the subtree, in document order */
+
+static void check_element_tag_queries(TestCtx *tc)
+{
+    TEST(element_get_elements_by_tag_name);
+    ASSERT(js_is_true(tc,
+        "String(qIds(qRoot.getElementsByTagName('DIV')) === 'first,last')"));
+    ASSERT(js_is_true(tc,
+        "String(qIds(qRoot.getElementsByTagName('*')) === 'first,nested,last')"));
+    ASSERT(js_is_true(tc,
+        "String(qIds(qA.getElementsByTagName('*')) === 'nested')"));
+    ASSERT(js_is_true(tc,
+        "String(qRoot.getElementsByTagName('section').length === 0)"));
+    PASS();
+}
+
+/* Tests: tag, #id, .class, compound and comma-list selectors on an element */
+
+static void check_element_selector_forms(TestCtx *tc)
+{
+    TEST(element_query_selector_forms);
+    ASSERT(js_is_true(tc,
+        "String(qIds(qRoot.querySelectorAll('div')) === 'first,last')"));
+    ASSERT(js_is_true(tc, "String(qRoot.querySelector('div') === qA)"));
+    ASSERT(js_is_true(tc, "String(qRoot.querySelector('#nested') === qB)"));
+    ASSERT(js_is_true(tc,
+        "String(qIds(qRoot.querySelectorAll('.a')) === 'first,nested')"));
+    ASSERT(js_is_true(tc,
+        "String(qIds(qRoot.querySelectorAll('.ab')) === 'first,last')"));
+    ASSERT(js_is_true(tc, "String(qRoot.querySelector('div.a#first.ab') === qA)"));
+    ASSERT(js_is_true(tc, "String(qRoot.querySelector('div.b') === null)"));
+    ASSERT(js_is_true(tc,
+        "String(qRoot.querySelectorAll('p.zzz').length === 0)"));
+    ASSERT(js_is_true(tc,
+        "String(qIds(qRoot.querySelectorAll('#last, .a, div')) === "
+        "'first,nested,last')"));
+    PASS();
+}
+
+/* Tests: matching excludes the element itself and anything outside its subtree */
+
+static void check_element_selector_scope(TestCtx *tc)
+{
+    TEST(element_query_selector_scope);
+    ASSERT(js_is_true(tc, "String(qRoot.querySelector('#scope') === null)"));
+    ASSERT(js_is_true(tc, "String(qRoot.querySelector('section') === null)"));
+    ASSERT(js_is_true(tc, "String(qA.querySelector('#last') === null)"));
+    ASSERT(js_is_true(tc, "String(qIds(qA.querySelectorAll('.a')) === 'nested')"));
+    ASSERT(js_is_true(tc, "String(document.querySelector('#first') === null)"));
+    PASS();
+}
+
+/* Tests: document-level selectors, including the head/body/html singletons */
+
+static void check_document_selectors(TestCtx *tc)
+{
+    TEST(document_query_selectors);
+    ASSERT(js_is_true(tc,
+        "document.body.appendChild(qRoot);\n"
+        "String(document.querySelector('head') === document.head)"));
+    ASSERT(js_is_true(tc,
+        "String(document.querySelector('html') === document.documentElement)"));
+    ASSERT(js_is_true(tc,
+        "String(document.querySelector('section.a#scope') === qRoot)"));
+    ASSERT(js_is_true(tc,
+        "String(qIds(document.querySelectorAll('#last, p.b, #first')) === "
+        "'first,nested,last')"));
+    ASSERT(js_is_true(tc,
+        "String(document.querySelectorAll('head, body')[0] === document.head)"));
+    ASSERT(js_is_true(tc,
+        "document.body.removeChild(qRoot);\n"
+        "String(document.querySelector('#first') === null)"));
+    PASS();
+}
+
+/* Tests: unsupported selectors throw a SyntaxError-named error on document and elements */
+
+static void check_unsupported_selectors(TestCtx *tc)
+{
+    const char *bad[] = { "div > p", "[x]", "", "div,", "div p", ":hover" };
+    const char *targets[] = { "qRoot", "document" };
+    const char *methods[] = { "querySelector", "querySelectorAll" };
+    char script[384];
+
+    TEST(unsupported_selectors_throw);
+    for (int i = 0; i < 6; i++) {
+        for (int j = 0; j < 2; j++) {
+            for (int k = 0; k < 2; k++) {
+                snprintf(script, sizeof(script),
+                    "(function () { try { %s.%s('%s'); return 'false'; }\n"
+                    "catch (e) { return String(e.name === 'SyntaxError' && "
+                    "!!e.message); } })()",
+                    targets[j], methods[k], bad[i]);
+                ASSERT(js_is_true(tc, script));
+            }
+        }
+    }
+    PASS();
+}
+
 static void test_element_queries(void)
 {
     TestCtx *tc = create_test_ctx();
     if (!tc) { TEST(dom_setup); FAIL("engine setup"); return; }
-    TEST(element_queries);
-    char *r = js_engine_eval_string(tc->engine,
-        "(function() {"
-        "var root=document.createElement('section'), a=document.createElement('div');"
-        "var b=document.createElement('p'), c=document.createElement('div');"
-        "root.id='scope'; root.className='a'; a.id='first'; a.className='a ab';"
-        "b.id='nested'; b.className='a b'; c.id='last'; c.className='ab';"
-        "root.appendChild(a); a.appendChild(b); root.appendChild(c);"
-        "a.appendChild(document.createTextNode('text'));"
-        "function ids(xs) { return xs.map(function(x){return x.id;}).join(','); }"
-        "function check(ok) { if(!ok) throw new Error('query mismatch'); }"
-        "check(ids(root.getElementsByTagName('DIV'))==='first,last');"
-        "check(ids(root.getElementsByTagName('*'))==='first,nested,last');"
-        "check(ids(root.querySelectorAll('div'))==='first,last');"
-        "check(root.querySelector('#nested')===b);"
-        "check(ids(root.querySelectorAll('.a'))==='first,nested');"
-        "check(root.querySelector('div.a#first.ab')===a);"
-        "check(root.querySelector('div.b')===null);"
-        "check(ids(root.querySelectorAll('#last, .a, div'))==='first,nested,last');"
-        "check(root.querySelector('#scope')===null && a.querySelector('#last')===null);"
-        "check(document.querySelector('#first')===null);"
-        "document.body.appendChild(root);"
-        "check(document.querySelector('head')===document.head);"
-        "check(document.querySelector('html')===document.documentElement);"
-        "check(document.querySelector('section.a#scope')===root);"
-        "check(ids(document.querySelectorAll('#last, p.b, #first'))==='first,nested,last');"
-        "check(document.querySelectorAll('head, body')[0]===document.head);"
-        "var bad=['div > p','[x]','','div,','div p',':hover'];"
-        "var contexts=[root,document], methods=['querySelector','querySelectorAll'];"
-        "for(var i=0;i<bad.length;i++) for(var j=0;j<contexts.length;j++)"
-        "for(var k=0;k<methods.length;k++) { var caught=false;"
-        "try { contexts[j][methods[k]](bad[i]); }"
-        "catch(e) { caught=e.name==='SyntaxError' && !!e.message; } check(caught); }"
-        "document.body.removeChild(root); check(document.querySelector('#first')===null);"
-        "return 'ok'; })()", "test");
-    if (r && strcmp(r, "ok") == 0) { PASS(); } else { FAIL(r ? r : "NULL"); }
-    js_engine_free_string(r);
+
+    build_query_tree(tc);
+    check_element_tag_queries(tc);
+    check_element_selector_forms(tc);
+    check_element_selector_scope(tc);
+    check_document_selectors(tc);
+    check_unsupported_selectors(tc);
+
     destroy_test_ctx(tc);
 }
 
