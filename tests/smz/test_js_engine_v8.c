@@ -10,7 +10,9 @@
  * v8 mode names scripts relative to the game root as NW.js does. It also
  * checks that js_engine_get_jsb() hands out the runtime the game runs in.
  * Built against js_engine_v8.cc in v8 mode and js_engine.c in quickjs mode
- * (tests/smz/js_engine_v8.cmake); SMZ_JS_ENGINE_V8 tells which.
+ * (tests/smz/js_engine_v8.cmake); SMZ_JS_ENGINE_V8 tells which. Checks use
+ * assert() and the fragment compiles with NDEBUG undefined, as the other
+ * tests/smz tests do.
  */
 
 #include "engine/js_engine.h"
@@ -20,16 +22,17 @@
 #include "jsb.h"
 #endif
 
+#include <assert.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
-static int failures = 0;
-
-/* Records a failed check with its reason. */
-static void check(int ok, const char *what)
+/* Prints what the next assert checks, so a failing run names it even
+   when the abort message is cut off. */
+static void note(const char *what)
 {
-    printf("  %s %s\n", ok ? "PASS" : "FAIL", what);
-    if (!ok) failures++;
+    printf("  check: %s\n", what);
+    fflush(stdout);
 }
 
 /* Everything the console callback received, error lines joined by '\n'. */
@@ -69,24 +72,31 @@ static void test_stack_names_file_and_line(void)
     snprintf(dir, sizeof dir, "%s", test_tmp_path("smz_js_engine_v8"));
     snprintf(path, sizeof path, "%s/foo.js", dir);
     test_rm_rf(dir);
-    check(test_mkdir_p(dir) && write_text(path, kFooJs), "write foo.js");
+    note("write foo.js");
+    assert(test_mkdir_p(dir) && write_text(path, kFooJs));
 
     JSEngine *engine = js_engine_init();
-    check(engine != NULL, "engine starts");
-    if (!engine) return;
+    note("engine starts");
+    assert(engine != NULL);
     js_engine_set_console_callback(engine, capture, NULL);
 
     captured[0] = '\0';
-    check(!js_engine_eval_file(engine, path), "eval_file reports the throw");
-    check(strstr(captured, "foo.js:3") != NULL, "file stack shows foo.js:3");
+    bool ok = js_engine_eval_file(engine, path);
+    note("eval_file reports the throw with foo.js:3");
+    assert(!ok);
+    assert(strstr(captured, "foo.js:3") != NULL);
 
     captured[0] = '\0';
-    check(!js_engine_eval(engine, kFooJs, "foo.js"), "eval reports the throw");
-    check(strstr(captured, "foo.js:3") != NULL, "string stack shows foo.js:3");
+    ok = js_engine_eval(engine, kFooJs, "foo.js");
+    note("eval of a string named foo.js reports foo.js:3");
+    assert(!ok);
+    assert(strstr(captured, "foo.js:3") != NULL);
 
     captured[0] = '\0';
-    check(!js_engine_eval(engine, "\n\nfunction {", "foo.js"), "syntax error fails");
-    check(strstr(captured, "foo.js:3") != NULL, "syntax error shows foo.js:3");
+    ok = js_engine_eval(engine, "\n\nfunction {", "foo.js");
+    note("syntax error on line 3 reports foo.js:3");
+    assert(!ok);
+    assert(strstr(captured, "foo.js:3") != NULL);
 
     js_engine_shutdown(engine);
     test_rm_rf(dir);
@@ -98,43 +108,56 @@ static void test_stack_names_file_and_line(void)
 static void test_stack_is_game_relative(void)
 {
     char game[TEST_PATH_MAX], plugins[TEST_PATH_MAX], path[TEST_PATH_MAX];
+    char cache[TEST_PATH_MAX];
     snprintf(game, sizeof game, "%s", test_tmp_path("smz_js_engine_v8_game"));
+    snprintf(cache, sizeof cache, "%s", test_tmp_path("smz_js_engine_v8_cache"));
     snprintf(plugins, sizeof plugins, "%s/js/plugins", game);
     snprintf(path, sizeof path, "%s/foo.js", plugins);
     test_rm_rf(game);
-    check(test_mkdir_p(plugins) && write_text(path, kFooJs), "write game foo.js");
+    note("write game foo.js");
+    assert(test_mkdir_p(plugins) && write_text(path, kFooJs));
 
     JSEngine *engine = js_engine_init();
-    check(engine != NULL, "engine starts");
-    if (!engine) return;
+    note("engine starts");
+    assert(engine != NULL);
     js_engine_set_console_callback(engine, capture, NULL);
-    check(js_engine_set_cache_dir(engine, test_tmp_path("smz_js_engine_v8_cache"), game),
-          "set game root");
+    bool ok = js_engine_set_cache_dir(engine, cache, game);
+    note("set game root");
+    assert(ok);
+
     captured[0] = '\0';
-    check(!js_engine_eval_file(engine, path), "game script throws");
-    check(strstr(captured, "at boom (js/plugins/foo.js:3:") != NULL,
-          "frame names js/plugins/foo.js:3");
-    check(strstr(captured, game) == NULL, "game root not in the trace");
+    ok = js_engine_eval_file(engine, path);
+    note("frame names js/plugins/foo.js:3 without the game root");
+    assert(!ok);
+    assert(strstr(captured, "at boom (js/plugins/foo.js:3:") != NULL);
+    assert(strstr(captured, game) == NULL);
 
     js_engine_shutdown(engine);
     test_rm_rf(game);
-    test_rm_rf(test_tmp_path("smz_js_engine_v8_cache"));
+    test_rm_rf(cache);
 }
 
 /* js_engine_get_jsb returns the runtime the engine's scripts run in. */
 static void test_get_jsb_shares_globals(void)
 {
     JSEngine *engine = js_engine_init();
-    check(engine != NULL, "engine starts");
-    if (!engine) return;
+    note("engine starts");
+    assert(engine != NULL);
     jsb_runtime *rt = js_engine_get_jsb(engine);
-    check(rt != NULL, "get_jsb is not NULL");
-    check(js_engine_eval(engine, "var sharedValue = 6 * 7;", "set.js"), "set a global");
+    note("get_jsb is not NULL");
+    assert(rt != NULL);
+
+    bool ok = js_engine_eval(engine, "var sharedValue = 6 * 7;", "set.js");
+    note("set a global through js_engine_eval");
+    assert(ok);
     char out[32] = "";
-    check(rt && jsb_runtime_eval(rt, "sharedValue", "get.js", out, sizeof out) &&
-              strcmp(out, "42") == 0,
-          "jsb sees the engine's global");
-    check(js_engine_get_jsb(NULL) == NULL, "get_jsb(NULL) is NULL");
+    ok = jsb_runtime_eval(rt, "sharedValue", "get.js", out, sizeof out);
+    note("jsb sees the engine's global");
+    assert(ok);
+    assert(strcmp(out, "42") == 0);
+
+    note("get_jsb(NULL) is NULL");
+    assert(js_engine_get_jsb(NULL) == NULL);
     js_engine_shutdown(engine);
 }
 #else
@@ -142,10 +165,11 @@ static void test_get_jsb_shares_globals(void)
 static void test_get_jsb_quickjs(void)
 {
     JSEngine *engine = js_engine_init();
-    check(engine != NULL && js_engine_get_jsb(engine) == NULL,
-          "quickjs get_jsb is NULL");
-    check(engine != NULL && js_engine_get_context(engine) != NULL,
-          "quickjs keeps get_context");
+    note("engine starts");
+    assert(engine != NULL);
+    note("quickjs get_jsb is NULL and get_context remains");
+    assert(js_engine_get_jsb(engine) == NULL);
+    assert(js_engine_get_context(engine) != NULL);
     js_engine_shutdown(engine);
 }
 #endif
@@ -160,6 +184,6 @@ int main(void)
 #else
     test_get_jsb_quickjs();
 #endif
-    printf("%s\n", failures ? "FAILED" : "OK");
-    return failures ? 1 : 0;
+    printf("OK\n");
+    return 0;
 }
