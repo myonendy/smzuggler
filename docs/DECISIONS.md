@@ -7,7 +7,7 @@ Modified 2026-10-31: record process.argv shape and throwing require.
 Modified 2026-11-01: record evaluator scratch-root isolation.
 Modified 2026-11-01: record evaluator game-process XDG isolation.
 Modified 2026-11-01: default host data directories when SMZUGGLER_NAME is set.
-Modified 2026-11-01: record Map 92 JS-time and gap definitions.
+Modified 2026-11-01: record Map 92 report owner-run and JS-time gap definitions.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 

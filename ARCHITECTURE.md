@@ -2,7 +2,6 @@
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
 Modified 2026-11-01: document the fork evaluator entry point and scenarios.
-Modified 2026-11-01: document the Map 92 profile report tool.
 Architecture guide for contributors replacing browser and NW.js services.
 Keep current Outsider behavior distinct from planned smzuggler behavior;
 source references and directory coverage are checked by the tool tests.
@@ -226,7 +225,7 @@ changes together.
 | `tools/evaluator/scenarios/` | Evaluation scenario definitions; mixed: upstream scenarios plus the fork's `smz-basics.json` title, Map 92, menu, save/reload and close control route. |
 | `tools/forge/` | Offline worker build/test and policy gate entry points; fork. |
 | `tools/format/` | Formatting and ES5 checks; fork. |
-| `tools/perf/` | Offline perf call-graph attribution, Map 92 report tool (`tools/perf/map92_report.py`) and bucket rules; fork. |
+| `tools/perf/` | Offline perf call-graph attribution and bucket rules; fork. |
 | `tools/privacy/` | Repository privacy scanning and tests; fork. |
 | `tools/share/` | Offline run-bundle packager with privacy scrubbing; fork. |
 | `tools/smoke/` | Read-only game smoke runner with scratch XDG storage; fork. |

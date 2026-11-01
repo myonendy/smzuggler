@@ -107,7 +107,7 @@ def load_machine_state(path):
 
     Why: the report must record power source, profile, battery start/end and
     EPP, and nothing else from the snapshot. Missing keys fail loudly.
-    Values are stripped of paths; numbers stay numbers.
+    String values are stripped of paths here; numbers stay numbers.
     """
     data = load_json(path)
     if not isinstance(data, dict):
@@ -117,7 +117,7 @@ def load_machine_state(path):
         if key not in data:
             raise ValueError(f'{basename(path)}: missing {key}')
         value = data[key]
-        out[key] = value
+        out[key] = strip_paths(value) if isinstance(value, str) else value
     return out
 
 
