@@ -33,10 +33,10 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
-- Record the M0 exit observation checklist in `docs/milestones/M0.md`. The
-  AC / llvmpipe session reached Map 92 with no compat script and no game-dir
-  writes; `existsSync` still rejects the absolute `$XDG_DATA_HOME/<dir_save_name>/`
-  path so no slot file was created, and the §14.4 power-saver run has not been made.
+- Add the §9 M0 exit checklist `docs/milestones/M0.md` (local gates pass;
+  game-run items `pending owner run`, hosted CI `pending push`) and the owner
+  run recipe `docs/milestones/m0-exit-recipe.md` (battery and `power-saver`
+  checks, test copy, tree hash, smoke, evaluator, scratch save, bundle).
 - Add `tools/perf/map92_report.py`, which turns a Map 92 attribution run,
   GameLoopStats log, frame-time CSV and §14.4 machine-state snapshot into the
   M0 QuickJS profile report, plus the owner-run recipe
