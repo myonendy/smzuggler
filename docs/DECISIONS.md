@@ -307,3 +307,21 @@ the card's `owns = []` made the policy gate reject the checker fix. M0-T010b now
 skip the exact header and separator rows, and must add a new test proving `name` is matched,
 with existing tests unedited (`tests_required = true`). No gate is relaxed and
 `max_diff_lines` is unchanged.
+
+## DEC-U9-FAIL-ASSERT — the policy gate counts upstream's FAIL( checks as assertions
+U9 blocked twice on "task requires tests but no new assertions". Its new
+`tests/test_data_dir.c` follows upstream's C test style, where each check is
+`if (...) FAIL(...)`, and `assert_regex` did not match `FAIL(`. With the owner's approval
+(2026-11-01), `FAIL` joins `ASSERT*`, `CHECK` and `assert` in `assert_regex`. This makes
+the gate stricter for upstream-style tests too: removing an existing `FAIL(` check now
+counts as removing an assertion. Nothing else in the gate changes.
+
+## DEC-M0-T015-OWNER-RUN — M0-T015's real game run is an owner checkpoint
+M0-T015 used all four attempts. Its branch had working scenarios, tooling and green gates,
+but reviewers failed it for the real-run summary and bundle, which forge workers cannot
+produce: they have no display and the test gate hides the game directory. With the owner's
+approval (2026-11-01), the real run and its bundle move to a human checkpoint after merge
+(docs/FORGE.md). In their place the card must add a test that builds a real
+`make_bundle.py` bundle from a synthetic run, check `$gameMap.mapId() === 92` directly,
+and prove the save and reload steps are not stubbed. The card may update ARCHITECTURE.md's
+evaluator rows. No gate is relaxed.
