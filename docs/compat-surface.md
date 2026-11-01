@@ -12,8 +12,9 @@ shim attribution; statuses describe implementation, not conformance certificatio
 
 Every dumped member has a row; `pixi_shim.js` rows describe Outsider's
 QuickJS-mode PIXI, which real-PIXI mode does not load (§4.2).
-Absent APIs such as `PIXI.Circle` (§5.4) are not in the dump, so the
-full check cannot carry them as rows; the `PIXI` row notes them.
+The explicit missing `PIXI.Circle` row records the §5.4 gap. The checker
+currently rejects this documented absence; M0-T010 requires an infrastructure
+correction to permit missing APIs while matching installed members exactly.
 Post-core/control shims currently install no members in the game-free dump.
 Names include aliases, internal members and constructor back-references
 retained by DEC-M0-T009b.
@@ -1121,6 +1122,7 @@ dump and rejection of a stale `name` row through the CLI.
 | `PIXI.Buffer.prototype.dispose.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores buffer data only; no native vertex buffer (§4.2). |
 | `PIXI.Buffer.prototype.update` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores buffer data only; no native vertex buffer (§4.2). |
 | `PIXI.Buffer.prototype.update.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_tilemap.c` | Stores buffer data only; no native vertex buffer (§4.2). |
+| `PIXI.Circle` | missing | `src/shims/pixi_shim.js` | `-` | Absent constructor; required by §5.4. Checker currently rejects documented missing APIs. |
 | `PIXI.Container` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Scene-graph container; children drawn as quads. |
 | `PIXI.Container.prototype._calculateBounds` | stub | `src/shims/pixi_shim.js` | - | No-op. |
 | `PIXI.Container.prototype._calculateBounds.prototype.constructor` | stub | `src/shims/pixi_shim.js` | - | No-op. |
@@ -1617,10 +1619,10 @@ dump and rejection of a stale `name` row through the CLI.
 | `PIXI.Texture.EMPTY.emit` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
 | `PIXI.Texture.EMPTY.emit.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
 | `PIXI.Texture.EMPTY.noFrame` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
-| `PIXI.Texture.EMPTY.on` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
-| `PIXI.Texture.EMPTY.on.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
-| `PIXI.Texture.EMPTY.once` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
-| `PIXI.Texture.EMPTY.once.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
+| `PIXI.Texture.EMPTY.on` | stub | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Returns this and discards the listener; no event registration. |
+| `PIXI.Texture.EMPTY.on.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Returns this and discards the listener; no event registration. |
+| `PIXI.Texture.EMPTY.once` | stub | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Returns this and discards the listener; no event registration. |
+| `PIXI.Texture.EMPTY.once.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Returns this and discards the listener; no event registration. |
 | `PIXI.Texture.EMPTY.orig` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
 | `PIXI.Texture.EMPTY.orig.height` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
 | `PIXI.Texture.EMPTY.orig.type` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared EMPTY texture instance. |
@@ -1689,10 +1691,10 @@ dump and rejection of a stale `name` row through the CLI.
 | `PIXI.Texture.WHITE.emit` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
 | `PIXI.Texture.WHITE.emit.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
 | `PIXI.Texture.WHITE.noFrame` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
-| `PIXI.Texture.WHITE.on` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
-| `PIXI.Texture.WHITE.on.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
-| `PIXI.Texture.WHITE.once` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
-| `PIXI.Texture.WHITE.once.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
+| `PIXI.Texture.WHITE.on` | stub | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Returns this and discards the listener; no event registration. |
+| `PIXI.Texture.WHITE.on.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Returns this and discards the listener; no event registration. |
+| `PIXI.Texture.WHITE.once` | stub | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Returns this and discards the listener; no event registration. |
+| `PIXI.Texture.WHITE.once.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Returns this and discards the listener; no event registration. |
 | `PIXI.Texture.WHITE.orig` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
 | `PIXI.Texture.WHITE.orig.height` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
 | `PIXI.Texture.WHITE.orig.type` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Member of the shared WHITE texture instance. |
@@ -1925,8 +1927,8 @@ dump and rejection of a stale `name` row through the CLI.
 | `PIXI.groupD8.inv.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
 | `PIXI.groupD8.isVertical` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
 | `PIXI.groupD8.isVertical.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
-| `PIXI.groupD8.matrixAppendRotationInv` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
-| `PIXI.groupD8.matrixAppendRotationInv.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
+| `PIXI.groupD8.matrixAppendRotationInv` | stub | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Empty body; ignores the matrix, rotation and translation arguments. |
+| `PIXI.groupD8.matrixAppendRotationInv.prototype.constructor` | stub | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | Empty body; ignores the matrix, rotation and translation arguments. |
 | `PIXI.groupD8.rotate180` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
 | `PIXI.groupD8.rotate180.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
 | `PIXI.groupD8.sub` | partial | `src/shims/pixi_shim.js` | `tests/smz/test_dump_surface.c` | D8 rotation group tables and helpers. Inventory test only. |
