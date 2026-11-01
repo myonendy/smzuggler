@@ -7,6 +7,7 @@ Modified 2026-10-31: record process.argv shape and throwing require.
 Modified 2026-11-01: record evaluator scratch-root isolation.
 Modified 2026-11-01: record evaluator game-process XDG isolation.
 Modified 2026-11-01: default host data directories when SMZUGGLER_NAME is set.
+Modified 2026-11-01: record Map 92 JS-time and gap definitions.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 
@@ -380,3 +381,18 @@ now builds and tests `tools/perf/map92_report.py` on synthetic inputs and writes
 recipe; it must not commit real-looking profile numbers. The owner does the dev-laptop
 profiling run after merge and commits `docs/perf/m0-map92-profile.md` (docs/FORGE.md).
 No gate is relaxed.
+
+## DEC-M0-T018b — JS update time and the 15% GameLoopStats gap
+`tools/perf/map92_report.py` needs one definition of "JS time" so the 15% flag
+is testable and the owner's report is comparable to Gate G1:
+
+- **JS update time** (displayed mean) is `timers_ms + jobs_ms + raf_ms` from
+  the frame-time CSV. Those are the GameLoopStats phases that run JS (timer
+  flush, microtasks, rAF). Events and swap stay out.
+- **GameLoopStats JS time** for the cross-check is the same sum, weighted by
+  the frame count on each `perf:` log line.
+- **Attributed JS time** is the self share of the QuickJS interpreter, GC,
+  shim JS and game JS buckets, times mean frame time.
+- **Gap** is `|attributed − GameLoopStats| / GameLoopStats`, as a percent.
+  More than 15% writes a FLAG in the report; the process still exits 0. p95
+  frame time uses nearest-rank.

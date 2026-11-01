@@ -1,9 +1,12 @@
 <!--
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
-How to record a CPU profile (tools/perf/attribute.py) and measure the shipped
-binary (tools/perf/binsize.py). Repository tooling, not part of the runtime.
-Never commit a recorded profile or a report taken from a game run.
+Modified 2026-11-01: document the Map 92 report tool and owner-run recipe.
+How to record a CPU profile (tools/perf/attribute.py), turn a Map 92 run into
+the M0 report (tools/perf/map92_report.py), and measure the shipped binary
+(tools/perf/binsize.py). Repository tooling, not part of the runtime.
+Never commit a recorded profile or a report taken from a game run except the
+owner's after-merge Map 92 report named in docs/FORGE.md.
 -->
 
 # Performance attribution
@@ -103,6 +106,43 @@ names out of the rules (AGENTS.md section 4).
 
 The tests in `tests/tools/test_attribute.py` pin the exact split of the
 hand-written profile in `tests/tools/fixtures/perf/`.
+
+## Map 92 report (QuickJS, M0)
+
+Spec §6.1 and the M0 exit ("profile report written") need one Map 92 run in
+QuickJS mode turned into `docs/perf/m0-map92-profile.md`: bucket table,
+mean/p95 frame time, JS update time, the §14.4 machine-state block, and a
+conclusions section for Gate G1 planning. Forge workers cannot open the game,
+so `tools/perf/map92_report.py` is tested on synthetic inputs. The owner runs
+the real capture after merge ([DEC-M0-T018-OWNER-RUN](DECISIONS.md#dec-m0-t018-owner-run--m0-t018-builds-the-report-tool-the-owner-runs-it)).
+
+Exact commands: [Map 92 profile recipe](perf/m0-map92-profile-recipe.md).
+
+```sh
+python3 tools/perf/map92_report.py \
+    --attribution run/perf-report-map92.json \
+    --stats run/runtime.log \
+    --frames run/frame-times.csv \
+    --machine-state run/machine.json \
+    -o docs/perf/m0-map92-profile.md
+python3 tools/privacy/scan.py --paths docs/perf/m0-map92-profile.md
+```
+
+Inputs:
+
+- **attribution**: JSON from `tools/perf/attribute.py`.
+- **stats**: runtime log containing GameLoopStats `perf:` lines.
+- **frames**: CSV with `total_ms`, `timers_ms`, `jobs_ms`, `raf_ms`.
+- **machine-state**: JSON with `power_source`, `profile`,
+  `battery_start_pct`, `battery_end_pct`, `epp`.
+
+JS update time is the mean of timers + jobs + rAF on the CSV. Attributed JS
+time is the QuickJS + GC + shim JS + game JS self share of mean frame time.
+A gap of more than 15% of GameLoopStats JS time is a `FLAG` in the report,
+not a nonzero exit (DEC-M0-T018b). The tool copies none of the raw input
+text, so a host name, user name or absolute path in the inputs cannot reach
+the Markdown. This card does not commit the generated report and posts
+nothing.
 
 ## Binary size
 
