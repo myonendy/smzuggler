@@ -41,6 +41,7 @@ QuickJS. Rules while it lives:
 ### Host side
 | Call | Purpose |
 | --- | --- |
+| `jsb_set_flags(flags)` | Engine flags such as `--expose-gc`, process-wide. Only before the first runtime (V8 freezes its flags); false afterwards. The QuickJS backend honours `--expose-gc` and ignores V8-only flags. |
 | `jsb_runtime_create(argv0, icu_data_path)` | One isolate and one context. The first call starts V8 for the process. NULL on failure, reason on stderr. |
 | `jsb_runtime_destroy(rt)` | Frees the runtime. |
 | `jsb_runtime_setup(rt, fn, user)` | Runs `fn(ctx, user)` in a fresh handle scope, for defining modules. |
@@ -56,6 +57,9 @@ QuickJS. Rules while it lives:
 | `jsb_arg_str(ctx, i, buf, cap, &len)` | Needs a String; UTF-8 into `buf`, NUL-terminated. RangeError if it needs more than `cap - 1` bytes. |
 | `jsb_arg_obj(ctx, i)` | Needs an Object (functions and arrays count, `null` does not). |
 | `jsb_arg_val(ctx, i)` | Any value; never throws. |
+| `jsb_arg_bytes(ctx, i, &data, &len)` | Needs an ArrayBuffer, TypedArray or DataView; gives its bytes in place (see "Buffers"). TypeError if detached. |
+| `jsb_new_external_buffer(ctx, data, len, free_fn, user)` | Wraps native memory as an ArrayBuffer without copying; JS then owns it. |
+| `jsb_adjust_external_memory(ctx, change)` | Reports native memory held by JS wrappers to the GC; returns the runtime's total. |
 | `jsb_ret_undefined/_bool/_i32/_f64/_str/_val` | Set the result; the last call wins; ignored after a throw. |
 | `jsb_throw_type/_range(ctx, fmt, ...)` | Throw TypeError/RangeError with a printf-style message. Only the first throw of a call counts. |
 | `jsb_new_object`, `jsb_set_fn`, `jsb_set_prop`, `jsb_get_prop` | Build and read objects. Set and get are ordinary `[[Set]]`/`[[Get]]`, so accessors run. |
@@ -89,6 +93,40 @@ jsb_define_module(ctx, "__native_math", init_math);
   use the `len` out-parameter, not `strlen`.
 * Text is UTF-8. Invalid UTF-8 given to jsb becomes U+FFFD.
 
+## Buffers (zero-copy)
+Pixel, audio and file data cross the seam without copies (DEC-M1-T005).
+
+* **`jsb_arg_bytes`** gives a pointer to the first byte of the view (its byte offset
+  applied) and its length in **bytes**, not elements. The memory belongs to JS. The
+  pointer is valid only until the native function returns, and only while it runs no JS
+  (JS could detach the buffer). Writes through it are visible to JS at once. `data` may be
+  NULL when `len` is 0. A detached ArrayBuffer, or a view on one, throws a TypeError.
+  SharedArrayBuffer is not accepted.
+* **`jsb_new_external_buffer`** returns an ArrayBuffer over native memory the caller
+  allocated. On success JS owns the memory, and `free_fn(data, len, user)` runs
+  **exactly once**: after the buffer is garbage-collected or detached, or at the latest
+  in `jsb_runtime_destroy`. Until then C may read and write the bytes on the main thread,
+  and JS sees the writes. NULL `data` or `free_fn` is a TypeError, an oversize `len` a
+  RangeError; on failure the caller still owns `data`.
+* **The free function may run on a V8 GC helper thread**, in the middle of a GC. It must
+  only release memory: no jsb or V8 calls, no locks the main thread may hold.
+* **External memory accounting.** V8 counts every ArrayBuffer backing store, including
+  external ones, toward its GC heuristics, so `jsb_new_external_buffer` reports nothing.
+  Native memory that JS keeps alive through some *other* object (a texture or decoder
+  behind a small wrapper) is reported with `jsb_adjust_external_memory`: add the size when
+  it is made and subtract the same amount when it is freed, on the main thread. On V8 this
+  calls `Isolate::AdjustAmountOfExternalAllocatedMemory`. A change that would make the
+  total negative is refused with -1 and a message on stderr. The QuickJS backend keeps
+  the same total but has no GC hook to give it to.
+
+```c
+static void free_pixels(void *data, size_t len, void *user) { (void)len; (void)user; free(data); }
+/* in a native function: JS owns `pixels` once this succeeds */
+jsb_val *buf = jsb_new_external_buffer(ctx, pixels, w * h * 4, free_pixels, NULL);
+if (!buf) { free(pixels); return; }
+jsb_ret_val(ctx, buf);
+```
+
 ## Handle rules (§15.8)
 These are the rules for code that touches V8 handles, in jsb and elsewhere (WebGL has
 its own GL-object rules in `webgl.md`).
@@ -120,9 +158,17 @@ How jsb applies them:
   creates many values should run in separate setup calls or JS calls.
 * The only Global jsb owns is the runtime's context; `jsb_runtime_destroy` resets it
   before disposing of the isolate.
-* jsb is main-thread only.
+* jsb is main-thread only. The one exception is a `jsb_free_fn`, which V8 may call from
+  a GC helper thread (see "Buffers").
 
 ## Tests
 `tests/smz/test_jsb_core.c` (ctest `jsb_core`, both engine modes) defines a module from C, calls
 every getter, return and throw from JS, and checks values, wrong-type and
 missing-argument TypeErrors, the string-size RangeError and module failure.
+
+`tests/smz/test_jsb_buffers.c` (ctest `jsb_buffers`, both engine modes) checks
+`jsb_arg_bytes` on ArrayBuffers, TypedArrays and DataViews with byte offsets, the
+TypeError for non-buffers and detached buffers, C writes seen by JS and JS writes seen by
+C through an external buffer, that its free function runs exactly once after `gc()`
+(from `jsb_set_flags("--expose-gc")`) and once more at destroy for a buffer still alive,
+and the `jsb_adjust_external_memory` totals.

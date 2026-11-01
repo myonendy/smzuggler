@@ -51,7 +51,27 @@ typedef bool (*jsb_module_init)(jsb_ctx *ctx, jsb_val *module);
  * is passed through untouched. Returns false to report failure. */
 typedef bool (*jsb_setup_fn)(jsb_ctx *ctx, void *user);
 
+/* Releases the native memory behind a jsb_new_external_buffer buffer.
+ *
+ * `data` and `len` are what was passed to jsb_new_external_buffer, `user`
+ * its pass-through pointer. Runs exactly once, when no JS object uses the
+ * memory any more. On V8 that may be on a GC helper thread and during
+ * garbage collection, so it must only release memory: no jsb or engine
+ * calls, no locks the main thread may hold. */
+typedef void (*jsb_free_fn)(void *data, size_t len, void *user);
+
 /* ---- Runtime (host side) ---------------------------------------------- */
+
+/* Passes command-line style engine flags (space-separated, for example
+ * "--expose-gc") for every runtime of the process.
+ *
+ * Why: tests force garbage collection through `gc()`, and V8 freezes its
+ * flags once it starts, so they must be set before it does. `flags` is
+ * borrowed. Returns false, after printing why, when an engine has already
+ * started (the flags would be ignored or crash V8). The transitional QuickJS
+ * backend honours "--expose-gc" and ignores flags that only tune V8.
+ * Main thread only. */
+bool jsb_set_flags(const char *flags);
 
 /* Creates an engine instance with one global context.
  *
@@ -117,6 +137,20 @@ jsb_val *jsb_arg_obj(jsb_ctx *ctx, int index);
 /* Returns an argument of any type, undefined when missing. Never throws. */
 jsb_val *jsb_arg_val(jsb_ctx *ctx, int index);
 
+/* Gives direct access to the bytes of an ArrayBuffer, TypedArray or
+ * DataView argument, without copying.
+ *
+ * Why: Outsider's bindings hand pixel, audio and file data to C through
+ * JS_GetArrayBuffer; copying those per call would cost frames. `*data`
+ * points at the first byte of the view (byte offset applied) and `*len` is
+ * the view's length in bytes, not elements; `*data` may be NULL when `*len`
+ * is 0. The memory stays owned by JS: it is valid only until the native call
+ * returns, and only while no JS code runs in between (JS could detach or
+ * resize the buffer). Writes through `*data` are visible to JS. Any other
+ * type is a TypeError; a detached buffer, or a view on one, is a TypeError
+ * too. Both return false. SharedArrayBuffer is not accepted. */
+bool jsb_arg_bytes(jsb_ctx *ctx, int index, uint8_t **data, size_t *len);
+
 /* ---- Returns ----------------------------------------------------------- */
 /* Each sets the native function's result; the last call wins. They do
  * nothing once the call has thrown, and outside a native call. */
@@ -175,6 +209,37 @@ jsb_val *jsb_get_prop(jsb_ctx *ctx, jsb_val *obj, const char *name);
  * init leaves no half-built module behind. Returns false if `init` failed
  * or the global could not be set. */
 bool jsb_define_module(jsb_ctx *ctx, const char *name, jsb_module_init init);
+
+/* ---- Native memory ----------------------------------------------------- */
+
+/* Returns a new ArrayBuffer whose bytes are `len` bytes of native memory
+ * at `data`, without copying.
+ *
+ * Why: decoded images, audio and file contents are produced in C; exposing
+ * them to JS in place avoids a copy of every asset. On success JS owns the
+ * memory: `free_fn(data, len, user)` runs exactly once, after the buffer is
+ * garbage-collected or detached, or at the latest in jsb_runtime_destroy
+ * (see jsb_free_fn for where it may run). Until then C may read and write
+ * the bytes on the main thread, and JS sees the writes. The engine already
+ * counts these bytes as external memory; do not also report them with
+ * jsb_adjust_external_memory. `data` and `free_fn` must not be NULL
+ * (TypeError) and `len` must fit an ArrayBuffer (RangeError); on any
+ * failure NULL is returned and the caller still owns `data`. */
+jsb_val *jsb_new_external_buffer(jsb_ctx *ctx, void *data, size_t len,
+                                 jsb_free_fn free_fn, void *user);
+
+/* Reports `change` bytes of native memory kept alive by JS objects, so the
+ * garbage collector runs as often as the real memory use needs.
+ *
+ * Why: a texture or decoder held by a small JS wrapper looks cheap to the
+ * GC; without this the native memory grows long before a collection (spec
+ * section 15.8). V8 receives it via AdjustAmountOfExternalAllocatedMemory.
+ * Add the size when the native resource is made and subtract the same
+ * amount when it is freed. Returns this runtime's reported total in bytes.
+ * A change that would make the total negative is a bug in the caller: it
+ * is ignored, reported on stderr, and -1 is returned. Main thread only;
+ * never call it from a jsb_free_fn. */
+int64_t jsb_adjust_external_memory(jsb_ctx *ctx, int64_t change);
 
 #ifdef __cplusplus
 }

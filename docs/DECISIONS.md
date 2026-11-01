@@ -447,3 +447,19 @@ C tests need a live engine, so `jsb.h` also has `jsb_runtime_create/_destroy/_se
 `js_engine.c` is expected to build on them when it moves to V8. `jsb_val`s are kept in a
 per-call deque inside the stack-allocated `jsb_ctx`, which dies before its HandleScope,
 so §15.8's "no Local in a struct" holds in spirit: nothing outlives the scope.
+
+## DEC-M1-T005 — external buffers are not double-counted, and free callbacks may run off-thread
+`jsb_new_external_buffer` does not call `AdjustAmountOfExternalAllocatedMemory`: V8
+already counts every ArrayBuffer backing store, external ones included, toward its GC
+heuristics, so reporting the bytes again would double them and run GC too often. The
+explicit call, `jsb_adjust_external_memory`, is for native memory held behind other JS
+objects (textures, decoders). jsb keeps its own per-runtime total and returns it, so both
+backends give the same results and a negative total (a caller bug) is refused with -1.
+The free function is V8's `BackingStore` deleter, which V8 may call on a GC helper thread;
+rather than queue it to the main thread, jsb documents that it must only release memory.
+`jsb_set_flags` was added because the tests need `gc()` (`--expose-gc`) and V8 takes flags
+only before it starts; the QuickJS backend honours `--expose-gc` with a global `gc()` that
+runs `JS_RunGC` and ignores V8-only flags. QuickJS has no C API for DataView, so its backend
+calls the intrinsic `DataView.prototype` getters, saved before any user script runs.
+QuickJS frees an external buffer's memory as soon as it is detached; V8 moves the memory to
+the new buffer on `transfer()`. Either way the free function runs exactly once.

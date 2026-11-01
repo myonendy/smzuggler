@@ -63,14 +63,35 @@ struct jsb_ctx {
 };
 
 /* The engine instance. `fns` maps a function's QuickJS magic number to the
- * jsb_fn it calls; it only grows and is freed with the runtime. */
+ * jsb_fn it calls; it only grows and is freed with the runtime. `dv_get`
+ * holds the intrinsic DataView.prototype getters for buffer, byteOffset and
+ * byteLength (QuickJS has no C API for DataView), taken before any user
+ * script runs so that script cannot replace them. `external_bytes` is the
+ * jsb_adjust_external_memory total. */
 struct jsb_runtime {
     JSRuntime *qrt;
     JSContext *js;
     jsb_fn *fns;
     int fn_count;
     int fn_cap;
+    JSValue dv_get[3];
+    int64_t external_bytes;
 };
+
+/* What jsb_new_external_buffer's free function needs; owned by QuickJS's
+ * ArrayBuffer through its opaque pointer and freed with the memory. */
+typedef struct ext_holder {
+    jsb_free_fn free_fn;
+    void *user;
+    size_t len;
+} ext_holder;
+
+/* Set by jsb_set_flags("--expose-gc"): runtimes get a global gc(). */
+static bool g_expose_gc;
+
+/* Set by the first jsb_runtime_create; flags are refused afterwards, as on
+ * V8, so both backends fail the same way. */
+static bool g_started;
 
 /* Prepares `ctx` for one call on `rt`. `argv` is borrowed from QuickJS for
  * the duration of the call (NULL with `argc` 0 outside a call). */
@@ -229,16 +250,76 @@ static int fn_index(jsb_runtime *rt, jsb_fn fn) {
     return rt->fn_count++;
 }
 
+/* Implements the global gc() that V8 installs for "--expose-gc": runs a
+ * full cycle collection. Takes no arguments and returns undefined. */
+static JSValue js_gc(JSContext *js, JSValueConst this_val, int argc,
+                     JSValueConst *argv) {
+    (void)this_val;
+    (void)argc;
+    (void)argv;
+    JS_RunGC(JS_GetRuntime(js));
+    return JS_UNDEFINED;
+}
+
+/* Stores the intrinsic DataView.prototype getters in `rt->dv_get` and, if
+ * "--expose-gc" was set, defines the global gc(). Runs before any user
+ * script. Returns false, with the error printed, if either fails. */
+static bool install_intrinsics(jsb_runtime *rt) {
+    static const char src[] =
+        "(function () { var p = DataView.prototype,"
+        " d = Object.getOwnPropertyDescriptor; return [d(p, 'buffer').get,"
+        " d(p, 'byteOffset').get, d(p, 'byteLength').get]; })()";
+    JSValue list = JS_Eval(rt->js, src, sizeof src - 1, "<jsb>",
+                           JS_EVAL_TYPE_GLOBAL);
+    if (JS_IsException(list)) {
+        clear_exception(rt->js);
+        fprintf(stderr, "jsb: cannot read the DataView getters\n");
+        return false;
+    }
+    for (uint32_t i = 0; i < 3; i++)
+        rt->dv_get[i] = JS_GetPropertyUint32(rt->js, list, i);
+    JS_FreeValue(rt->js, list);
+    if (!g_expose_gc) return true;
+    JSValue global = JS_GetGlobalObject(rt->js);
+    int rc = JS_SetPropertyStr(rt->js, global, "gc",
+                               JS_NewCFunction(rt->js, js_gc, "gc", 0));
+    JS_FreeValue(rt->js, global);
+    if (rc < 0) fprintf(stderr, "jsb: cannot define gc()\n");
+    return rc >= 0;
+}
+
+/* See jsb.h: jsb_set_flags. Only "--expose-gc" (or "--expose_gc", which V8
+ * also accepts) means anything here; other flags tune V8 and are ignored. */
+bool jsb_set_flags(const char *flags) {
+    if (g_started) {
+        fprintf(stderr, "jsb: engine flags must be set before the first "
+                        "runtime is created\n");
+        return false;
+    }
+    const char *p = flags;
+    while (*p) {
+        while (*p == ' ') p++;
+        size_t n = strcspn(p, " ");
+        if (n == 11 && (strncmp(p, "--expose-gc", n) == 0 ||
+                        strncmp(p, "--expose_gc", n) == 0))
+            g_expose_gc = true;
+        p += n;
+    }
+    return true;
+}
+
 /* See jsb.h. `argv0` and `icu_data_path` are unused: QuickJS needs no
  * process-wide setup and has no ICU. */
 jsb_runtime *jsb_runtime_create(const char *argv0, const char *icu_data_path) {
     (void)argv0;
     (void)icu_data_path;
+    g_started = true;
     jsb_runtime *rt = calloc(1, sizeof *rt);
     if (!rt) {
         fprintf(stderr, "jsb: out of memory for a runtime\n");
         return NULL;
     }
+    for (int i = 0; i < 3; i++) rt->dv_get[i] = JS_UNDEFINED;
     rt->qrt = JS_NewRuntime();
     rt->js = rt->qrt ? JS_NewContext(rt->qrt) : NULL;
     if (!rt->js) {
@@ -247,12 +328,18 @@ jsb_runtime *jsb_runtime_create(const char *argv0, const char *icu_data_path) {
         return NULL;
     }
     JS_SetContextOpaque(rt->js, rt);
+    if (!install_intrinsics(rt)) {
+        jsb_runtime_destroy(rt);
+        return NULL;
+    }
     return rt;
 }
 
-/* See jsb.h. Frees the context before the runtime, as QuickJS requires. */
+/* See jsb.h. Frees the context before the runtime, as QuickJS requires;
+ * that runs the free function of every live external buffer. */
 void jsb_runtime_destroy(jsb_runtime *rt) {
     if (!rt) return;
+    for (int i = 0; i < 3 && rt->js; i++) JS_FreeValue(rt->js, rt->dv_get[i]);
     if (rt->js) JS_FreeContext(rt->js);
     if (rt->qrt) JS_FreeRuntime(rt->qrt);
     free(rt->fns);
@@ -373,6 +460,98 @@ jsb_val *jsb_arg_val(jsb_ctx *ctx, int index) {
     return wrap(ctx, JS_DupValue(ctx->js, arg(ctx, index)));
 }
 
+/* Calls DataView getter `which` (0 buffer, 1 byteOffset, 2 byteLength) on
+ * `v`. Returns the result (owned by the caller), or JS_EXCEPTION with the
+ * error cleared when `v` is not a DataView or, for 1 and 2, is detached. */
+static JSValue dv_call(jsb_ctx *ctx, int which, JSValueConst v) {
+    JSValue r = JS_Call(ctx->js, ctx->rt->dv_get[which], v, 0, NULL);
+    if (JS_IsException(r)) clear_exception(ctx->js);
+    return r;
+}
+
+/* Reads a DataView's buffer (into `*buffer`, owned by the caller), byte
+ * offset and byte length. Returns 1 on success, 0 when `v` is not a
+ * DataView and -1 when its buffer is detached. */
+static int dataview_parts(jsb_ctx *ctx, JSValueConst v, JSValue *buffer,
+                          size_t *offset, size_t *length) {
+    JSValue buf = dv_call(ctx, 0, v);
+    if (JS_IsException(buf)) return 0;
+    JSValue off = dv_call(ctx, 1, v);
+    JSValue len = dv_call(ctx, 2, v);
+    int64_t o = 0, l = 0;
+    bool ok = !JS_IsException(off) && !JS_IsException(len) &&
+              JS_ToInt64(ctx->js, &o, off) == 0 &&
+              JS_ToInt64(ctx->js, &l, len) == 0;
+    JS_FreeValue(ctx->js, off);
+    JS_FreeValue(ctx->js, len);
+    if (!ok) {
+        JS_FreeValue(ctx->js, buf);
+        return -1;
+    }
+    *buffer = buf;
+    *offset = (size_t)o;
+    *length = (size_t)l;
+    return 1;
+}
+
+/* Finds the ArrayBuffer behind `v` (into `*buffer`, owned by the caller)
+ * and the view's byte range; `*whole` is set for a bare ArrayBuffer, whose
+ * length is read later. Returns 1 on success, 0 when `v` is not an
+ * ArrayBuffer, TypedArray or DataView, and -1 when it is detached. */
+static int buffer_parts(jsb_ctx *ctx, JSValueConst v, JSValue *buffer,
+                        size_t *offset, size_t *length, bool *whole) {
+    *offset = 0;
+    *length = 0;
+    *whole = false;
+    if (!JS_IsObject(v)) return 0;
+    if (JS_IsArrayBuffer(v)) {
+        *buffer = JS_DupValue(ctx->js, v);
+        *whole = true;
+        return 1;
+    }
+    if (JS_GetTypedArrayType(v) >= 0) {
+        size_t bytes_per_element = 0;
+        *buffer = JS_GetTypedArrayBuffer(ctx->js, v, offset, length,
+                                         &bytes_per_element);
+        if (!JS_IsException(*buffer)) return 1;
+        clear_exception(ctx->js); /* detached or out of bounds */
+        return -1;
+    }
+    return dataview_parts(ctx, v, buffer, offset, length);
+}
+
+/* See jsb.h: jsb_arg_bytes. QuickJS reports a detached buffer by failing
+ * JS_GetArrayBuffer; a zero-length one may have no data pointer. */
+bool jsb_arg_bytes(jsb_ctx *ctx, int index, uint8_t **data, size_t *len) {
+    JSValue buffer;
+    size_t offset, length, size = 0;
+    bool whole;
+    int kind = buffer_parts(ctx, arg(ctx, index), &buffer, &offset, &length,
+                            &whole);
+    uint8_t *base = NULL;
+    if (kind > 0) {
+        base = JS_GetArrayBuffer(ctx->js, &size, buffer);
+        JS_FreeValue(ctx->js, buffer);
+        if (!base && JS_HasException(ctx->js)) {
+            clear_exception(ctx->js);
+            kind = -1;
+        }
+    }
+    if (kind == 0) {
+        throw_arg_type(ctx, index, "an ArrayBuffer, TypedArray or DataView");
+        return false;
+    }
+    if (kind < 0 || (!whole && offset + length > size)) {
+        jsb_throw_type(ctx, "argument %d is a detached ArrayBuffer or a view "
+                            "on one", index + 1);
+        return false;
+    }
+    if (whole) length = size;
+    *data = base ? base + offset : NULL;
+    *len = length;
+    return true;
+}
+
 /* See jsb.h: jsb_ret_undefined. */
 void jsb_ret_undefined(jsb_ctx *ctx) { set_ret(ctx, JS_UNDEFINED); }
 
@@ -488,4 +667,59 @@ bool jsb_define_module(jsb_ctx *ctx, const char *name, jsb_module_init init) {
                                JS_DupValue(ctx->js, module->value));
     JS_FreeValue(ctx->js, global);
     return rc >= 0;
+}
+
+/* Frees an external buffer's memory through its jsb_free_fn; QuickJS calls
+ * it on the main thread when the ArrayBuffer is freed or detached. */
+static void ext_release(JSRuntime *qrt, void *opaque, void *ptr) {
+    (void)qrt;
+    ext_holder *h = opaque;
+    h->free_fn(ptr, h->len, h->user);
+    free(h);
+}
+
+/* See jsb.h: jsb_new_external_buffer. The bytes stay in the caller's
+ * allocation and are released through `free_fn`; QuickJS has no
+ * external-memory accounting, so nothing is reported. */
+jsb_val *jsb_new_external_buffer(jsb_ctx *ctx, void *data, size_t len,
+                                 jsb_free_fn free_fn, void *user) {
+    if (!data || !free_fn) {
+        jsb_throw_type(ctx, "jsb_new_external_buffer: NULL data or free "
+                            "function");
+        return NULL;
+    }
+    if (len > INT32_MAX) {
+        jsb_throw_range(ctx, "jsb_new_external_buffer: %zu bytes is too "
+                             "large for an ArrayBuffer", len);
+        return NULL;
+    }
+    ext_holder *h = malloc(sizeof *h);
+    if (!h) {
+        fprintf(stderr, "jsb: out of memory for an external buffer\n");
+        abort();
+    }
+    h->free_fn = free_fn;
+    h->user = user;
+    h->len = len;
+    JSValue ab = JS_NewArrayBuffer(ctx->js, data, len, ext_release, h, false);
+    if (JS_IsException(ab)) { /* error pending; the caller keeps `data` */
+        free(h);
+        ctx->threw = true;
+        return NULL;
+    }
+    return wrap(ctx, ab);
+}
+
+/* See jsb.h: jsb_adjust_external_memory. QuickJS has no GC pressure hook,
+ * so only the total is kept, to give the V8 backend's results. */
+int64_t jsb_adjust_external_memory(jsb_ctx *ctx, int64_t change) {
+    jsb_runtime *rt = ctx->rt;
+    if (change < -rt->external_bytes) {
+        fprintf(stderr, "jsb: external memory change %lld would make the "
+                        "total of %lld bytes negative\n",
+                (long long)change, (long long)rt->external_bytes);
+        return -1;
+    }
+    rt->external_bytes += change;
+    return rt->external_bytes;
 }

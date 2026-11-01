@@ -35,6 +35,11 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Add zero-copy buffers to the `jsb` seam in both backends: `jsb_arg_bytes`
+  (bytes of an ArrayBuffer, TypedArray or DataView argument in place),
+  `jsb_new_external_buffer` (native memory as an ArrayBuffer, freed once by a
+  callback), `jsb_adjust_external_memory` and `jsb_set_flags`, with the
+  `jsb_buffers` test (`docs/js-binding.md`, "Buffers"; DEC-M1-T005).
 - Add the transitional QuickJS backend of the `jsb` seam,
   `src/jsb/jsb_quickjs.c`, built as `smz_jsb` in quickjs mode so `jsb_core`
   runs in both engine modes, plus `jsb_quickjs` tests for its handle chunks

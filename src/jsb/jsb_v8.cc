@@ -14,7 +14,10 @@
 // jsb_val pointers stay stable; the ctx is destroyed before its scope ends,
 // so no Local outlives its HandleScope. Only jsb_runtime holds a
 // v8::Global (the context), and jsb_runtime_destroy resets it. Main thread
-// only.
+// only, except ext_release, which V8 may call from a GC helper thread.
+// Backing stores: ordinary ArrayBuffers use V8's default allocator (owned by
+// jsb_runtime); external buffers wrap the caller's memory and give it back
+// through its jsb_free_fn.
 
 #include "jsb.h"
 
@@ -22,10 +25,12 @@
 #include <v8.h>
 
 #include <cstdarg>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <deque>
 #include <memory>
+#include <utility>
 
 // A JS value handle; lives in its jsb_ctx's deque.
 struct jsb_val {
@@ -42,13 +47,33 @@ struct jsb_ctx {
     bool threw;
 };
 
+// The engine instance. The isolate's data slot 0 points back at it, so a
+// jsb_ctx can reach it. `external_bytes` is the jsb_adjust_external_memory
+// total, kept here because V8's own figure also counts other embedders.
 struct jsb_runtime {
     v8::Isolate *isolate;
     v8::ArrayBuffer::Allocator *allocator;
     v8::Global<v8::Context> context;
+    int64_t external_bytes;
 };
 
 namespace {
+
+// What an external buffer's backing-store deleter needs. Owned by the
+// backing store and deleted by ext_release.
+struct ExtHolder {
+    jsb_free_fn free_fn;
+    void *user;
+};
+
+// The BackingStore deleter of jsb_new_external_buffer: hands the memory
+// back through the jsb_free_fn, once. V8 may call it on any thread, during
+// GC or isolate disposal, so it touches nothing but `deleter_data`.
+void ext_release(void *data, size_t length, void *deleter_data) {
+    ExtHolder *holder = static_cast<ExtHolder *>(deleter_data);
+    holder->free_fn(data, length, holder->user);
+    delete holder;
+}
 
 // The process-wide V8 platform. V8 cannot be initialised twice, so it is
 // created on the first jsb_runtime_create and kept until exit.
@@ -177,6 +202,18 @@ static bool make_context(jsb_runtime *rt) {
     return true;
 }
 
+// See jsb.h: jsb_set_flags. V8 freezes its flags in V8::Initialize, so
+// they are refused once the platform exists.
+bool jsb_set_flags(const char *flags) {
+    if (g_platform) {
+        std::fprintf(stderr, "jsb: engine flags must be set before the first "
+                             "runtime is created\n");
+        return false;
+    }
+    v8::V8::SetFlagsFromString(flags);
+    return true;
+}
+
 // See jsb.h. ArrayBuffer memory comes from V8's default allocator, which
 // `rt` owns and deletes after the isolate.
 jsb_runtime *jsb_runtime_create(const char *argv0, const char *icu_data_path) {
@@ -186,6 +223,7 @@ jsb_runtime *jsb_runtime_create(const char *argv0, const char *icu_data_path) {
     v8::Isolate::CreateParams params;
     params.array_buffer_allocator = rt->allocator;
     rt->isolate = v8::Isolate::New(params);
+    rt->isolate->SetData(0, rt);
     if (!make_context(rt)) {
         std::fprintf(stderr, "jsb: cannot create a V8 context\n");
         jsb_runtime_destroy(rt);
@@ -194,7 +232,9 @@ jsb_runtime *jsb_runtime_create(const char *argv0, const char *icu_data_path) {
     return rt;
 }
 
-// See jsb.h. Resets the context Global before disposing of the isolate.
+// See jsb.h. Resets the context Global before disposing of the isolate;
+// disposal releases every backing store, so the free functions of live
+// external buffers run here.
 void jsb_runtime_destroy(jsb_runtime *rt) {
     if (!rt) return;
     rt->context.Reset();
@@ -309,6 +349,37 @@ jsb_val *jsb_arg_obj(jsb_ctx *ctx, int index) {
 // See jsb.h: jsb_arg_val.
 jsb_val *jsb_arg_val(jsb_ctx *ctx, int index) { return wrap(ctx, arg(ctx, index)); }
 
+// See jsb.h: jsb_arg_bytes. A view's Buffer() may move an on-heap typed
+// array's elements off the heap once; after that the pointer is stable
+// until the buffer is detached or collected, which cannot happen while the
+// call holds the argument and runs no JS.
+bool jsb_arg_bytes(jsb_ctx *ctx, int index, uint8_t **data, size_t *len) {
+    v8::Local<v8::Value> v = arg(ctx, index);
+    v8::Local<v8::ArrayBuffer> buffer;
+    size_t offset = 0, length = 0;
+    if (v->IsArrayBuffer()) {
+        buffer = v.As<v8::ArrayBuffer>();
+        length = buffer->ByteLength();
+    } else if (v->IsArrayBufferView()) {
+        v8::Local<v8::ArrayBufferView> view = v.As<v8::ArrayBufferView>();
+        buffer = view->Buffer();
+        offset = view->ByteOffset();
+        length = view->ByteLength();
+    } else {
+        throw_arg_type(ctx, index, "an ArrayBuffer, TypedArray or DataView");
+        return false;
+    }
+    if (buffer->WasDetached()) {
+        jsb_throw_type(ctx, "argument %d is a detached ArrayBuffer or a view "
+                            "on one", index + 1);
+        return false;
+    }
+    uint8_t *base = static_cast<uint8_t *>(buffer->Data());
+    *data = base ? base + offset : nullptr;
+    *len = length;
+    return true;
+}
+
 // See jsb.h: jsb_ret_undefined.
 void jsb_ret_undefined(jsb_ctx *ctx) {
     if (can_return(ctx)) ctx->info->GetReturnValue().SetUndefined();
@@ -418,6 +489,42 @@ bool jsb_define_module(jsb_ctx *ctx, const char *name, jsb_module_init init) {
     v8::Local<v8::Object> global = ctx->context->Global();
     return global->Set(ctx->context, utf8(ctx->isolate, name), module->value)
         .FromMaybe(false);
+}
+
+// See jsb.h: jsb_new_external_buffer. The backing store wraps the caller's
+// allocation (not V8's allocator) and ext_release returns it. V8 counts a
+// backing store's bytes as external memory itself, so nothing is adjusted.
+jsb_val *jsb_new_external_buffer(jsb_ctx *ctx, void *data, size_t len,
+                                 jsb_free_fn free_fn, void *user) {
+    if (!data || !free_fn) {
+        jsb_throw_type(ctx, "jsb_new_external_buffer: NULL data or free "
+                            "function");
+        return nullptr;
+    }
+    if (len > v8::ArrayBuffer::kMaxByteLength) {
+        jsb_throw_range(ctx, "jsb_new_external_buffer: %zu bytes is too "
+                             "large for an ArrayBuffer", len);
+        return nullptr;
+    }
+    ExtHolder *holder = new ExtHolder{free_fn, user};
+    std::shared_ptr<v8::BackingStore> store =
+        v8::ArrayBuffer::NewBackingStore(data, len, ext_release, holder);
+    return wrap(ctx, v8::ArrayBuffer::New(ctx->isolate, std::move(store)));
+}
+
+// See jsb.h: jsb_adjust_external_memory.
+int64_t jsb_adjust_external_memory(jsb_ctx *ctx, int64_t change) {
+    jsb_runtime *rt = static_cast<jsb_runtime *>(ctx->isolate->GetData(0));
+    if (change < -rt->external_bytes) {
+        std::fprintf(stderr, "jsb: external memory change %lld would make "
+                             "the total of %lld bytes negative\n",
+                     static_cast<long long>(change),
+                     static_cast<long long>(rt->external_bytes));
+        return -1;
+    }
+    rt->external_bytes += change;
+    ctx->isolate->AdjustAmountOfExternalAllocatedMemory(change);
+    return rt->external_bytes;
 }
 
 }  // extern "C"
