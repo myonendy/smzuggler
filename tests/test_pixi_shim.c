@@ -252,6 +252,10 @@ TEST(test_pixi_namespace_exists)
     ASSERT(js_eval_bool("typeof PIXI.Transform === 'function';"));
     ASSERT(js_eval_bool("typeof PIXI.Point === 'function';"));
     ASSERT(js_eval_bool("typeof PIXI.ObservablePoint === 'function';"));
+    ASSERT(js_eval_bool("typeof PIXI.SHAPES === 'object';"));
+    ASSERT(js_eval_bool("typeof PIXI.Circle === 'function';"));
+    ASSERT(js_eval_bool("typeof PIXI.Ellipse === 'function';"));
+    ASSERT(js_eval_bool("typeof PIXI.Polygon === 'function';"));
     js_teardown();
 }
 
@@ -353,6 +357,167 @@ TEST(test_pixi_rectangle)
     ASSERT(js_eval_bool(
         "PIXI.Rectangle.EMPTY.width === 0 && PIXI.Rectangle.EMPTY.height === 0;"
     ));
+    js_teardown();
+}
+
+TEST(test_pixi_circle)
+{
+    js_setup_with_shims();
+    /* SHAPES enum from packages/constants/src/index.ts. */
+    ASSERT(js_eval_bool(
+        "PIXI.SHAPES.POLY === 0 && PIXI.SHAPES.RECT === 1 &&"
+        "PIXI.SHAPES.CIRC === 2 && PIXI.SHAPES.ELIP === 3 &&"
+        "PIXI.SHAPES.RREC === 4;"));
+
+    /* Constructor fields and type. */
+    ASSERT(js_eval_bool(
+        "var c = new PIXI.Circle(10, 20, 5);"
+        "c.x === 10 && c.y === 20 && c.radius === 5 &&"
+        "c.type === PIXI.SHAPES.CIRC;"));
+    ASSERT(js_eval_bool(
+        "var c = new PIXI.Circle();"
+        "c.x === 0 && c.y === 0 && c.radius === 0 &&"
+        "c.type === PIXI.SHAPES.CIRC;"));
+
+    /* Clone is independent. */
+    ASSERT(js_eval_bool(
+        "var c1 = new PIXI.Circle(1, 2, 3);"
+        "var c2 = c1.clone();"
+        "c1.x = 9; c1.radius = 0;"
+        "c2 !== c1 && c2.x === 1 && c2.y === 2 && c2.radius === 3 &&"
+        "c2.type === PIXI.SHAPES.CIRC;"));
+
+    /* contains(): circumference is inside; radius <= 0 contains nothing. */
+    ASSERT(js_eval_bool(
+        "var c = new PIXI.Circle(0, 0, 10);"
+        "c.contains(0, 0) === true &&"
+        "c.contains(6, 6) === true &&"
+        "c.contains(10, 0) === true &&"
+        "c.contains(0, -10) === true &&"
+        "c.contains(11, 0) === false &&"
+        "c.contains(0, 11) === false;"));
+    ASSERT(js_eval_bool(
+        "var c = new PIXI.Circle(0, 0, 0);"
+        "c.contains(0, 0) === false;"));
+
+    /* getBounds(): axis-aligned square of diameter 2*radius. */
+    ASSERT(js_eval_bool(
+        "var b = new PIXI.Circle(10, 20, 5).getBounds();"
+        "b.x === 5 && b.y === 15 && b.width === 10 && b.height === 10 &&"
+        "b instanceof PIXI.Rectangle;"));
+
+    /* CGMZ_Core subclasses Circle with .call + Object.create. */
+    ASSERT(js_eval_bool(
+        "function Sub(x, y, r) { PIXI.Circle.call(this, x, y, r); }"
+        "Sub.prototype = Object.create(PIXI.Circle.prototype);"
+        "Sub.prototype.constructor = Sub;"
+        "var s = new Sub(1, 2, 3);"
+        "s instanceof PIXI.Circle && s.contains(1, 2) === true &&"
+        "s.type === PIXI.SHAPES.CIRC && s.radius === 3;"));
+    js_teardown();
+}
+
+TEST(test_pixi_ellipse)
+{
+    js_setup_with_shims();
+    /* Constructor stores half-width / half-height as width / height. */
+    ASSERT(js_eval_bool(
+        "var e = new PIXI.Ellipse(10, 20, 8, 4);"
+        "e.x === 10 && e.y === 20 && e.width === 8 && e.height === 4 &&"
+        "e.type === PIXI.SHAPES.ELIP;"));
+    ASSERT(js_eval_bool(
+        "var e = new PIXI.Ellipse();"
+        "e.x === 0 && e.y === 0 && e.width === 0 && e.height === 0;"));
+
+    /* Clone is independent. */
+    ASSERT(js_eval_bool(
+        "var e1 = new PIXI.Ellipse(1, 2, 3, 4);"
+        "var e2 = e1.clone();"
+        "e1.x = 9; e1.width = 0;"
+        "e2 !== e1 && e2.x === 1 && e2.y === 2 &&"
+        "e2.width === 3 && e2.height === 4 && e2.type === PIXI.SHAPES.ELIP;"));
+
+    /* contains(): boundary is inside; AABB corner is outside. */
+    ASSERT(js_eval_bool(
+        "var e = new PIXI.Ellipse(0, 0, 10, 5);"
+        "e.contains(0, 0) === true &&"
+        "e.contains(10, 0) === true &&"
+        "e.contains(0, 5) === true &&"
+        "e.contains(-10, 0) === true &&"
+        "e.contains(0, -5) === true &&"
+        "e.contains(11, 0) === false &&"
+        "e.contains(0, 6) === false &&"
+        "e.contains(10, 5) === false;"));
+    ASSERT(js_eval_bool(
+        "var e = new PIXI.Ellipse(0, 0, 0, 5);"
+        "e.contains(0, 0) === false;"));
+
+    /* getBounds(): PIXI 5.3.12 uses the half sizes as width/height. */
+    ASSERT(js_eval_bool(
+        "var b = new PIXI.Ellipse(10, 20, 8, 4).getBounds();"
+        "b.x === 2 && b.y === 16 && b.width === 8 && b.height === 4 &&"
+        "b instanceof PIXI.Rectangle;"));
+    js_teardown();
+}
+
+TEST(test_pixi_polygon)
+{
+    js_setup_with_shims();
+    /* Flat number array is stored, not copied. */
+    ASSERT(js_eval_bool(
+        "var a = [0, 0, 10, 0, 10, 10, 0, 10];"
+        "var p = new PIXI.Polygon(a);"
+        "p.points === a && p.type === PIXI.SHAPES.POLY &&"
+        "p.closeStroke === true;"));
+
+    /* Point objects, including PIXI.Point, flatten to numbers. */
+    ASSERT(js_eval_bool(
+        "var p = new PIXI.Polygon(["
+        "  new PIXI.Point(0, 0), {x: 10, y: 0},"
+        "  new PIXI.Point(10, 10), {x: 0, y: 10}"
+        "]);"
+        "p.points.length === 8 && p.points[0] === 0 && p.points[1] === 0 &&"
+        "p.points[2] === 10 && p.points[3] === 0 &&"
+        "p.points[4] === 10 && p.points[5] === 10 &&"
+        "p.points[6] === 0 && p.points[7] === 10;"));
+
+    /* Varargs of numbers. */
+    ASSERT(js_eval_bool(
+        "var p = new PIXI.Polygon(0, 0, 10, 0, 10, 10, 0, 10);"
+        "p.points.length === 8 && p.points[2] === 10 && p.points[3] === 0;"));
+
+    /* Varargs of point objects. */
+    ASSERT(js_eval_bool(
+        "var p = new PIXI.Polygon("
+        "  {x: 0, y: 0}, {x: 10, y: 0}, {x: 10, y: 10}, {x: 0, y: 10}"
+        ");"
+        "p.points.length === 8 && p.points[6] === 0 && p.points[7] === 10;"));
+
+    /* Clone copies closeStroke and a distinct points array. */
+    ASSERT(js_eval_bool(
+        "var p1 = new PIXI.Polygon([0, 0, 10, 0, 10, 10, 0, 10]);"
+        "p1.closeStroke = false;"
+        "var p2 = p1.clone();"
+        "p1.points[0] = 99;"
+        "p2 !== p1 && p2.points !== p1.points && p2.points[0] === 0 &&"
+        "p2.closeStroke === false && p2.type === PIXI.SHAPES.POLY;"));
+
+    /* contains(): even-odd; left/top edges inside, right/bottom outside. */
+    ASSERT(js_eval_bool(
+        "var p = new PIXI.Polygon([0, 0, 10, 0, 10, 10, 0, 10]);"
+        "p.contains(5, 5) === true &&"
+        "p.contains(15, 5) === false &&"
+        "p.contains(-1, 5) === false &&"
+        "p.contains(0, 5) === true &&"
+        "p.contains(10, 5) === false &&"
+        "p.contains(5, 0) === true &&"
+        "p.contains(5, 10) === false;"));
+
+    /* getBounds(): axis-aligned box of the vertices. */
+    ASSERT(js_eval_bool(
+        "var b = new PIXI.Polygon([2, 3, 12, 3, 12, 9, 2, 9]).getBounds();"
+        "b.x === 2 && b.y === 3 && b.width === 10 && b.height === 6 &&"
+        "b instanceof PIXI.Rectangle;"));
     js_teardown();
 }
 
@@ -1799,6 +1964,9 @@ int main(void)
     RUN(test_pixi_settings);
     RUN(test_pixi_utils);
     RUN(test_pixi_rectangle);
+    RUN(test_pixi_circle);
+    RUN(test_pixi_ellipse);
+    RUN(test_pixi_polygon);
     RUN(test_pixi_base_texture);
     RUN(test_pixi_texture);
     RUN(test_pixi_render_texture);

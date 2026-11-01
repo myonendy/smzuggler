@@ -384,9 +384,9 @@
 
     /* packages/math/src/shapes/Circle.ts */
     function Circle(x, y, radius) {
-        this.x = x || 0;
-        this.y = y || 0;
-        this.radius = radius || 0;
+        this.x = x === undefined ? 0 : x;
+        this.y = y === undefined ? 0 : y;
+        this.radius = radius === undefined ? 0 : radius;
         this.type = PIXI.SHAPES.CIRC;
     }
 
@@ -417,10 +417,10 @@
     /* packages/math/src/shapes/Ellipse.ts
        width and height hold the half-width and half-height. */
     function Ellipse(x, y, halfWidth, halfHeight) {
-        this.x = x || 0;
-        this.y = y || 0;
-        this.width = halfWidth || 0;
-        this.height = halfHeight || 0;
+        this.x = x === undefined ? 0 : x;
+        this.y = y === undefined ? 0 : y;
+        this.width = halfWidth === undefined ? 0 : halfWidth;
+        this.height = halfHeight === undefined ? 0 : halfHeight;
         this.type = PIXI.SHAPES.ELIP;
     }
 
@@ -488,6 +488,25 @@
             if (intersect) inside = !inside;
         }
         return inside;
+    };
+
+    /* Polygon.ts in 5.3.12 has no getBounds; axis-aligned bounds of the
+       points so the three shapes share clone/contains/getBounds/type. */
+    Polygon.prototype.getBounds = function() {
+        var minX = Infinity;
+        var maxX = -Infinity;
+        var minY = Infinity;
+        var maxY = -Infinity;
+        var pts = this.points;
+        for (var i = 0, n = pts.length; i < n; i += 2) {
+            var px = pts[i];
+            var py = pts[i + 1];
+            if (px < minX) minX = px;
+            if (px > maxX) maxX = px;
+            if (py < minY) minY = py;
+            if (py > maxY) maxY = py;
+        }
+        return new Rectangle(minX, minY, maxX - minX, maxY - minY);
     };
 
     PIXI.Polygon = Polygon;
