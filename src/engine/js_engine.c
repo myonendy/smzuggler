@@ -13,6 +13,13 @@
 #include <sys/stat.h>
 #include <time.h>
 
+#ifdef _WIN32
+#include <direct.h>
+#define jsc_mkdir(p) _mkdir(p)
+#else
+#define jsc_mkdir(p) mkdir(p, 0755)
+#endif
+
 /* 256 MB memory limit for game runtime. */
 #define JS_MEMORY_LIMIT (256 * 1024 * 1024)
 /* JS stack limit. Must stay well below the real thread stack so QuickJS
@@ -39,6 +46,11 @@ struct JSEngine {
        than watchdog_ms since the last arm. */
     unsigned watchdog_ms;
     uint64_t watchdog_armed_ms;
+
+    /* Bytecode cache location (NULL = next to each script). With a cache dir
+       the game folder can stay read-only: see js_engine_set_cache_dir(). */
+    char *cache_dir;
+    char *cache_game_root;
 };
 
 static uint64_t monotonic_ms(void)
@@ -346,6 +358,8 @@ void js_engine_shutdown(JSEngine *engine)
     }
     free(engine->rej_promises);
     free(engine->rej_reasons);
+    free(engine->cache_dir);
+    free(engine->cache_game_root);
     if (engine->ctx) JS_FreeContext(engine->ctx);
     if (engine->rt)  JS_FreeRuntime(engine->rt);
     free(engine);
@@ -434,17 +448,131 @@ bool js_engine_eval_file(JSEngine *engine, const char *filepath)
     return ok;
 }
 
-/* Bytecode caching: <file>.js -> <file>.jsc, prefixed with the source mtime. */
+/* Bytecode caching: <file>.js -> <file>.jsc, prefixed with the source mtime.
+   By default the .jsc sits next to the script; with a cache dir set it goes to
+   <cache_dir>/<path relative to the game root>c, so the game is never written. */
 
-/* Append 'c' to the JS file path (.js -> .jsc). */
-static char *make_cache_path(const char *filepath)
+static char *dup_trimmed(const char *s)
+{
+    size_t len = strlen(s);
+    while (len > 1 && (s[len - 1] == '/' || s[len - 1] == '\\')) len--;
+    char *out = malloc(len + 1);
+    if (!out) return NULL;
+    memcpy(out, s, len);
+    out[len] = '\0';
+    return out;
+}
+
+bool js_engine_set_cache_dir(JSEngine *engine, const char *cache_dir, const char *game_root)
+{
+    if (!engine) return false;
+    free(engine->cache_dir);
+    free(engine->cache_game_root);
+    engine->cache_dir = NULL;
+    engine->cache_game_root = NULL;
+    if (!cache_dir || !cache_dir[0]) return true;
+
+    engine->cache_dir = dup_trimmed(cache_dir);
+    if (game_root && game_root[0]) engine->cache_game_root = dup_trimmed(game_root);
+    if (!engine->cache_dir || (game_root && game_root[0] && !engine->cache_game_root)) {
+        js_engine_set_cache_dir(engine, NULL, NULL);
+        return false;
+    }
+    return true;
+}
+
+bool js_engine_default_cache_dir(const char *app, char *out, size_t out_size)
+{
+    if (!app || !app[0] || !out || out_size == 0) return false;
+    out[0] = '\0';
+#if defined(__linux__) && !defined(__ANDROID__)
+    const char *base = getenv("XDG_CACHE_HOME");
+    const char *suffix = "";
+    if (!base || !base[0]) {
+        base = getenv("HOME");
+        suffix = "/.cache";
+        if (!base || !base[0]) return false;
+    }
+    size_t len = strlen(base);
+    while (len > 1 && base[len - 1] == '/') len--;
+    int n = snprintf(out, out_size, "%.*s%s/%s/jsc", (int)len, base, suffix, app);
+    if (n <= 0 || (size_t)n >= out_size) { out[0] = '\0'; return false; }
+    return true;
+#else
+    return false;
+#endif
+}
+
+static bool is_sep(char c) { return c == '/' || c == '\\'; }
+
+/* Script path relative to the game root, or the whole path when it is
+   outside it. Drive colons are dropped and ".." segments neutralised so the
+   key cannot escape the cache dir. */
+static void append_cache_key(char *dst, const char *root, const char *filepath)
+{
+    const char *rel = filepath;
+    size_t rlen = root ? strlen(root) : 0;
+    if (rlen && strncmp(filepath, root, rlen) == 0 && is_sep(filepath[rlen]))
+        rel = filepath + rlen;
+    while (is_sep(*rel)) rel++;
+
+    size_t n = strlen(dst);
+    bool seg_start = true;
+    for (const char *p = rel; *p; p++) {
+        if (seg_start && p[0] == '.' && p[1] == '.' && (!p[2] || is_sep(p[2]))) {
+            dst[n++] = '_';
+            dst[n++] = '_';
+            p++;
+            seg_start = false;
+            continue;
+        }
+        if (is_sep(*p)) {
+            if (!seg_start) dst[n++] = '/';
+            seg_start = true;
+            continue;
+        }
+        dst[n++] = (*p == ':') ? '_' : *p;
+        seg_start = false;
+    }
+    dst[n] = '\0';
+}
+
+/* Create every missing parent directory of path. */
+static void make_parent_dirs(char *path)
+{
+    for (char *p = path + 1; *p; p++) {
+        if (!is_sep(*p) || is_sep(p[-1]) || p[-1] == ':') continue;
+        char sep = *p;
+        *p = '\0';
+        struct stat st;
+        if (stat(path, &st) != 0 && jsc_mkdir(path) != 0)
+            fprintf(stderr, "js_engine: cannot create cache dir %s\n", path);
+        *p = sep;
+    }
+}
+
+/* Cache file for a script: <file>.jsc next to it, or under the cache dir. */
+static char *make_cache_path(JSEngine *engine, const char *filepath)
 {
     size_t len = strlen(filepath);
-    char *cache_path = malloc(len + 2);
+    if (!engine->cache_dir) {
+        char *cache_path = malloc(len + 2);
+        if (!cache_path) return NULL;
+        memcpy(cache_path, filepath, len);
+        cache_path[len] = 'c';
+        cache_path[len + 1] = '\0';
+        return cache_path;
+    }
+
+    size_t dlen = strlen(engine->cache_dir);
+    char *cache_path = malloc(dlen + 1 + len + 2);
     if (!cache_path) return NULL;
-    memcpy(cache_path, filepath, len);
-    cache_path[len] = 'c';
-    cache_path[len + 1] = '\0';
+    memcpy(cache_path, engine->cache_dir, dlen);
+    cache_path[dlen] = '/';
+    cache_path[dlen + 1] = '\0';
+    append_cache_key(cache_path, engine->cache_game_root, filepath);
+    strcat(cache_path, "c");
+    make_parent_dirs(cache_path);
     return cache_path;
 }
 
@@ -491,7 +619,7 @@ bool js_engine_eval_file_cached(JSEngine *engine, const char *filepath)
 {
     if (!engine || !filepath) return false;
 
-    char *cache_path = make_cache_path(filepath);
+    char *cache_path = make_cache_path(engine, filepath);
     if (!cache_path) return js_engine_eval_file(engine, filepath);
 
     /* Use the cache only if its stored source mtime matches the current one. */

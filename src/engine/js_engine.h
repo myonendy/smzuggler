@@ -37,6 +37,20 @@ bool js_engine_eval_file(JSEngine *engine, const char *filepath);
    to the source (invalidated by source mtime). Falls back to plain eval. */
 bool js_engine_eval_file_cached(JSEngine *engine, const char *filepath);
 
+/* Opt-in read-only game folder (--data-dir): put .jsc caches under cache_dir,
+   keyed by the script's path relative to game_root (a script outside the game
+   root is keyed by its whole path), instead of next to the script. Missing
+   directories are created on first use. Both strings are copied; game_root may
+   be NULL. A NULL or empty cache_dir restores the default. Returns false on
+   allocation failure (the default is then in effect). */
+bool js_engine_set_cache_dir(JSEngine *engine, const char *cache_dir, const char *game_root);
+
+/* Fill out with the platform cache dir for app's bytecode cache:
+   $XDG_CACHE_HOME/<app>/jsc, or $HOME/.cache/<app>/jsc when XDG_CACHE_HOME is
+   unset. Linux only (no SDL here); elsewhere returns false and the caller
+   should use SDL_GetPrefPath. Returns false if the result does not fit. */
+bool js_engine_default_cache_dir(const char *app, char *out, size_t out_size);
+
 /* Drain the job queue (promise callbacks) and report unhandled rejections.
    Returns the number of jobs executed, or -1 on error. */
 int js_engine_execute_pending_jobs(JSEngine *engine);

@@ -2,6 +2,7 @@
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
 Tracks assigned upstream patches and safe fork synchronization (§8).
+Modified 2026-11-01: record the .jsc cache-dir offer (U10).
 This is the extraction allowlist for tools/upstream; paths are exact and
 repository-relative. Keep fork-only work outside these offers.
 -->
@@ -25,7 +26,7 @@ no new test infrastructure or unrelated paths may enter an offer.
 | U7 | Refuse relative and game-root save writes (§5.3) | `src/bindings/bind_io.c`, `src/io/file_io.c`, `src/io/file_io.h`, `tests/test_file_io.c` | — | ready to cut | up/U7-refuse-bad-save-paths | — | Opt-in `file_io_set_write_guard(true)`; write/mkdir/unlink/rename must be absolute and outside the root after `..`/symlink resolution, one error logged per refusal, reads unchanged; C tests in `test_file_io.c`. Nothing enables the guard yet (needs a `main.c` call) |
 | U8 | PIXI Circle/Ellipse/Polygon methods and type (§5.4) | `src/shims/pixi_shim.js`, `tests/test_pixi_shim.c` | — | ready to cut | up/U8-shapes | — | Circle/Ellipse/Polygon constructors, SHAPES type, clone independence, contains edge rules and getBounds match PIXI 5.3.12 in QuickJS shim tests; Polygon accepts a flat array, point objects and varargs, with closeStroke |
 | U9 | Optional data-dir moves logs to state dir (§5.6) | `src/main.c`, `tests/test_data_dir.c`, `tests/CMakeLists.txt` | — | ready to cut | up/U9-data-dir-logs | — | Opt-in `--data-dir` / `--data-dir=PATH` scanned from argv; logs go to `$XDG_STATE_HOME/outsider` (`$HOME/.local/state/outsider` when unset) or `SDL_GetPrefPath` elsewhere, or PATH; without the flag they stay in the game dir. C tests in `test_data_dir.c` pass those argv spellings |
-| U10 | Data-dir moves jsc cache to cache dir (§5.6) | `src/engine/js_engine.c`, `tests/test_js_engine.c` | U9 | planned | up/U10-cache-dir | — | 50–100 lines; C test |
+| U10 | Data-dir moves jsc cache to cache dir (§5.6) | `src/engine/js_engine.c`, `src/engine/js_engine.h`, `tests/test_js_engine.c` | U9 | ready to cut | up/U10-jsc-cache-dir | — | `js_engine_set_cache_dir()` puts `.jsc` files under the cache dir keyed by the game-relative path; `js_engine_default_cache_dir()` gives `$XDG_CACHE_HOME/outsider/jsc`. C tests in `test_js_engine.c` cover cache-dir write, reuse, `..` keys and the unchanged default |
 | U11 | canPlayType reflects build decoders (§5.7) | `src/shims/dom_shim.js`, `tests/test_dom_shim.c` | — | ready to cut | up/U11-canplaytype | — | MPEG-1/Vorbis/WAV maybe or probably; webm, VP9, Opus, MP4 and MP3 answer '' in QuickJS shim tests |
 | U12 | Pin SoLoud and SDL_shadercross (App. A) | `third_party/CMakeLists.txt` | — | ready to cut | up/U12-pin-soloud-shadercross | — | <20 lines; CI build |
 | U13 | Canvas2D text fix if root cause is upstream (§5.5) | `src/rendering/canvas2d.c`, `src/rendering/font_manager.c`, `src/shims/canvas2d_shim.js`, `tests/test_canvas2d.c`, `tests/test_font.c` | — | planned | up/U13-text | — | Size unknown; golden test; confirm exact root cause before cutting |
@@ -85,6 +86,17 @@ when that variable is unset; `SDL_GetPrefPath("", "outsider")` on Windows,
 macOS and Android). `--data-dir=PATH` uses PATH instead. Without the flag the
 logs stay in the game directory. `rmmz_resolve_log_dir()` scans argv for those
 spellings; the C test covers the flag, PATH, XDG unset, and the default.
+
+U10 builds on U9. `js_engine_set_cache_dir(engine, cache_dir, game_root)` makes
+`js_engine_eval_file_cached()` write `<cache_dir>/<game-relative path>c` instead
+of `<script>.jsc`, creating parent directories as needed; scripts outside the
+game root are keyed by their whole path, and `..` segments and drive colons are
+neutralised so the key stays inside the cache dir. `js_engine_default_cache_dir()`
+returns `$XDG_CACHE_HOME/<app>/jsc` (`$HOME/.cache/<app>/jsc` when unset) on
+Linux; elsewhere the caller uses `SDL_GetPrefPath`, which `js_engine.c` cannot
+link. Without the call the cache stays next to the script. The engine has no
+caller of `js_engine_eval_file_cached()` in `src/main.c` yet, so wiring
+`--data-dir` to the new call is left to whichever change first uses the cache.
 
 ## Building and opening offers (§8.2)
 
