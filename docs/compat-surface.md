@@ -3,6 +3,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
 Modified 2026-10-31: seed dom_shim.js inventory rows.
 Modified 2026-10-31: seed pixi_shim.js inventory rows.
+Modified 2026-10-31: record nw.Window.get EventEmitter and stubs (U3).
 Compatibility inventory for browser, NW.js and Node replacements.
 See ../ARCHITECTURE.md for service ownership. Keep exact runtime names and
 shim attribution; statuses describe implementation, not conformance certification.
@@ -909,8 +910,8 @@ dump and rejection of a stale `name` row through the CLI.
 | `nw.App.quit` | partial | `src/shims/storage_shim.js` | `tests/smz/test_dump_surface.c` | Calls native quit; no close-event handshake (§5.2); inventory test only. |
 | `nw.App.quit.prototype.constructor` | partial | `src/shims/storage_shim.js` | `tests/smz/test_dump_surface.c` | Calls native quit; no close-event handshake (§5.2); inventory test only. |
 | `nw.Window` | stub | `src/shims/storage_shim.js` | `-` | No-op / fixed compatibility response; no host semantics. |
-| `nw.Window.get` | stub | `src/shims/storage_shim.js` | `-` | Returns an instance with no-op events/window controls (§5.2). |
-| `nw.Window.get.prototype.constructor` | stub | `src/shims/storage_shim.js` | `-` | Returns an instance with no-op events/window controls (§5.2). |
+| `nw.Window.get` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Singleton with Node EventEmitter on/addListener/once/off/removeListener/removeAllListeners/emit/listeners; close(force) emits `close` or quits; enter/leave/toggleFullscreen set isFullscreen and call native setFullscreen. Stubs: closeDevTools (no devtools), focus/show/hide/maximize/restore/moveBy/resizeTo (single fixed SDL window, no window-manager control), x/y/width/height/title/zoomLevel plain values (not synced with the host window) (§5.2). |
+| `nw.Window.get.prototype.constructor` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | See `nw.Window.get`. |
 | `onerror` | partial | `src/shims/dom_shim.js` | `tests/test_error_handler.c` | Host exceptions call this with the browser arity. |
 | `onunhandledrejection` | partial | `src/shims/dom_shim.js` | `tests/test_error_handler.c` | Host rejections call this with a reason object. |
 | `open` | stub | `src/shims/dom_shim.js` | `-` | Always returns null; no second window. |

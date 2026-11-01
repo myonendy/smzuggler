@@ -371,27 +371,107 @@
 
     /* nw (NW.js) window/app stubs. */
 
+    /* Minimal Node-style EventEmitter for nw.Window.get(). Plugins such as
+     * CleanExit call removeAllListeners("close") and then on("close", fn). */
+    function _nwAddListener(win, name, fn, once) {
+        if (typeof fn !== "function") {
+            throw new TypeError("nw.Window listener for '" + name + "' must be a function");
+        }
+        if (!win._events.hasOwnProperty(name)) win._events[name] = [];
+        win._events[name].push({ fn: fn, once: once });
+        return win;
+    }
+
+    function _nwDropEntry(win, name, entry) {
+        var list = win._events.hasOwnProperty(name) ? win._events[name] : [];
+        var i = list.indexOf(entry);
+        if (i >= 0) list.splice(i, 1);
+        if (list.length === 0) delete win._events[name];
+    }
+
+    function _nwSetFullscreen(win, on) {
+        win.isFullscreen = on;
+        if (typeof __native_platform !== "undefined" && __native_platform.setFullscreen) {
+            __native_platform.setFullscreen(on);
+        }
+    }
+
+    function _nwQuit() {
+        if (typeof __native_platform !== "undefined") __native_platform.quit();
+    }
+
     if (typeof globalThis.nw === "undefined") {
         var _nwWindowInstance = {
-            on: function() {},
+            _events: {},
+            on: function(name, fn) { return _nwAddListener(this, name, fn, false); },
+            addListener: function(name, fn) { return _nwAddListener(this, name, fn, false); },
+            once: function(name, fn) { return _nwAddListener(this, name, fn, true); },
+            removeListener: function(name, fn) {
+                /* As in Node: drop only the most recently added match. */
+                var list = this._events.hasOwnProperty(name) ? this._events[name] : null;
+                if (!list) return this;
+                for (var i = list.length - 1; i >= 0; i--) {
+                    if (list[i].fn === fn) {
+                        list.splice(i, 1);
+                        break;
+                    }
+                }
+                if (list.length === 0) delete this._events[name];
+                return this;
+            },
+            off: function(name, fn) { return this.removeListener(name, fn); },
+            removeAllListeners: function(name) {
+                if (arguments.length === 0 || name === undefined) {
+                    this._events = {};
+                } else {
+                    delete this._events[name];
+                }
+                return this;
+            },
+            emit: function(name) {
+                var list = this._events.hasOwnProperty(name) ? this._events[name].slice() : [];
+                var args = Array.prototype.slice.call(arguments, 1);
+                for (var i = 0; i < list.length; i++) {
+                    if (list[i].once) _nwDropEntry(this, name, list[i]);
+                    list[i].fn.apply(this, args);
+                }
+                return list.length > 0;
+            },
+            listeners: function(name) {
+                var list = this._events.hasOwnProperty(name) ? this._events[name] : [];
+                var out = [];
+                for (var i = 0; i < list.length; i++) out.push(list[i].fn);
+                return out;
+            },
+            listenerCount: function(name) { return this.listeners(name).length; },
             x: 0,
             y: 0,
             width: 816,
             height: 624,
             title: "",
+            zoomLevel: 0,
             moveBy: function() {},
             resizeTo: function() {},
             setAlwaysOnTop: function() {},
             setVisibleOnAllWorkspaces: function() {},
             isFullscreen: false,
-            enterFullscreen: function() { this.isFullscreen = true; },
-            leaveFullscreen: function() { this.isFullscreen = false; },
-            close: function() {
-                if (typeof __native_platform !== "undefined") __native_platform.quit();
+            enterFullscreen: function() { _nwSetFullscreen(this, true); },
+            leaveFullscreen: function() { _nwSetFullscreen(this, false); },
+            toggleFullscreen: function() { _nwSetFullscreen(this, !this.isFullscreen); },
+            /* NW.js: with a "close" listener, close() only emits; close(true) quits. */
+            close: function(force) {
+                if (force !== true && this.listeners("close").length > 0) {
+                    this.emit("close");
+                    return;
+                }
+                _nwQuit();
             },
+            closeDevTools: function() {},
             focus: function() {},
             show: function() {},
-            hide: function() {}
+            hide: function() {},
+            maximize: function() {},
+            restore: function() {}
         };
         globalThis.nw = {
             Window: {
@@ -401,9 +481,7 @@
             },
             App: {
                 argv: [],
-                quit: function() {
-                    if (typeof __native_platform !== "undefined") __native_platform.quit();
-                }
+                quit: _nwQuit
             }
         };
     }
