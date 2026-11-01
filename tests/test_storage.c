@@ -599,21 +599,35 @@ static void test_restore_env(const char *name, char *saved)
     free(saved);
 }
 
+/* Like ASSERT, then jump to a `done:` label so env restoration always runs. */
+#define ASSERT_DONE(cond)                                            \
+    do {                                                             \
+        if (!(cond)) {                                               \
+            printf("FAIL\n    assertion failed: %s\n    at %s:%d\n", \
+                   #cond, __FILE__, __LINE__);                       \
+            tests_failed++;                                          \
+            goto done;                                               \
+        }                                                            \
+    } while (0)
+
 TEST(process_env_is_snapshot_of_host)
 {
+    char *saved = test_getenv_copy("RMMZ_TEST_PROCESS_ENV");
     test_setenv("RMMZ_TEST_PROCESS_ENV", "a b=c");
     js_setup();
     test_setenv("RMMZ_TEST_PROCESS_ENV", "changed");
-    ASSERT(js_check("process.env.RMMZ_TEST_PROCESS_ENV === 'a b=c'"));
-    ASSERT(js_check("Object.getPrototypeOf(process.env) === Object.prototype"));
-    ASSERT(js_check(
+    ASSERT_DONE(js_check("process.env.RMMZ_TEST_PROCESS_ENV === 'a b=c'"));
+    ASSERT_DONE(js_check("Object.getPrototypeOf(process.env) === Object.prototype"));
+    ASSERT_DONE(js_check(
         "Object.keys(process.env).length > 0 &&"
         "Object.keys(process.env).every(function(k) {"
         "  return typeof process.env[k] === 'string'; })"
     ));
-    ASSERT(js_check("process.env.RMMZ_TEST_PROCESS_ENV_MISSING === undefined"));
+    ASSERT_DONE(js_check("process.env.RMMZ_TEST_PROCESS_ENV_MISSING === undefined"));
     js_teardown();
-    test_setenv("RMMZ_TEST_PROCESS_ENV", NULL);
+done:
+    if (s_js) js_teardown();
+    test_restore_env("RMMZ_TEST_PROCESS_ENV", saved);
 }
 
 TEST(process_platform_and_arch_match_target)
@@ -718,6 +732,22 @@ TEST(process_next_tick_continues_after_throw)
     js_teardown();
 }
 
+TEST(process_next_tick_after_already_queued_promise)
+{
+    js_setup();
+    /* A Promise job queued before the first nextTick of a turn still runs
+       first: ticks are drained by Promise.resolve().then, so this is P,N.
+       Node would run N,P. */
+    ASSERT(js_check(
+        "var order = [];"
+        "Promise.resolve().then(function() { order.push('P'); });"
+        "process.nextTick(function() { order.push('N'); });"
+        "order.length === 0"));
+    js_engine_execute_pending_jobs(s_js);
+    ASSERT(js_check("order.join(',') === 'P,N'"));
+    js_teardown();
+}
+
 /* Stand-in for how save-location plugins pick the user data directory from
    process.platform and process.env (not any game's plugin). */
 static const char *SAVE_DIR_SNIPPET =
@@ -738,25 +768,28 @@ TEST(process_env_gives_real_save_dir)
     test_setenv("HOME", "/tmp/rmmz-home");
     test_setenv("XDG_DATA_HOME", NULL);
     js_setup();
-    ASSERT(js_check(SAVE_DIR_SNIPPET));
-    ASSERT(js_check("saveDir().indexOf('undefined') === -1"));
+    ASSERT_DONE(js_check(SAVE_DIR_SNIPPET));
+    ASSERT_DONE(js_check("saveDir().indexOf('undefined') === -1"));
 #if defined(__linux__) && !defined(__ANDROID__)
-    ASSERT(js_check("saveDir() === '/tmp/rmmz-home/.local/share/StandInSaves/'"));
+    ASSERT_DONE(js_check("saveDir() === '/tmp/rmmz-home/.local/share/StandInSaves/'"));
 #endif
     js_teardown();
 
     test_setenv("XDG_DATA_HOME", "/tmp/rmmz-xdg-data");
     js_setup();
-    ASSERT(js_check(SAVE_DIR_SNIPPET));
-    ASSERT(js_check("saveDir().indexOf('undefined') === -1"));
+    ASSERT_DONE(js_check(SAVE_DIR_SNIPPET));
+    ASSERT_DONE(js_check("saveDir().indexOf('undefined') === -1"));
 #if defined(__linux__) && !defined(__ANDROID__)
-    ASSERT(js_check("saveDir() === '/tmp/rmmz-xdg-data/StandInSaves/'"));
+    ASSERT_DONE(js_check("saveDir() === '/tmp/rmmz-xdg-data/StandInSaves/'"));
 #endif
     js_teardown();
-
+done:
+    if (s_js) js_teardown();
     test_restore_env("HOME", home);
     test_restore_env("XDG_DATA_HOME", xdg);
 }
+
+#undef ASSERT_DONE
 
 /* Tests: Utils.isNwjs() pattern */
 
@@ -1100,6 +1133,7 @@ int main(int argc, char *argv[])
     RUN(process_hrtime_shape_and_monotonic);
     RUN(process_next_tick_order_like_node);
     RUN(process_next_tick_continues_after_throw);
+    RUN(process_next_tick_after_already_queued_promise);
     RUN(process_env_gives_real_save_dir);
 
     printf("\n--- RPG Maker MZ compatibility tests ---\n");

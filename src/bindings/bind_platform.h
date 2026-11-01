@@ -69,19 +69,20 @@ static inline const char *bind_platform_arch_name(void)
 }
 
 /* Monotonic clock in nanoseconds from an arbitrary origin, like Node's
-   process.hrtime(). Never goes backwards; not related to wall time. */
+   process.hrtime(). Never goes backwards; not related to wall time.
+   Returns 0 when the host clock call fails (or Windows' frequency is 0). */
 static inline uint64_t bind_platform_monotonic_ns(void)
 {
 #ifdef _WIN32
     LARGE_INTEGER freq, now;
-    QueryPerformanceFrequency(&freq);
-    QueryPerformanceCounter(&now);
+    if (!QueryPerformanceFrequency(&freq) || freq.QuadPart == 0) return 0;
+    if (!QueryPerformanceCounter(&now)) return 0;
     return (uint64_t)(now.QuadPart / freq.QuadPart) * 1000000000ull +
            (uint64_t)(now.QuadPart % freq.QuadPart) * 1000000000ull /
                (uint64_t)freq.QuadPart;
 #else
     struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) return 0;
     return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
 #endif
 }
