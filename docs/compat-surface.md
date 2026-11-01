@@ -4,6 +4,7 @@ Copyright (C) 2026 The smzuggler contributors
 Modified 2026-10-31: seed dom_shim.js inventory rows.
 Modified 2026-10-31: seed pixi_shim.js inventory rows.
 Modified 2026-10-31: record PIXI.Circle, Ellipse, Polygon and SHAPES (U8).
+Modified 2026-10-31: record PIXI [PROF] missing-member warnings (U14).
 Modified 2026-10-31: record nw.Window.get EventEmitter and stubs (U3).
 Compatibility inventory for browser, NW.js and Node replacements.
 See ../ARCHITECTURE.md for service ownership. Keep exact runtime names and
@@ -16,6 +17,9 @@ Every dumped member has a row; `pixi_shim.js` rows describe Outsider's
 QuickJS-mode PIXI, which real-PIXI mode does not load (§4.2).
 Absent APIs such as `PIXI.RoundedRectangle` and `PIXI.Mesh` are recorded in
 the notes of their parent row, because the table matches the dump exactly.
+Reading a missing renderer or plugin member while profiling is on
+(`__OUTSIDER_PROF`, `OUTSIDER_PROF`, or argv `--prof`) logs one
+`[PROF] missing: <Class>.<member>` warning per distinct name (U14).
 Post-core/control shims currently install no members in the game-free dump.
 Names include aliases, internal members and constructor back-references
 retained by DEC-M0-T009b.
@@ -1490,7 +1494,7 @@ dump and rejection of a stale `name` row through the CLI.
 | `PIXI.RenderTexture.prototype.framebuffer` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native render target (FBO) via the renderer API. |
 | `PIXI.RenderTexture.prototype.resize` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native render target (FBO) via the renderer API. |
 | `PIXI.RenderTexture.prototype.resize.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Native render target (FBO) via the renderer API. |
-| `PIXI.Renderer` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Sprite-batch renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
+| `PIXI.Renderer` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Sprite-batch renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). Those gaps log `[PROF] missing: Renderer.<member>` once each when profiling is on (U14). |
 | `PIXI.Renderer._plugins` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Sprite-batch renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
 | `PIXI.Renderer.prototype._extractCanvas` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Sprite-batch renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |
 | `PIXI.Renderer.prototype._extractCanvas.prototype.constructor` | partial | `src/shims/pixi_shim.js` | `tests/test_pixi_shim.c` | Sprite-batch renderer; no renderTexture, filter, mask, context, buffer or plugins.extract (§2, §4.2). |

@@ -3494,6 +3494,70 @@
 
     PIXI.Ticker = Ticker;
 
+    /* [PROF] missing-member warnings. One console.warn per distinct
+       Class.member a game actually reads, and only while profiling is on
+       (__OUTSIDER_PROF, process.env.OUTSIDER_PROF, or argv --prof).
+       Accessors are installed on the renderer instance so dump-surface
+       still omits the gaps. */
+
+    var _profMissingSeen = {};
+
+    /* True when the host asked for the diagnostic; off is the default. */
+    function pixiProfEnabled() {
+        if (globalThis.__OUTSIDER_PROF) return true;
+        var proc = globalThis.process;
+        if (!proc) return false;
+        if (proc.env && proc.env.OUTSIDER_PROF) return true;
+        var argv = proc.argv;
+        if (!argv) return false;
+        var i;
+        for (i = 0; i < argv.length; i++) {
+            if (argv[i] === "--prof") return true;
+        }
+        return false;
+    }
+
+    /* Log at most one [PROF] missing: Class.member line per key. */
+    function warnMissingMember(className, member) {
+        if (!pixiProfEnabled()) return;
+        var key = className + "." + member;
+        if (_profMissingSeen[key]) return;
+        _profMissingSeen[key] = 1;
+        console.warn("[PROF] missing: " + key);
+    }
+
+    /* Own getter/setter so a later assignment still sticks. */
+    function watchMissingMember(obj, className, member) {
+        if (!obj || (member in obj)) return;
+        var value;
+        Object.defineProperty(obj, member, {
+            configurable: true,
+            enumerable: false,
+            get: function() {
+                if (value === undefined) warnMissingMember(className, member);
+                return value;
+            },
+            set: function(v) { value = v; }
+        });
+    }
+
+    /* Skip names the instance already implements. */
+    function watchMissingMembers(obj, className, names) {
+        var i;
+        for (i = 0; i < names.length; i++) {
+            watchMissingMember(obj, className, names[i]);
+        }
+    }
+
+    /* Renderer/plugin gaps from the original [PROF] list (§2, §4.2). */
+    function installRendererMissingWatches(renderer) {
+        if (!pixiProfEnabled()) return;
+        watchMissingMembers(renderer, "Renderer",
+            ["renderTexture", "filter", "mask", "context", "buffer"]);
+        watchMissingMembers(renderer.plugins, "plugins",
+            ["rpgtilemap", "um7tilemap"]);
+    }
+
     /* PIXI.Renderer (wraps __native_renderer) */
 
     function PixiRenderer(options) {
@@ -3612,6 +3676,7 @@
         }
 
         this.extract = this.plugins.extract;
+        installRendererMissingWatches(this);
     }
 
     PixiRenderer.prototype = Object.create(EventEmitter.prototype);

@@ -29,7 +29,7 @@ no new test infrastructure or unrelated paths may enter an offer.
 | U11 | canPlayType reflects build decoders (§5.7) | `src/shims/dom_shim.js`, `tests/test_dom_shim.c` | — | ready to cut | up/U11-canplaytype | — | MPEG-1/Vorbis/WAV maybe or probably; webm, VP9, Opus, MP4 and MP3 answer '' in QuickJS shim tests |
 | U12 | Pin SoLoud and SDL_shadercross (App. A) | `third_party/CMakeLists.txt` | — | ready to cut | up/U12-pin-soloud-shadercross | — | <20 lines; CI build |
 | U13 | Canvas2D text fix if root cause is upstream (§5.5) | `src/rendering/canvas2d.c`, `src/rendering/font_manager.c`, `src/shims/canvas2d_shim.js`, `tests/test_canvas2d.c`, `tests/test_font.c` | — | planned | up/U13-text | — | Size unknown; golden test; confirm exact root cause before cutting |
-| U14 | Optional missing-member PROF warnings (§5.4) | `src/shims/pixi_shim.js` | — | planned | up/U14-profile-warnings | — | <80 lines; optional |
+| U14 | Optional missing-member PROF warnings (§5.4) | `src/shims/pixi_shim.js`, `tests/test_pixi_shim.c` | — | ready to cut | up/U14-pixi-prof-warnings | — | One `[PROF] missing: Class.member` warning per distinct renderer/plugin gap actually read (`Renderer.filter`/`mask`/`renderTexture`/`context`/`buffer`, `plugins.rpgtilemap`/`um7tilemap`); off unless `__OUTSIDER_PROF`, `OUTSIDER_PROF`, or argv `--prof`; QuickJS shim tests touch two members three times each |
 | Issue only | UltraMode7 needs Geometry/Buffer/Shader/Mesh (§5.4) | — | — | planned | — | — | File missing-renderer-API report only; no implementation |
 
 U2 queries walk connected document elements or an element's descendants in tree
