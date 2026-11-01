@@ -28,7 +28,7 @@ All notable changes to smzuggler. Outsider's own history is in its git log.
 - Add compatibility-surface rows for every dump member credited to `dom_shim.js`.
 - Add compatibility-surface rows for every `pixi_shim.js` member, mark no-op
   texture listeners and matrix helpers as stubs, and retain the missing Circle
-  row pending checker support for documented absent APIs.
+  row pending resolution of the checker/acceptance-criterion conflict (M0-T010).
 - Add `tools/share/make_bundle.py` and `smzuggler-rt --share-bundle` to pack a
   scrubbed zip of a run's logs, perf reports and frame times for sharing.
 - Add `tools/perf/binsize.py`, which reports stripped `smzuggler-rt`, shared-library
