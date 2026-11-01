@@ -1639,6 +1639,59 @@ TEST(test_pixi_renderer_background_color)
     js_teardown();
 }
 
+TEST(test_pixi_prof_missing_members_off)
+{
+    /* Two missing renderer members, three reads each: no [PROF] line
+       unless profiling is on. */
+    js_setup_with_shims();
+    ASSERT(js_eval_bool(
+        "var warns = [];"
+        "var orig = console.warn;"
+        "console.warn = function(m) { warns.push(String(m)); };"
+        "var r = new PIXI.Renderer({ width: 16, height: 16 });"
+        "var i, a, b;"
+        "for (i = 0; i < 3; i++) { a = r.filter; b = r.mask; }"
+        "console.warn = orig;"
+        "var prof = [];"
+        "for (i = 0; i < warns.length; i++) {"
+        "  if (warns[i].indexOf('[PROF] missing:') === 0) prof.push(warns[i]);"
+        "}"
+        "prof.length === 0 || ('count=' + prof.length + ' msgs=' + prof.join(','));"
+    ));
+    js_teardown();
+}
+
+TEST(test_pixi_prof_missing_members_on)
+{
+    /* Same two members, three reads each, with profiling on: exactly two
+       warnings, one per distinct Class.member. */
+    js_setup_with_shims();
+    ASSERT(js_eval_bool(
+        "globalThis.__OUTSIDER_PROF = true;"
+        "var warns = [];"
+        "var orig = console.warn;"
+        "console.warn = function(m) { warns.push(String(m)); };"
+        "var r = new PIXI.Renderer({ width: 16, height: 16 });"
+        "var i, a, b, c, d;"
+        "for (i = 0; i < 3; i++) {"
+        "  a = r.filter; b = r.mask; c = r.gl; d = r.extract;"
+        "}"
+        "console.warn = orig;"
+        "var prof = [];"
+        "for (i = 0; i < warns.length; i++) {"
+        "  if (warns[i].indexOf('[PROF] missing:') === 0) prof.push(warns[i]);"
+        "}"
+        "var hasFilter = false, hasMask = false;"
+        "for (i = 0; i < prof.length; i++) {"
+        "  if (prof[i] === '[PROF] missing: Renderer.filter') hasFilter = true;"
+        "  if (prof[i] === '[PROF] missing: Renderer.mask') hasMask = true;"
+        "}"
+        "(prof.length === 2 && hasFilter && hasMask) ||"
+        "('count=' + prof.length + ' msgs=' + prof.join(','));"
+    ));
+    js_teardown();
+}
+
 /* PIXI.Application tests */
 
 TEST(test_pixi_application_exists)
@@ -2007,6 +2060,8 @@ int main(void)
     RUN(test_pixi_renderer_extract);
     RUN(test_pixi_renderer_gl_stub);
     RUN(test_pixi_renderer_background_color);
+    RUN(test_pixi_prof_missing_members_off);
+    RUN(test_pixi_prof_missing_members_on);
 
     printf("--- PIXI Application tests ---\n");
     RUN(test_pixi_application_exists);

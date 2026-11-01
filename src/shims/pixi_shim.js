@@ -3494,6 +3494,34 @@
 
     PIXI.Ticker = Ticker;
 
+    var _profMissingSeen = {};
+    /* [PROF] one console.warn per distinct missing Class.member a game reads,
+       only when profiling is on (__OUTSIDER_PROF, OUTSIDER_PROF, argv --prof). */
+    function installRendererMissingWatches(r) {
+        var p = globalThis.process, a = p && p.argv, i, names, plugins;
+        if (!globalThis.__OUTSIDER_PROF && !(p && p.env && p.env.OUTSIDER_PROF)) {
+            if (!a || a.indexOf("--prof") < 0) return;
+        }
+        /* Own getter so a later assignment sticks; warn once per Class.member. */
+        function watch(obj, className, member) {
+            var value;
+            if (!obj || (member in obj)) return;
+            Object.defineProperty(obj, member, { configurable: true, enumerable: false,
+                /* Read path: first undefined get logs the gap. */
+                get: function() {
+                    var key = className + "." + member;
+                    if (value === undefined && !_profMissingSeen[key])
+                        { _profMissingSeen[key] = 1; console.warn("[PROF] missing: " + key); }
+                    return value;
+                },
+                /* Write path: later assignment replaces the stub. */
+                set: function(v) { value = v; } });
+        }
+        names = ["renderTexture", "filter", "mask", "context", "buffer"]; plugins = ["rpgtilemap", "um7tilemap"];
+        for (i = 0; i < names.length; i++) watch(r, "Renderer", names[i]);
+        for (i = 0; i < plugins.length; i++) watch(r.plugins, "plugins", plugins[i]);
+    }
+
     /* PIXI.Renderer (wraps __native_renderer) */
 
     function PixiRenderer(options) {
@@ -3612,6 +3640,7 @@
         }
 
         this.extract = this.plugins.extract;
+        installRendererMissingWatches(this);
     }
 
     PixiRenderer.prototype = Object.create(EventEmitter.prototype);
