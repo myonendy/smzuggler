@@ -1,6 +1,7 @@
 <!--
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
+Modified 2026-11-01: add persistent callbacks.
 How native C bindings talk to the JS engine through jsb.h, and the handle rules.
 -->
 # JS binding: the `jsb` seam
@@ -10,8 +11,8 @@ How native C bindings talk to the JS engine through jsb.h, and the handle rules.
 bindings move to V8 by near-mechanical rewriting (spec §4.1). It is **not** an engine
 abstraction: its one real implementation is `src/jsb/jsb_v8.cc`.
 
-Status: core API only (M1-T003). ArrayBuffer/TypedArray views and persistent callback
-handles (§4.1) come in later cards. The library target is `smz_jsb` in both engine
+Status: core API (M1-T003), zero-copy buffers (M1-T005) and persistent callbacks
+(M1-T006). The library target is `smz_jsb` in both engine
 modes; `jsb.h` itself is plain C11 and includes no C++ or V8 header (checked by
 `tests/smz/test_jsb_header.c` in both engine modes).
 
@@ -127,6 +128,60 @@ if (!buf) { free(pixels); return; }
 jsb_ret_val(ctx, buf);
 ```
 
+## Persistent callbacks
+Audio `onended` and video events keep a JS function past the native call that received
+it and run it later from the host (DEC-M1-T006).
+
+| Call | Behaviour |
+| --- | --- |
+| `jsb_callback_new(ctx, fn, &cb)` | Keeps the function `fn` alive in a handle. TypeError (false, `cb` zeroed) if `fn` is not callable. |
+| `jsb_callback_call(cb, argc, argv, &ret)` | Calls it with `this` undefined and C-built arguments; returns a `jsb_status`. |
+| `jsb_callback_free(&cb)` | Releases the function and zeroes `cb`. False for a zero, freed or stale handle. |
+| `jsb_set_error_handler(rt, fn, user)` | Where callback exceptions go; NULL restores the stderr default. |
+
+* **Handles are small values** (`jsb_callback`: runtime, slot, generation), not pointers.
+  Copy them freely; `jsb_callback cb = {0};` means "none". Each handle still has **one
+  owner**, who frees it once the event can no longer fire. After the free every copy is
+  refused (`JSB_ERR_HANDLE`, message on stderr), also after jsb reuses the slot for a new
+  callback, because the slot's generation changes. A double free returns false; it never
+  corrupts anything. Handles die with their runtime: `jsb_runtime_destroy` releases the
+  live ones, and a handle must not be used after that.
+* **Arguments** are `jsb_cval`s: undefined, null, Boolean, Number or String (UTF-8,
+  borrowed, copied). At most 64; `argv` may be NULL when `argc` is 0. Anything else,
+  including `JSB_TYPE_OBJECT` or a NULL string, is `JSB_ERR_ARG` and nothing runs. No JS
+  object travels through a C argument, so no `jsb_val` is ever kept.
+* **The result** goes into an optional `jsb_result`: its type, Boolean or Number, and for
+  a String a copy into the caller's `str`/`str_cap` buffer (truncated, NUL-terminated)
+  with the full length in `str_len`. Objects, functions, symbols and BigInts report only
+  `JSB_TYPE_OBJECT`. On any error the type is `JSB_TYPE_UNDEFINED`.
+* **Exceptions never cross into C.** A throw is caught, `String(exception)` and its
+  `stack` property (or `""`) go to the runtime's error handler before the call returns,
+  and the call returns `JSB_ERR_THREW`. Called from inside a native function, the
+  exception does not reach the enclosing JS caller either. The engine's
+  `error_handler.c` registers here when it is ported (§4.1, item 5). The handler must not
+  call jsb on that runtime.
+* **Scopes.** Every call opens its own `HandleScope` (and enters the isolate and
+  context), so it works from the host loop with no JS on the stack and inside a native
+  call. The function is held in a Local for the call, so a callback may free its own
+  handle. Microtask checkpoints stay with the host's loop (§4.1, item 3).
+* **GC.** The handle is a strong `Global`: the function cannot be collected while it
+  lives. After `jsb_callback_free` it is garbage as soon as JS holds no other reference
+  (QuickJS frees it at once by reference counting; V8 at a later GC).
+* Main thread only. Never call `jsb_callback_free` from a `jsb_free_fn`.
+
+```c
+static jsb_callback g_onended;               /* owned by the audio binding */
+static void fn_set_onended(jsb_ctx *ctx) {
+    jsb_callback cb;
+    if (!jsb_callback_new(ctx, jsb_arg_val(ctx, 0), &cb)) return;
+    if (g_onended.rt) jsb_callback_free(&g_onended);
+    g_onended = cb;
+}
+/* later, in the host loop when the sound ends: */
+jsb_cval id = {JSB_TYPE_NUMBER, false, 3, NULL};
+jsb_callback_call(g_onended, 1, &id, NULL);  /* JSB_ERR_THREW was reported already */
+```
+
 ## Handle rules (§15.8)
 These are the rules for code that touches V8 handles, in jsb and elsewhere (WebGL has
 its own GL-object rules in `webgl.md`).
@@ -150,14 +205,15 @@ How jsb applies them:
 * `jsb_ctx` and `jsb_val` are the C face of these rules. Both are valid only until the
   native call (or setup callback) that received the ctx returns. **Never keep a
   `jsb_ctx *` or `jsb_val *`** in a struct, global or static, and never pass one to
-  another call. Persistent handles for callbacks are a later jsb API built on `Global`.
+  another call. To keep a JS function, make a `jsb_callback` (built on `Global`).
 * The trampoline in `jsb_v8.cc` opens a `HandleScope` per call before it builds the
   `jsb_ctx` on its stack. The ctx holds the call's Locals in a deque (so `jsb_val`
   pointers stay put) and is destroyed before the scope closes.
 * `jsb_runtime_setup` and `jsb_runtime_eval` each open their own scope; a loop that
   creates many values should run in separate setup calls or JS calls.
-* The only Global jsb owns is the runtime's context; `jsb_runtime_destroy` resets it
-  before disposing of the isolate.
+* jsb owns Globals only for the runtime's context and for each live `jsb_callback`
+  (one owner per Global, see "Persistent callbacks"). `jsb_runtime_destroy` resets them
+  all before disposing of the isolate.
 * jsb is main-thread only. The one exception is a `jsb_free_fn`, which V8 may call from
   a GC helper thread (see "Buffers").
 
@@ -172,3 +228,12 @@ TypeError for non-buffers and detached buffers, C writes seen by JS and JS write
 C through an external buffer, that its free function runs exactly once after `gc()`
 (from `jsb_set_flags("--expose-gc")`) and once more at destroy for a buffer still alive,
 and the `jsb_adjust_external_memory` totals.
+
+`tests/smz/test_jsb_callbacks.c` (ctest `jsb_callbacks`, both engine modes) keeps a
+function in a native call and calls it from C after that scope ended, checks every
+argument and result type and string truncation, that exceptions (Errors and thrown
+primitives, from the host and from inside a native call) reach the error handler with
+message and stack and return `JSB_ERR_THREW`, that a freed function is collected (an
+external buffer hung on it is freed only after `jsb_callback_free` and `gc()`), that
+freed and stale handles and bad arguments are refused, and that a callback may free its
+own handle.

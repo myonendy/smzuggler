@@ -9,6 +9,7 @@ Modified 2026-11-01: record evaluator game-process XDG isolation.
 Modified 2026-11-01: default host data directories when SMZUGGLER_NAME is set.
 Modified 2026-11-01: record Map 92 report owner-run and JS-time gap definitions.
 Modified 2026-11-01: propose the V8 pin (DEC-M1-T001).
+Modified 2026-11-01: record jsb persistent callback handles.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 
@@ -463,3 +464,18 @@ runs `JS_RunGC` and ignores V8-only flags. QuickJS has no C API for DataView, so
 calls the intrinsic `DataView.prototype` getters, saved before any user script runs.
 QuickJS frees an external buffer's memory as soon as it is detached; V8 moves the memory to
 the new buffer on `transfer()`. Either way the free function runs exactly once.
+
+## DEC-M1-T006 — jsb callbacks are generation-checked value handles with C-built arguments
+`jsb_callback` is a small struct (runtime, slot, generation) passed by value, not an
+opaque pointer. The card asks that calling a freed callback be a checked error; a freed
+pointer cannot be checked without keeping its memory forever, while a slot plus generation
+can: freeing marks the slot free, reuse bumps its generation, and every copy of an old
+handle is refused. Each live slot owns one `v8::Global` (one reference in QuickJS), so the
+§15.8 one-owner rule holds and `jsb_runtime_destroy` releases what is left.
+`jsb_callback_call` takes C values (`jsb_cval`: undefined, null, Boolean, Number, String)
+and gives back a `jsb_result` with strings copied into a caller buffer, because the host
+calls it with no native call around it, so no `jsb_ctx` or `jsb_val` exists to pass. The
+result is a fourth parameter beyond the card's `(cb, argc, argv)` so that the card's
+"return value" criterion can be met; it may be NULL. Callback exceptions go to a
+per-runtime handler set with `jsb_set_error_handler` (default: stderr), since the engine's
+`error_handler.c` is not yet on jsb; it will register there when ported (§4.1, item 5).

@@ -12,8 +12,9 @@
 // and every setup or eval opens its own HandleScope before building a
 // jsb_ctx on the stack. The ctx keeps the call's Locals in a deque so that
 // jsb_val pointers stay stable; the ctx is destroyed before its scope ends,
-// so no Local outlives its HandleScope. Only jsb_runtime holds a
-// v8::Global (the context), and jsb_runtime_destroy resets it. Main thread
+// so no Local outlives its HandleScope. Only jsb_runtime holds v8::Globals
+// (the context and one per live jsb_callback); jsb_callback_free resets a
+// callback's and jsb_runtime_destroy resets them all. Main thread
 // only, except ext_release, which V8 may call from a GC helper thread.
 // Backing stores: ordinary ArrayBuffers use V8's default allocator (owned by
 // jsb_runtime); external buffers wrap the caller's memory and give it back
@@ -24,6 +25,7 @@
 #include <libplatform/libplatform.h>
 #include <v8.h>
 
+#include <algorithm>
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
@@ -31,6 +33,7 @@
 #include <deque>
 #include <memory>
 #include <utility>
+#include <vector>
 
 // A JS value handle; lives in its jsb_ctx's deque.
 struct jsb_val {
@@ -47,14 +50,36 @@ struct jsb_ctx {
     bool threw;
 };
 
+// "No free callback slot" in jsb_runtime's free list.
+constexpr uint32_t kNoSlot = UINT32_MAX;
+
+// Most arguments jsb_callback_call takes (jsb.h); events pass a few.
+constexpr int kMaxCbArgs = 64;
+
+// One jsb_callback slot. A live slot owns the Global to its function (one
+// owner, reset on free); a free one links the free list through
+// `next_free`. `gen` changes on every reuse, so stale handles fail.
+struct CbSlot {
+    v8::Global<v8::Function> fn;
+    uint32_t gen = 0;
+    bool live = false;
+    uint32_t next_free = kNoSlot;
+};
+
 // The engine instance. The isolate's data slot 0 points back at it, so a
 // jsb_ctx can reach it. `external_bytes` is the jsb_adjust_external_memory
 // total, kept here because V8's own figure also counts other embedders.
+// `cbs` holds the jsb_callback slots (`cb_free` heads the free list) and
+// `on_error` the jsb_set_error_handler handler, NULL for the default.
 struct jsb_runtime {
     v8::Isolate *isolate;
     v8::ArrayBuffer::Allocator *allocator;
     v8::Global<v8::Context> context;
     int64_t external_bytes;
+    std::vector<CbSlot> cbs;
+    uint32_t cb_free = kNoSlot;
+    jsb_error_fn on_error = nullptr;
+    void *error_user = nullptr;
 };
 
 namespace {
@@ -232,11 +257,12 @@ jsb_runtime *jsb_runtime_create(const char *argv0, const char *icu_data_path) {
     return rt;
 }
 
-// See jsb.h. Resets the context Global before disposing of the isolate;
-// disposal releases every backing store, so the free functions of live
-// external buffers run here.
+// See jsb.h. Resets the callback and context Globals before disposing of
+// the isolate; disposal releases every backing store, so the free functions
+// of live external buffers run here.
 void jsb_runtime_destroy(jsb_runtime *rt) {
     if (!rt) return;
+    rt->cbs.clear();
     rt->context.Reset();
     rt->isolate->Dispose();
     delete rt->allocator;
@@ -525,6 +551,192 @@ int64_t jsb_adjust_external_memory(jsb_ctx *ctx, int64_t change) {
     rt->external_bytes += change;
     ctx->isolate->AdjustAmountOfExternalAllocatedMemory(change);
     return rt->external_bytes;
+}
+
+}  // extern "C"
+
+// ---- Persistent callbacks -------------------------------------------------
+
+namespace {
+
+// Returns the live slot `cb` names, or NULL after printing that `what` got
+// a zero, freed or stale handle.
+CbSlot *cb_lookup(jsb_callback cb, const char *what) {
+    jsb_runtime *rt = cb.rt;
+    if (rt && cb.slot < rt->cbs.size() && rt->cbs[cb.slot].live &&
+        rt->cbs[cb.slot].gen == cb.gen)
+        return &rt->cbs[cb.slot];
+    std::fprintf(stderr, "jsb: %s: zero, freed or stale callback handle\n",
+                 what);
+    return nullptr;
+}
+
+// Returns the index of a free callback slot of `rt`, adding one if none is
+// free, or kNoSlot when the table is full.
+uint32_t cb_take_slot(jsb_runtime *rt) {
+    if (rt->cb_free != kNoSlot) {
+        uint32_t i = rt->cb_free;
+        rt->cb_free = rt->cbs[i].next_free;
+        return i;
+    }
+    if (rt->cbs.size() >= kNoSlot) return kNoSlot;
+    rt->cbs.emplace_back();
+    return static_cast<uint32_t>(rt->cbs.size() - 1);
+}
+
+// Returns whether `argc`/`argv` are what jsb_callback_call accepts: argc
+// in 0..kMaxCbArgs, argv present when needed, and only primitive types,
+// strings non-NULL. Prints the first problem.
+bool cb_args_ok(int argc, const jsb_cval *argv) {
+    if (argc < 0 || argc > kMaxCbArgs || (argc > 0 && !argv)) {
+        std::fprintf(stderr, "jsb: jsb_callback_call: bad argc %d or NULL "
+                             "argv\n", argc);
+        return false;
+    }
+    for (int i = 0; i < argc; i++) {
+        if (argv[i].type > JSB_TYPE_STRING ||
+            (argv[i].type == JSB_TYPE_STRING && !argv[i].str)) {
+            std::fprintf(stderr, "jsb: jsb_callback_call: argument %d has a "
+                                 "bad type or a NULL string\n", i + 1);
+            return false;
+        }
+    }
+    return true;
+}
+
+// Converts a C argument (checked by cb_args_ok) to a JS value in the
+// current HandleScope.
+v8::Local<v8::Value> cb_arg_value(v8::Isolate *isolate,
+                                         const jsb_cval &v) {
+    switch (v.type) {
+    case JSB_TYPE_NULL: return v8::Null(isolate);
+    case JSB_TYPE_BOOL: return v8::Boolean::New(isolate, v.b);
+    case JSB_TYPE_NUMBER: return v8::Number::New(isolate, v.num);
+    case JSB_TYPE_STRING: return utf8(isolate, v.str);
+    default: return v8::Undefined(isolate);
+    }
+}
+
+// Fills `ret` (may be NULL) from the callback's result. A String is copied
+// into the caller's buffer (truncated, NUL-terminated) with its full length.
+void cb_result(v8::Isolate *isolate, v8::Local<v8::Value> value,
+                      jsb_result *ret) {
+    if (!ret) return;
+    ret->str_len = 0;
+    if (value->IsUndefined()) {
+        ret->type = JSB_TYPE_UNDEFINED;
+    } else if (value->IsNull()) {
+        ret->type = JSB_TYPE_NULL;
+    } else if (value->IsBoolean()) {
+        ret->type = JSB_TYPE_BOOL;
+        ret->b = value->IsTrue();
+    } else if (value->IsNumber()) {
+        ret->type = JSB_TYPE_NUMBER;
+        ret->num = value.As<v8::Number>()->Value();
+    } else if (value->IsString()) {
+        ret->type = JSB_TYPE_STRING;
+        v8::String::Utf8Value text(isolate, value);
+        ret->str_len = *text ? static_cast<size_t>(text.length()) : 0;
+        if (ret->str && ret->str_cap > 0) {
+            size_t k = std::min(ret->str_len, ret->str_cap - 1);
+            if (k) std::memcpy(ret->str, *text, k);
+            ret->str[k] = '\0';
+        }
+    } else {
+        ret->type = JSB_TYPE_OBJECT;
+    }
+}
+
+// Gives the exception caught by `tc` (its String() form and its `stack`,
+// or "") to the runtime's error handler, or prints them on stderr.
+void cb_report(jsb_runtime *rt, v8::Local<v8::Context> context,
+                      v8::TryCatch &tc) {
+    char message[512], stack[2048];
+    to_buffer(rt->isolate, tc.Exception(), message, sizeof message);
+    stack[0] = '\0';
+    v8::Local<v8::Value> st;
+    if (tc.StackTrace(context).ToLocal(&st) && st->IsString())
+        to_buffer(rt->isolate, st, stack, sizeof stack);
+    if (rt->on_error)
+        rt->on_error(message, stack, rt->error_user);
+    else
+        std::fprintf(stderr, "jsb: callback threw: %s\n%s\n", message, stack);
+}
+
+}  // namespace
+
+extern "C" {
+
+// See jsb.h: jsb_set_error_handler.
+void jsb_set_error_handler(jsb_runtime *rt, jsb_error_fn fn, void *user) {
+    rt->on_error = fn;
+    rt->error_user = fn ? user : nullptr;
+}
+
+// See jsb.h: jsb_callback_new. The slot's Global is the one owner of the
+// function's persistent reference.
+bool jsb_callback_new(jsb_ctx *ctx, jsb_val *fn, jsb_callback *out) {
+    *out = jsb_callback{};
+    if (!fn || !fn->value->IsFunction()) {
+        jsb_throw_type(ctx, "jsb_callback_new: not a function");
+        return false;
+    }
+    jsb_runtime *rt = static_cast<jsb_runtime *>(ctx->isolate->GetData(0));
+    uint32_t i = cb_take_slot(rt);
+    if (i == kNoSlot) {
+        jsb_throw_range(ctx, "jsb_callback_new: out of memory");
+        return false;
+    }
+    CbSlot &slot = rt->cbs[i];
+    slot.fn.Reset(ctx->isolate, fn->value.As<v8::Function>());
+    slot.gen = slot.gen == UINT32_MAX ? 1 : slot.gen + 1;
+    slot.live = true;
+    *out = jsb_callback{rt, i, slot.gen};
+    return true;
+}
+
+// See jsb.h: jsb_callback_call. The function is taken into a Local before
+// the call, so it survives the callback freeing its own handle; the slot is
+// not touched after JS ran (JS may grow the table). The TryCatch keeps the
+// exception from reaching C or an enclosing JS frame.
+jsb_status jsb_callback_call(jsb_callback cb, int argc, const jsb_cval *argv,
+                             jsb_result *ret) {
+    if (ret) ret->type = JSB_TYPE_UNDEFINED;
+    CbSlot *slot = cb_lookup(cb, "jsb_callback_call");
+    if (!slot) return JSB_ERR_HANDLE;
+    if (!cb_args_ok(argc, argv)) return JSB_ERR_ARG;
+    v8::Isolate *isolate = cb.rt->isolate;
+    v8::Isolate::Scope isolate_scope(isolate);
+    v8::HandleScope scope(isolate);
+    v8::Local<v8::Context> context = cb.rt->context.Get(isolate);
+    v8::Context::Scope context_scope(context);
+    v8::Local<v8::Function> fn = slot->fn.Get(isolate);
+    v8::Local<v8::Value> args[kMaxCbArgs];
+    for (int i = 0; i < argc; i++) args[i] = cb_arg_value(isolate, argv[i]);
+    v8::TryCatch tc(isolate);
+    v8::Local<v8::Value> result;
+    if (!fn->Call(context, v8::Undefined(isolate), argc, args)
+             .ToLocal(&result)) {
+        cb_report(cb.rt, context, tc);
+        return JSB_ERR_THREW;
+    }
+    cb_result(isolate, result, ret);
+    return JSB_OK;
+}
+
+// See jsb.h: jsb_callback_free. Resetting the Global drops jsb's reference;
+// the function is collected by a later GC once JS holds none either.
+bool jsb_callback_free(jsb_callback *cb) {
+    CbSlot *slot = cb_lookup(*cb, "jsb_callback_free");
+    jsb_runtime *rt = cb->rt;
+    uint32_t index = cb->slot;
+    *cb = jsb_callback{};
+    if (!slot) return false;
+    slot->fn.Reset();
+    slot->live = false;
+    slot->next_free = rt->cb_free;
+    rt->cb_free = index;
+    return true;
 }
 
 }  // extern "C"
