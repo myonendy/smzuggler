@@ -8,13 +8,33 @@ How native C bindings talk to the JS engine through jsb.h, and the handle rules.
 `src/jsb/jsb.h` is the C API that native bindings (`src/bindings/`) use to expose
 `__native_*` modules to the shims. It replaces direct QuickJS calls so that Outsider's
 bindings move to V8 by near-mechanical rewriting (spec §4.1). It is **not** an engine
-abstraction: its one implementation is `src/jsb/jsb_v8.cc`. A transitional QuickJS
-backend for the M1 port is planned in DEC-SETUP-008 (card M1-T004).
+abstraction: its one real implementation is `src/jsb/jsb_v8.cc`.
 
 Status: core API only (M1-T003). ArrayBuffer/TypedArray views and persistent callback
-handles (§4.1) come in later cards. The library target is `smz_jsb`, built only with
-`-DSMZ_JS_ENGINE=v8`; `jsb.h` itself is plain C11 and includes no C++ or V8 header
-(checked by `tests/smz/test_jsb_header.c` in both engine modes).
+handles (§4.1) come in later cards. The library target is `smz_jsb` in both engine
+modes; `jsb.h` itself is plain C11 and includes no C++ or V8 header (checked by
+`tests/smz/test_jsb_header.c` in both engine modes).
+
+## Transitional QuickJS backend (removed by M1-T027)
+
+`src/jsb/jsb_quickjs.c` implements `jsb.h` on QuickJS-ng, and `smz_jsb` is built from it
+when `SMZ_JS_ENGINE=quickjs` (the default). It exists only so bindings can be ported to
+`jsb` one at a time while the game still runs on QuickJS and both engine modes stay green
+(docs/SPEC_ISSUES.md SI-11, DEC-SETUP-008). **Card M1-T027 deletes it** together with
+QuickJS. Rules while it lives:
+
+- It must behave exactly like `jsb_v8.cc`: the unchanged `tests/smz/test_jsb_core.c` runs
+  against it as ctest `jsb_core` in quickjs mode (`tests/smz/jsb_core_quickjs.cmake`).
+  Any new jsb call lands in both backends in the same change.
+- It adds no API of its own; nothing outside `src/jsb/` may include `quickjs.h` through it.
+- `jsb_runtime_create` ignores `argv0` and `icu_data_path` (QuickJS has no ICU).
+- Handles: each `jsb_val` owns one QuickJS reference, kept in fixed chunks owned by the
+  call's `jsb_ctx` and freed when the call returns, so the "valid only during the call"
+  rule below holds exactly as with V8 `Local`s. A native function is registered through a
+  per-runtime table indexed by the QuickJS function's 16-bit magic, so a runtime holds at
+  most 32,767 distinct `jsb_fn`s.
+- Known difference: a string argument holding a lone UTF-16 surrogate is read out in
+  QuickJS's encoding of it, where V8 writes U+FFFD.
 
 ## API
 
@@ -103,6 +123,6 @@ How jsb applies them:
 * jsb is main-thread only.
 
 ## Tests
-`tests/smz/test_jsb_core.c` (ctest `jsb_core`, v8 mode) defines a module from C, calls
+`tests/smz/test_jsb_core.c` (ctest `jsb_core`, both engine modes) defines a module from C, calls
 every getter, return and throw from JS, and checks values, wrong-type and
 missing-argument TypeErrors, the string-size RangeError and module failure.

@@ -7,6 +7,7 @@
 # Modified 2026-11-01: compile host data-directory resolution into the runtime.
 # Modified 2026-11-01: add SMZ_JS_ENGINE and import prebuilt V8 (cmake/V8.cmake).
 # Modified 2026-11-01: build the jsb seam's V8 backend as smz_jsb (src/jsb/).
+# Modified 2026-11-01: build smz_jsb on the transitional QuickJS backend in quickjs mode.
 # Build orchestration; see docs/DECISIONS.md (DEC-M0-T001).
 
 cmake_minimum_required(VERSION 3.20)
@@ -315,15 +316,23 @@ if(RMMZ_GAME_DIR)
     )
 endif()
 
-# The jsb binding seam (spec section 4.1, docs/js-binding.md). Its V8
-# backend is a static library that C bindings and tests link; it exists
-# only with SMZ_JS_ENGINE=v8 until the transitional QuickJS backend
-# (DEC-SETUP-008) lands.
+# The jsb binding seam (spec section 4.1, docs/js-binding.md), a static
+# library that C bindings and tests link. Its real backend is V8; in quickjs
+# mode the transitional QuickJS backend (DEC-SETUP-008, removed by M1-T027)
+# stands in, so ported bindings stay testable in both engine modes.
 if(SMZ_JS_ENGINE STREQUAL "v8")
     add_library(smz_jsb STATIC src/jsb/jsb_v8.cc)
-    target_include_directories(smz_jsb PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/jsb)
     target_link_libraries(smz_jsb PUBLIC smz::v8)
+else()
+    add_library(smz_jsb STATIC src/jsb/jsb_quickjs.c)
+    target_link_libraries(smz_jsb PUBLIC qjs)
+    set_target_properties(smz_jsb PROPERTIES
+        C_STANDARD 11 C_STANDARD_REQUIRED ON)
+    if(NOT MSVC)
+        target_compile_options(smz_jsb PRIVATE -Wall -Wextra)
+    endif()
 endif()
+target_include_directories(smz_jsb PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/jsb)
 
 # Tests
 if(RMMZ_BUILD_TESTS)

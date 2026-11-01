@@ -35,6 +35,9 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Add the transitional QuickJS backend of the `jsb` seam,
+  `src/jsb/jsb_quickjs.c`, built as `smz_jsb` in quickjs mode so `jsb_core`
+  runs in both engine modes; removed by M1-T027 (DEC-SETUP-008).
 - Add the `jsb` binding seam: `src/jsb/jsb.h` (plain C11) and its V8 backend
   `src/jsb/jsb_v8.cc`, built as `smz_jsb` in v8 mode, with the `jsb_core` test
   and a C11 header check; API and handle rules in `docs/js-binding.md`
