@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 The smzuggler contributors
-"""Local, isolated control scenarios for the QuickJS host; see docs/testing.md.
+"""Local, isolated control scenarios for the QuickJS host.
 
-This entry point wraps the upstream driver without changing its NW.js workflow.
-The host runs against a disposable copy under the run directory. Calls are serial and
-all screenshots remain local; only the packager may create a shareable archive.
+Why: spec §10 / §14.6 need a title → Map 92 → menu → save/reload → close route
+that never writes into the game dir. Architecture: ARCHITECTURE.md tools/evaluator
+row and docs/testing.md. Runs on the CLI thread; the host is a child process.
+Scratch copies and run output stay under $XDG_STATE_HOME/smzuggler-rt/evaluator/.
 """
 import argparse
 import csv
@@ -37,13 +38,17 @@ def prelude_text():
     visual scenarios never touch player data; that would turn this scenario's
     save and reload into no-ops. Here the host only sees a scratch copy without
     owner saves, so real slot IO is safe. The section is cut between upstream's
-    own section headers; raise ValueError if they move instead of shipping stubs.
+    own section headers; the storagePatched flag stays declared because
+    ev.status() reads it. Raise ValueError if the headers move instead of
+    shipping stubs.
     """
     text = (HERE / 'prelude.js').read_text(encoding='utf-8')
     begin, end = text.find(STORAGE_BEGIN), text.find(STORAGE_END)
     if begin < 0 or end < begin:
         raise ValueError('prelude.js storage section markers not found')
-    return text[:begin] + text[end:]
+    # ev.status() still reads this flag; dropping the stubs must not leave it undeclared.
+    kept = 'var storagePatched = false;\n\n    '
+    return text[:begin] + kept + text[end:]
 
 
 def strings(value):
@@ -108,6 +113,18 @@ def quiet(message):
     return None
 
 
+def request_window_close(driver):
+    """Fire nw.Window.get().close() without waiting for a JS reply.
+
+    evaluate() waits for a control reply that never arrives once the window
+    begins quitting, so this sends the eval and returns. driver is the live
+    OutsiderDriver; nothing extra is retained. Raises DriverError if stdin
+    is already gone. The caller waits on the child and treats a zero exit
+    as a clean close; forced cleanup does not.
+    """
+    driver._send('eval', json.dumps('nw.Window.get().close()'))
+
+
 def play(exe, game, run, scenario):
     """Drive steps serially and request window close, requiring exit status zero.
 
@@ -141,8 +158,7 @@ def play(exe, game, run, scenario):
                 if result.status != 'ok':
                     raise DriverError('scenario step failed: %d' % index)
         check_scratch_save(stage)
-        # The same NW.js close API used by the game's window controls.
-        driver._send('eval', json.dumps('nw.Window.get().close()'))
+        request_window_close(driver)
         code = driver.proc.wait(timeout=15)
         results[-1] = {'step': 'window-close', 'status': 'ok' if code == 0 else 'error'}
         if code != 0:
@@ -201,7 +217,7 @@ def bundle(game, run, denylist=None):
     to the archive's README.txt. Return the packager's process status.
     """
     artifacts = run / 'artifacts'
-    artifacts.mkdir()
+    artifacts.mkdir(exist_ok=True)
     for name in ('runtime.log', 'steps.csv', 'frame-times.csv', 'perf.json'):
         path = run / name
         if path.exists():

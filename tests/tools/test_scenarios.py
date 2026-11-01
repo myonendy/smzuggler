@@ -4,12 +4,12 @@
 
 Game-free tests keep the driver recipes portable and private. No game is read.
 """
+from io import StringIO
 import json
 import os
 import re
 from pathlib import Path
 import sys
-import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -40,8 +40,10 @@ class ScenarioTests(unittest.TestCase):
                 self.assertNotRegex(value, r'(?i)([a-z]:[\\/]|\.rmmzsave|\.rpgsave|steamapps|compatdata)')
             self.assertEqual(data['name'], 'title-map-menu-save')
             self.assertEqual([s['wait'] for s in data['steps'] if 'wait' in s], [60, 240, 300])
-            self.assertIn('DataManager.saveGame(1)', path.read_text())
-            self.assertIn('DataManager.loadGame(1)', path.read_text())
+            raw = path.read_text()
+            self.assertIn('$gameMap.mapId() === 92', raw)
+            self.assertIn('DataManager.saveGame(1)', raw)
+            self.assertIn('DataManager.loadGame(1)', raw)
 
     def test_loaded_prelude_keeps_real_storage(self):
         """The prelude the host loads must not stub save, load or exists."""
@@ -52,6 +54,7 @@ class ScenarioTests(unittest.TestCase):
         loaded = smzuggler.prelude_text()
         self.assertIsNone(stub.search(loaded))
         self.assertNotIn('patchStorage', loaded)
+        self.assertIn('var storagePatched = false', loaded)
         for kept in ('Math.random = function', 'ev.waitScene = function', 'ev.newGame = function'):
             self.assertIn(kept, loaded)
         with tempfile.TemporaryDirectory() as tmp:
@@ -75,8 +78,9 @@ class ScenarioTests(unittest.TestCase):
     def test_map_step_checks_map_92_directly(self):
         """Map readiness compares the live map ID to 92, not the start-map setting."""
         evals = [s['eval'] for s in load_scenario(smzuggler.SCENARIO)['steps'] if 'eval' in s]
-        self.assertTrue(any('$gameMap.mapId() !== 92' in e for e in evals))
+        self.assertTrue(any('$gameMap.mapId() === 92' in e for e in evals))
         self.assertFalse(any('startMapId' in e for e in evals))
+        self.assertFalse(any('mapId() !== 92' in e for e in evals))
 
     def test_scratch_save_check_requires_slot_file(self):
         """Save must reach the scratch save directory in either storage mode."""
@@ -141,10 +145,29 @@ class ScenarioTests(unittest.TestCase):
             game = root / 'copy'
             game.mkdir()
             state = root / 'state'
-            with patch('builtins.print'), patch.dict(os.environ, {'SMZUGGLER_GAME_DIR': str(game),
-                                        'XDG_STATE_HOME': str(state)}):
+            printed = StringIO()
+            with patch('sys.stdout', printed), patch.dict(os.environ, {
+                    'SMZUGGLER_GAME_DIR': str(game), 'XDG_STATE_HOME': str(state)}):
                 self.assertEqual(smzuggler.main(['--dry-run']), 0)
+            text = printed.getvalue()
+            self.assertIn(str(game.resolve()), text)
+            self.assertIn(str((state / 'smzuggler-rt/evaluator').resolve()), text)
             self.assertFalse(state.exists())
+
+    def test_dry_run_refuses_store_paths(self):
+        """--dry-run must refuse Steam/Proton folders before printing destinations."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            game = root / 'copy'
+            game.mkdir()
+            link = root / 'steamapps'
+            link.symlink_to(game, target_is_directory=True)
+            err = StringIO()
+            with patch('sys.stderr', err), patch.dict(os.environ, {
+                    'SMZUGGLER_GAME_DIR': str(link),
+                    'XDG_STATE_HOME': str(root / 'state')}):
+                self.assertEqual(smzuggler.main(['--dry-run']), 2)
+            self.assertIn('Steam or Proton', err.getvalue())
 
     def test_scratch_root_excludes_saves_and_logs(self):
         """Ensure the host gets fresh writable storage rather than owner saves."""
@@ -172,6 +195,26 @@ class ScenarioTests(unittest.TestCase):
             smzuggler.timing_report(run)
             self.assertIn('1,16.2,0.1,0.2,0.3,10.0,5.6', (run / 'frame-times.csv').read_text())
             self.assertEqual(json.loads((run / 'perf.json').read_text())['samples'], 1)
+
+    def test_window_close_requires_zero_exit(self):
+        """A requested nw.Window close is a clean exit only when the child status is 0."""
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp)
+            (run / 'runtime.log').write_text(
+                'perf: 1 frames avg 16.2 ms (events 0.1, timers 0.2, jobs 0.3, rAF 10.0, swap 5.6)\n')
+            with patch.object(smzuggler, 'stage_game', return_value=run), \
+                 patch.object(smzuggler, 'game_resolution', return_value=(640, 480)), \
+                 patch.object(smzuggler, 'OutsiderDriver') as driver_cls, \
+                 patch.object(smzuggler, 'Runner') as runner, \
+                 patch.object(smzuggler, 'check_scratch_save'):
+                driver = driver_cls.return_value
+                driver.evaluate.return_value = 0
+                driver.proc.wait.return_value = 0
+                runner.return_value.run.return_value = [type('R', (), {'status': 'ok'})()]
+                smzuggler.play(run / 'host', run, run, {'steps': [{'wait': 1}]})
+            driver._send.assert_called_once_with('eval', json.dumps('nw.Window.get().close()'))
+            self.assertEqual(json.loads((run / 'summary.json').read_text())[-1],
+                             {'step': 'window-close', 'status': 'ok'})
 
     def test_bundle_stages_only_allowed_reports(self):
         """Keep scratch inputs out and name JSON reports for the bundler allowlist."""

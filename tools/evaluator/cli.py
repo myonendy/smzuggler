@@ -2,6 +2,7 @@
 # Copyright (C) 2026 The smzuggler contributors
 # Modified 2026-11-01: add --prelude for the storage-preserving scenario prelude.
 # Modified 2026-11-01: document comparison helpers used by the fork entry point.
+# Modified 2026-11-01: document game_resolution used by the fork entry point.
 # SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
 """Command line for the visual evaluator (see tools/visual_eval.py)."""
 
@@ -21,7 +22,12 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 
 
 def game_resolution(game_dir):
-    """Game resolution from data/System.json (advanced.screenWidth/Height)."""
+    """Return (width, height) pixels from data/System.json for both players.
+
+    game_dir is borrowed. Missing or unreadable System.json yields 816x624,
+    MZ's default, so a scratch copy without that file still launches. Call
+    from the CLI thread; retains no path.
+    """
     path = os.path.join(game_dir, "data", "System.json")
     try:
         with open(path, "r", encoding="utf-8-sig") as f:

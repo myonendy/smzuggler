@@ -1,6 +1,7 @@
 <!--
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
+Modified 2026-11-01: document the fork evaluator entry point and scenarios.
 Architecture guide for contributors replacing browser and NW.js services.
 Keep current Outsider behavior distinct from planned smzuggler behavior;
 source references and directory coverage are checked by the tool tests.

@@ -344,7 +344,8 @@ Upstream's evaluator prelude stubs `StorageManager.saveObject`, `loadObject` and
 which turns the save and reload steps into no-ops. Rather than patching `prelude.js` to stub
 and later restore them, `smzuggler.py` loads the upstream file without its storage section,
 cut between upstream's own section headers, and fails loudly if those headers move.
-`prelude.js` stays identical to upstream, a test can show the loaded text has no stub, and
+The cut keeps `var storagePatched = false` so `ev.status()` does not read an undeclared
+name. `prelude.js` stays identical to upstream, a test can show the loaded text has no stub, and
 the inherited CLI's new `--prelude` option lets the NW.js reference run use the same text.
 Bundle README step lines are appended by the entry point because the share packager's
 README has no step section.

@@ -4,7 +4,7 @@
   "steps": [
     {"wait_scene": "Scene_Title", "nudge": "ok", "shot": "title", "settle": 0},
     {"new_game": true},
-    {"eval": "(function(){if($gameMap.mapId() !== 92) throw new Error('Expected map 92'); return true;})()"},
+    {"eval": "(function(){if($gameMap.mapId() === 92) return true; throw new Error('Expected map 92');})()"},
     {"wait": 60, "shot": "map-60", "settle": 0},
     {"wait": 240, "shot": "map-300", "settle": 0},
     {"wait": 300, "shot": "map-600-hud", "settle": 0},

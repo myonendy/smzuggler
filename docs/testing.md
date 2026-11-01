@@ -135,8 +135,9 @@ these capture offsets are relative to readiness, not engine boot.
 The upstream `prelude.js` stubs `StorageManager.saveObject`, `loadObject` and
 `exists` so its own scenarios never touch player data. That would make save
 and reload no-ops, so the entry point loads the prelude without that section
-(`--print-prelude` shows exactly what is loaded). This is safe only because the
-host sees a scratch copy without owner saves.
+(`--print-prelude` shows exactly what is loaded). The cut keeps
+`var storagePatched = false` so prelude status reporting stays valid. This is
+safe only because the host sees a scratch copy without owner saves.
 
 `summary.json` records logical frame counts and status per step without game
 text or screenshots. `runtime.log`, native phase averages in `perf.json`,
