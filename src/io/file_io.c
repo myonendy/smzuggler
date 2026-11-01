@@ -341,23 +341,57 @@ static bool path_inside_root(const char *path)
     return path[root_len] == '\0' || is_sep(path[root_len]);
 }
 
+typedef enum {
+    WRITE_PATH_OK,
+    WRITE_PATH_RELATIVE,
+    WRITE_PATH_UNRESOLVED,
+    WRITE_PATH_IN_ROOT
+} WritePathVerdict;
+
+/* The write guard's decision, without logging. `real` receives the
+   canonical path when the verdict is WRITE_PATH_OK or WRITE_PATH_IN_ROOT. */
+static WritePathVerdict judge_write_path(const char *path, char *real, size_t real_size)
+{
+    if (!path || !path_is_absolute(path)) return WRITE_PATH_RELATIVE;
+    if (!canonical_path(path, real, real_size)) return WRITE_PATH_UNRESOLVED;
+    if (path_inside_root(real)) return WRITE_PATH_IN_ROOT;
+    return WRITE_PATH_OK;
+}
+
 bool file_io_check_write_path(const char *path)
 {
-    if (!path || !path_is_absolute(path)) {
+    char real[MAX_PATH_LEN];
+    switch (judge_write_path(path, real, sizeof(real))) {
+    case WRITE_PATH_RELATIVE:
         log_error("file_io: refusing write to relative path \"%s\": "
                   "save paths must be absolute", path ? path : "(null)");
         return false;
-    }
-    char real[MAX_PATH_LEN];
-    if (!canonical_path(path, real, sizeof(real))) {
+    case WRITE_PATH_UNRESOLVED:
         log_error("file_io: refusing write to \"%s\": the path cannot be resolved", path);
         return false;
-    }
-    if (path_inside_root(real)) {
+    case WRITE_PATH_IN_ROOT:
         log_error("file_io: refusing write to \"%s\": it resolves to \"%s\", "
                   "inside the game root \"%s\"", path, real, s_game_root);
         return false;
+    case WRITE_PATH_OK:
+        break;
     }
+    return true;
+}
+
+bool file_io_resolve_read_path(const char *path, char *out, size_t out_size)
+{
+    if (file_io_resolve_path(path, out, out_size)) return true;
+    if (!s_write_guard || !path || !path_is_absolute(path)) return false;
+
+    char real[MAX_PATH_LEN];
+    if (judge_write_path(path, real, sizeof(real)) != WRITE_PATH_OK) return false;
+
+    /* Used as given, like the write side, so reads and writes of a save
+       name the same file. */
+    size_t len = strlen(path);
+    if (len >= out_size) return false;
+    memcpy(out, path, len + 1);
     return true;
 }
 

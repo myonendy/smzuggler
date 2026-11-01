@@ -745,6 +745,7 @@ static void test_save_guard_symlinks(const char *root, const char *outside)
 #endif
 
 static void test_save_guard_js_refusals(JSEngine *engine, const char *root);
+static void test_save_guard_js_reads(JSEngine *engine, const char *outside);
 
 static void test_save_guard_js(const char *root, const char *outside)
 {
@@ -774,6 +775,7 @@ static void test_save_guard_js(const char *root, const char *outside)
     free(text);
 
     test_save_guard_js_refusals(engine, root);
+    test_save_guard_js_reads(engine, outside);
     js_engine_shutdown(engine);
 }
 
@@ -816,6 +818,157 @@ static void test_save_guard_js_refusals(JSEngine *engine, const char *root)
     js_engine_free_string(result);
 }
 
+/* Evaluate `src` (with every "@OUT@" replaced by `outside`) and compare the
+   string result; also require that file_io logged nothing. */
+static void expect_js_quiet(JSEngine *engine, const char *outside,
+                            const char *src, const char *want)
+{
+    char js[TEST_PATH_MAX * 8];
+    size_t o = 0;
+    size_t out_len = strlen(outside);
+    for (const char *p = src; *p && o + out_len + 1 < sizeof(js); ) {
+        if (strncmp(p, "@OUT@", 5) == 0) {
+            memcpy(js + o, outside, out_len);
+            o += out_len;
+            p += 5;
+        } else {
+            js[o++] = *p++;
+        }
+    }
+    js[o] = '\0';
+    guard_log_count = 0;
+    char *result = js_engine_eval_string(engine, js, "test");
+    char msg[TEST_PATH_MAX * 9];
+    snprintf(msg, sizeof(msg), "%s -> %s (logs=%d %s)", src,
+             result ? result : "NULL", guard_log_count, guard_log_last);
+    CHECK(result && strcmp(result, want) == 0 && guard_log_count == 0, msg);
+    js_engine_free_string(result);
+}
+
+/* Guard on: the read calls reach a scratch save folder outside the root. */
+static void test_save_guard_js_reads(JSEngine *engine, const char *outside)
+{
+    TEST(guard_js_exists_missing_outside_root);
+    expect_js_quiet(engine, outside,
+        "String(__native_io.existsSync('@OUT@/reads/file1.rmmzsave'))", "false");
+
+    TEST(guard_js_read_missing_outside_root_quiet);
+    expect_js_quiet(engine, outside,
+        "try { __native_io.readFileSync('@OUT@/reads/file1.rmmzsave'); 'no_error'; }"
+        "catch (e) { e.message.indexOf('failed to read file') === 0 ? 'caught' : e.message; }",
+        "caught");
+
+    TEST(guard_js_isdir_after_mkdir_outside_root);
+    expect_js_quiet(engine, outside,
+        "__native_io.mkdirSync('@OUT@/reads');"
+        "String(__native_io.existsSync('@OUT@/reads')) + ',' +"
+        "String(__native_io.isDirSync('@OUT@/reads'))", "true,true");
+
+    TEST(guard_js_exists_after_write_outside_root);
+    expect_js_quiet(engine, outside,
+        "__native_io.writeFileSync('@OUT@/reads/file1.rmmzsave', 'save-bytes');"
+        "String(__native_io.existsSync('@OUT@/reads/file1.rmmzsave'))", "true");
+
+    TEST(guard_js_readdir_outside_root);
+    expect_js_quiet(engine, outside,
+        "__native_io.readdirSync('@OUT@/reads').join(',')", "file1.rmmzsave");
+
+    TEST(guard_js_read_text_outside_root);
+    expect_js_quiet(engine, outside,
+        "__native_io.readFileSync('@OUT@/reads/file1.rmmzsave')", "save-bytes");
+
+    TEST(guard_js_read_binary_outside_root);
+    expect_js_quiet(engine, outside,
+        "var b = new Uint8Array(__native_io.readFileBinary('@OUT@/reads/file1.rmmzsave'));"
+        "String.fromCharCode.apply(null, b)", "save-bytes");
+}
+
+/* Guard on, a path the normal resolver handles must resolve exactly as it
+   does with file_io_resolve_path(), including a refusal. */
+static void expect_read_same_as_today(const char *path)
+{
+    char today[TEST_PATH_MAX * 3], now[TEST_PATH_MAX * 3];
+    bool ok_today = file_io_resolve_path(path, today, sizeof(today));
+    guard_log_count = 0;
+    bool ok_now = file_io_resolve_read_path(path, now, sizeof(now));
+    char msg[TEST_PATH_MAX * 8];
+    snprintf(msg, sizeof(msg), "%s: today=%d(%s) now=%d(%s) logs=%d", path,
+             ok_today, ok_today ? today : "", ok_now, ok_now ? now : "",
+             guard_log_count);
+    CHECK(ok_today == ok_now && (!ok_now || strcmp(today, now) == 0) &&
+          guard_log_count == 0, msg);
+}
+
+static void test_save_guard_read_paths(const char *root, const char *outside)
+{
+    char path[TEST_PATH_MAX * 3];
+
+    TEST(guard_read_inside_root_unchanged);
+    snprintf(path, sizeof(path), "%s/data/System.json", root);
+    expect_read_same_as_today(path);
+
+    TEST(guard_read_root_dotdot_root_unchanged);
+    snprintf(path, sizeof(path), "%s/../root/x", root);
+    expect_read_same_as_today(path);
+
+    TEST(guard_read_relative_unchanged);
+    expect_read_same_as_today("data/System.json");
+
+    TEST(guard_read_relative_escape_still_refused);
+    expect_read_same_as_today("../outside/file1.rmmzsave");
+
+#ifndef _WIN32
+    char link_in[TEST_PATH_MAX * 2];
+    snprintf(link_in, sizeof(link_in), "%s/read_to_root", outside);
+    TEST(guard_read_symlink_outside_to_root_refused);
+    if (symlink(root, link_in) != 0) {
+        FAIL("symlink() failed");
+    } else {
+        snprintf(path, sizeof(path), "%s/data.json", link_in);
+        char out[TEST_PATH_MAX * 3];
+        bool today = file_io_resolve_path(path, out, sizeof(out));
+        guard_log_count = 0;
+        bool now = file_io_resolve_read_path(path, out, sizeof(out));
+        CHECK(!today && !now && guard_log_count == 0, path);
+    }
+    unlink(link_in);
+#endif
+
+    TEST(guard_read_outside_root_accepted_as_given);
+    snprintf(path, sizeof(path), "%s/file1.rmmzsave", outside);
+    char out[TEST_PATH_MAX * 3];
+    bool ok = file_io_resolve_read_path(path, out, sizeof(out));
+    CHECK(ok && strcmp(out, path) == 0, ok ? out : path);
+}
+
+/* Guard off: an absolute path outside the root is still refused for reads. */
+static void test_save_guard_off_reads(const char *outside)
+{
+    char path[TEST_PATH_MAX * 3], out[TEST_PATH_MAX * 3];
+    snprintf(path, sizeof(path), "%s/file1.rmmzsave", outside);
+    file_io_write_text(path, "x");
+
+    TEST(guard_off_read_outside_root_refused);
+    CHECK(!file_io_resolve_read_path(path, out, sizeof(out)), path);
+
+    JSEngine *engine = js_engine_init();
+    TEST(guard_off_js_read_outside_root_throws);
+    if (!engine) {
+        FAIL("failed to create JS engine");
+        return;
+    }
+    bind_io_register(js_engine_get_context(engine));
+    expect_js_quiet(engine, outside,
+        "var r = [];"
+        "['existsSync', 'isDirSync', 'readdirSync', 'readFileSync', 'readFileBinary']"
+        ".forEach(function (f) {"
+        "  try { __native_io[f]('@OUT@/file1.rmmzsave'); r.push(f + ':no_error'); }"
+        "  catch (e) { r.push(e instanceof TypeError ? 'refused' : e.message); }"
+        "});"
+        "r.join(',')", "refused,refused,refused,refused,refused");
+    js_engine_shutdown(engine);
+}
+
 static void test_save_guard(void)
 {
     char root[TEST_PATH_MAX * 2], outside[TEST_PATH_MAX * 2];
@@ -837,7 +990,9 @@ static void test_save_guard(void)
 #endif
     file_io_set_write_guard(true);
     test_save_guard_js(root, outside);
+    test_save_guard_read_paths(root, outside);
     file_io_set_write_guard(false);
+    test_save_guard_off_reads(outside);
 
     file_io_set_log_fn(NULL);
     file_io_set_game_root(NULL);
