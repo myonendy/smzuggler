@@ -21,6 +21,34 @@ const char *file_io_get_game_root(void);
    false on overflow or if the path escapes the root (traversal, outside prefix). */
 bool file_io_resolve_path(const char *relative_path, char *out, size_t out_size);
 
+/* Save-path guard. A game that computes its save directory from an unset
+   environment variable ends up with a relative path, and writing that
+   relative to the game root silently mixes saves into the game folder (or
+   fails on a read-only install). With the guard on, bind_io accepts writes
+   (write, mkdir, unlink, rename) only through file_io_check_write_path(),
+   and uses the path as given instead of resolving it against the root.
+   Off by default, because stock RMMZ saves to "<root>/save/". Reads are
+   never affected. */
+void file_io_set_write_guard(bool enabled);
+
+/* True if the save-path guard is on. */
+bool file_io_write_guard_enabled(void);
+
+/* Decide whether `path` may be written: it must be absolute, and its real
+   location (after "..", and symlinks on POSIX, are resolved for the longest
+   existing prefix) must not be the game root or lie under it. Logs exactly
+   one error on refusal, nothing on success. Does not consult the guard. */
+bool file_io_check_write_path(const char *path);
+
+/* Receives one file_io error message (one line, no trailing newline). The
+   string is only valid for the duration of the call. */
+typedef void (*FileIoLogFn)(const char *message);
+
+/* Redirect file_io's error messages, so the host can route them to its log
+   and tests can count them. NULL restores the default, which prints to
+   stderr. Main thread only. */
+void file_io_set_log_fn(FileIoLogFn fn);
+
 /* Read a whole file as a NUL-terminated string (free() it). Returns NULL on
    error; out_size, if non-NULL, receives the byte count. */
 char *file_io_read_text(const char *path, size_t *out_size);

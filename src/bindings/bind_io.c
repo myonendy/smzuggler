@@ -28,6 +28,30 @@ static const char *resolve_path_arg(JSContext *ctx, JSValueConst arg,
     return raw;
 }
 
+/* Like resolve_path_arg, for calls that change the file system. With the
+   save-path guard on, the path must pass file_io_check_write_path() and is
+   used as given: save paths are absolute file-system paths outside the game
+   root, not game URLs. A refusal throws the same error a failed write does. */
+static const char *resolve_write_arg(JSContext *ctx, JSValueConst arg,
+                                     char *out, size_t out_size)
+{
+    if (!file_io_write_guard_enabled()) {
+        return resolve_path_arg(ctx, arg, out, out_size);
+    }
+
+    const char *raw = JS_ToCString(ctx, arg);
+    if (!raw) return NULL;
+
+    size_t len = strlen(raw);
+    if (!file_io_check_write_path(raw) || len >= out_size) {
+        JS_ThrowInternalError(ctx, "failed to write file: %s", raw);
+        JS_FreeCString(ctx, raw);
+        return NULL;
+    }
+    memcpy(out, raw, len + 1);
+    return raw;
+}
+
 /* readFileSync(path) -> string */
 static JSValue js_read_file_sync(JSContext *ctx, JSValueConst this_val,
                                  int argc, JSValueConst *argv)
@@ -82,7 +106,7 @@ static JSValue js_write_file_sync(JSContext *ctx, JSValueConst this_val,
     if (argc < 2) return JS_ThrowTypeError(ctx, "writeFileSync requires path and data arguments");
 
     char resolved[PATH_BUF_SIZE];
-    const char *raw = resolve_path_arg(ctx, argv[0], resolved, sizeof(resolved));
+    const char *raw = resolve_write_arg(ctx, argv[0], resolved, sizeof(resolved));
     if (!raw) return JS_EXCEPTION;
     JS_FreeCString(ctx, raw);
 
@@ -108,7 +132,7 @@ static JSValue js_write_file_binary(JSContext *ctx, JSValueConst this_val,
     if (argc < 2) return JS_ThrowTypeError(ctx, "writeFileBinary requires path and data arguments");
 
     char resolved[PATH_BUF_SIZE];
-    const char *raw = resolve_path_arg(ctx, argv[0], resolved, sizeof(resolved));
+    const char *raw = resolve_write_arg(ctx, argv[0], resolved, sizeof(resolved));
     if (!raw) return JS_EXCEPTION;
     JS_FreeCString(ctx, raw);
 
@@ -133,7 +157,7 @@ static JSValue js_mkdir_sync(JSContext *ctx, JSValueConst this_val,
     if (argc < 1) return JS_ThrowTypeError(ctx, "mkdirSync requires a path argument");
 
     char resolved[PATH_BUF_SIZE];
-    const char *raw = resolve_path_arg(ctx, argv[0], resolved, sizeof(resolved));
+    const char *raw = resolve_write_arg(ctx, argv[0], resolved, sizeof(resolved));
     if (!raw) return JS_EXCEPTION;
     JS_FreeCString(ctx, raw);
 
@@ -205,7 +229,7 @@ static JSValue js_unlink_sync(JSContext *ctx, JSValueConst this_val,
     if (argc < 1) return JS_ThrowTypeError(ctx, "unlinkSync requires a path argument");
 
     char resolved[PATH_BUF_SIZE];
-    const char *raw = resolve_path_arg(ctx, argv[0], resolved, sizeof(resolved));
+    const char *raw = resolve_write_arg(ctx, argv[0], resolved, sizeof(resolved));
     if (!raw) return JS_EXCEPTION;
     JS_FreeCString(ctx, raw);
 
@@ -220,12 +244,12 @@ static JSValue js_rename_sync(JSContext *ctx, JSValueConst this_val,
     if (argc < 2) return JS_ThrowTypeError(ctx, "renameSync requires oldPath and newPath arguments");
 
     char resolved_old[PATH_BUF_SIZE];
-    const char *raw_old = resolve_path_arg(ctx, argv[0], resolved_old, sizeof(resolved_old));
+    const char *raw_old = resolve_write_arg(ctx, argv[0], resolved_old, sizeof(resolved_old));
     if (!raw_old) return JS_EXCEPTION;
     JS_FreeCString(ctx, raw_old);
 
     char resolved_new[PATH_BUF_SIZE];
-    const char *raw_new = resolve_path_arg(ctx, argv[1], resolved_new, sizeof(resolved_new));
+    const char *raw_new = resolve_write_arg(ctx, argv[1], resolved_new, sizeof(resolved_new));
     if (!raw_new) return JS_EXCEPTION;
     JS_FreeCString(ctx, raw_new);
 
