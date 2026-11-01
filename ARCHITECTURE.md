@@ -226,6 +226,7 @@ changes together.
 | `tools/perf/` | Offline perf call-graph attribution and bucket rules; fork. |
 | `tools/privacy/` | Repository privacy scanning and tests; fork. |
 | `tools/share/` | Offline run-bundle packager with privacy scrubbing; fork. |
+| `tools/smoke/` | Read-only game smoke runner with scratch XDG storage; fork. |
 | `tools/upstream/` | Isolated, offline upstream offer extraction; fork. |
 
 ## Where do I start?
