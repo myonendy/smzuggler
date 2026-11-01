@@ -2,6 +2,7 @@
 # Copyright (C) 2026 The smzuggler contributors
 # Modified 2026-11-01: assert the game process gets scratch HOME/XDG directories.
 # Modified 2026-11-01: capture Popen env and the save-check XDG path.
+# Modified 2026-11-01: assert the child control payload has no storage stubs.
 """Guard local evaluator scenarios; see docs/testing.md.
 
 Game-free tests keep the driver recipes portable and private. No game is read.
@@ -112,7 +113,12 @@ class ScenarioTests(unittest.TestCase):
             smzuggler.check_scratch_save(stage, data)
 
     def test_game_process_receives_scratch_xdg(self):
-        """Popen must get scratch HOME/XDG dirs under the run, not the caller."""
+        """Popen must get scratch HOME/XDG dirs under the run, not the caller.
+
+        Also inspects the first control payload so the child cannot receive
+        the upstream StorageManager stubs through a different injection path.
+        """
+        stub = re.compile(r'StorageManager\.(saveObject|loadObject|exists)\s*=')
         keys = ('HOME', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME',
                 'XDG_STATE_HOME', 'XDG_CACHE_HOME')
         with tempfile.TemporaryDirectory() as tmp:
@@ -146,6 +152,9 @@ class ScenarioTests(unittest.TestCase):
                 self.assertTrue(path.is_dir(), key)
                 self.assertTrue(path.is_relative_to(run_root), key)
                 self.assertNotEqual(path, Path(fake[key]).resolve(), key)
+            sent = b''.join(call.args[0] for call in child.stdin.write.call_args_list)
+            self.assertTrue(sent)
+            self.assertIsNone(stub.search(sent.decode('utf-8', 'replace')))
 
     def test_failed_launch_keeps_original_error_and_summary(self):
         """A constructor failure must survive cleanup without timing evidence."""
@@ -159,6 +168,21 @@ class ScenarioTests(unittest.TestCase):
             timing.assert_not_called()
             self.assertEqual(json.loads((run / 'summary.json').read_text()),
                              [{'step': 'window-close', 'status': 'not-run'}])
+
+    def test_close_error_does_not_hide_step_failure(self):
+        """A failing close() must not replace the step or boot diagnostic."""
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp)
+            with patch.object(smzuggler, 'stage_game', return_value=run), \
+                 patch.object(smzuggler, 'game_resolution', return_value=(640, 480)), \
+                 patch.object(smzuggler, 'OutsiderDriver') as driver, \
+                 patch.object(smzuggler, 'Runner') as runner:
+                driver.return_value.evaluate.return_value = 0
+                driver.return_value.close.side_effect = OSError('close failed')
+                runner.return_value.run.side_effect = smzuggler.DriverError('child died')
+                with self.assertRaisesRegex(smzuggler.DriverError, 'child died'):
+                    smzuggler.play(run / 'host', run, run, {'steps': [{'wait': 1}]})
+            self.assertTrue((run / 'summary.json').is_file())
 
     def test_step_failure_survives_missing_perf_samples(self):
         """An early child failure must retain its diagnostic and partial summary."""

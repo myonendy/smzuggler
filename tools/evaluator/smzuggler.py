@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 The smzuggler contributors
 # Modified 2026-11-01: isolate the game process HOME and XDG directories under the run.
+# Modified 2026-11-01: keep the original play() error when driver close fails.
 """Local, isolated control scenarios for the QuickJS host.
 
 Why: spec §10 / §14.6 need a title → Map 92 → menu → save/reload → close route
@@ -168,6 +169,7 @@ def play(exe, game, run, scenario):
                for index in range(len(scenario['steps']))]
     results.append({'step': 'window-close', 'status': 'not-run'})
     driver = None
+    failed = None
     try:
         width, height = game_resolution(str(stage))
         driver = OutsiderDriver(str(exe), str(stage), prelude_text(),
@@ -194,11 +196,17 @@ def play(exe, game, run, scenario):
         results[-1] = {'step': 'window-close', 'status': 'ok' if code == 0 else 'error'}
         if code != 0:
             raise DriverError('unclean window exit')
+    except BaseException as error:
+        failed = error
+        raise
     finally:
         try:
             if driver is not None:
                 driver.close()
                 driver.reader.join(timeout=5)
+        except Exception:
+            if failed is None:
+                raise
         finally:
             (run / 'summary.json').write_text(json.dumps(results, indent=2) + '\n')
     timing_report(run)
