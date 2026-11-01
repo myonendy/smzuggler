@@ -82,7 +82,7 @@ usd_30d = 0
 [budget]
 max_attempts = 4                   # worker attempts per task (gate + review loops)
 max_total_usd = 50.0               # OWNER: estimated Claude spend cap; Claude only reviews here
-max_agent_runs = 200               # OWNER: conservative first-run cap (an earlier project used 800)
+max_agent_runs = 250               # OWNER: raised from 200 on 2026-11-01 (an earlier project used 800)
 limit_cooldown_min = 60
 max_gate_output_lines = 60
 max_review_diff_chars = 60000
