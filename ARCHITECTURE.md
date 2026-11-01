@@ -1,7 +1,6 @@
 <!--
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
-Modified 2026-11-01: host data directories are resolved by default.
 Architecture guide for contributors replacing browser and NW.js services.
 Keep current Outsider behavior distinct from planned smzuggler behavior;
 source references and directory coverage are checked by the tool tests.
@@ -32,8 +31,8 @@ flowchart LR
 In the target, WebGL2 sits alongside Canvas2D, audio and video behind the shims.
 Today PIXI compatibility calls native rendering rather than running the target
 WebGL2 stack. The inherited implementation is in `src/engine/`, `src/bindings/`,
-`src/shims/` and the native service directories below. smzuggler-specific identity,
-privacy support and host data directories live in `src/smzuggler/`; policy, documentation and gate tools
+`src/shims/` and the native service directories below. smzuggler-specific identity
+and privacy support live in `src/smzuggler/`; policy, documentation and gate tools
 are fork work. Existing headers preserve Outsider ownership; a directory's
 provenance does not imply every file in it is unchanged upstream code.
 
@@ -163,12 +162,11 @@ do not spread new engine-specific handle assumptions into unrelated services.
 
 ## Game, save and runtime directories
 
-The game installation is an external input, potentially read-only.
-`src/smzuggler/data_dirs.c:smz_data_dir` resolves logs, the bytecode cache and
-config under the host data directories below. Upstream Outsider still places
-logs in the game root unless `--data-dir` is passed; smzuggler uses the host
-directories by default. Save-path compatibility still predates the target
-environment rules and remains a migration gap.
+The game installation is an external input, potentially read-only. Current
+Outsider startup checks its entry script and may place debug/console logs in the
+game root; current storage compatibility also predates the target environment
+and save-path rules. Those inherited behaviors are migration gaps, not the data
+layout smzuggler promises.
 
 The §5.3 target selects the game with --game, otherwise game_dir in the runtime
 config, otherwise an explanatory error. It validates content rather than install
@@ -193,7 +191,7 @@ plugin-selected game save directory:
 
 Use platform defaults when XDG bases are unset. Game-save resolution follows
 §5.3's Linux data base, Windows roaming application data, or macOS application
-support, plus the plugin-selected directory. Config-file lookup for `--game`
+support, plus the plugin-selected directory. Runtime-directory/config migration
 and save import are target requirements, not completed features of M0.
 
 ## Directory map
@@ -216,7 +214,7 @@ changes together.
 | `src/rendering/` | Renderer, images, fonts, Canvas2D, filters and tilemaps; upstream. |
 | `src/rendering/shaders/` | Native rendering shader sources; upstream. |
 | `src/shims/` | Browser/NW.js/Node and engine compatibility JavaScript; upstream. |
-| `src/smzuggler/` | Runtime identity, privacy log scrubbing and host data directories; fork. |
+| `src/smzuggler/` | Runtime identity and privacy log scrubbing; fork. |
 | `src/video/` | Video decode, playback timing and drawing; upstream. |
 | `tools/` | Build, packaging and evaluation utilities; mixed upstream and fork. |
 | `tools/commitmsg/` | Commit subject checks and fixtures; fork. |

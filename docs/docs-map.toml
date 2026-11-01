@@ -99,7 +99,7 @@ docs = ['docs/sharing.md']
 
 [[areas]]
 path = 'src/main.c'
-docs = ['ARCHITECTURE.md']
+docs = ['ARCHITECTURE.md', 'docs/data-dirs.md']
 
 [[areas]]
 path = 'tools/build_game.py'

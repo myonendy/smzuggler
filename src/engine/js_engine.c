@@ -636,6 +636,7 @@ static bool write_file_binary(const char *path, const uint8_t *data, size_t size
 bool js_engine_eval_file_cached(JSEngine *engine, const char *filepath)
 {
     if (!engine || !filepath) return false;
+    js_engine_watchdog_arm(engine);
 
     char *cache_path = make_cache_path(engine, filepath);
     if (!cache_path) return eval_file_plain(engine, filepath);
