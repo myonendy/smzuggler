@@ -339,7 +339,85 @@
         return {};
     };
 
-    /* process: used by Utils.isNwjs() and StorageManager. */
+    /* process: used by Utils.isNwjs(), StorageManager and save-location
+     * plugins, which build paths from process.platform and process.env.
+     * Host facts come from __native_process (bind_platform). */
+
+    var _nativeProcess = typeof __native_process !== "undefined" ? __native_process : null;
+
+    /* Reference NW.js build (0.80.0) and the Node and Chromium it ships. */
+    function _processVersions() {
+        var v = { node: "20.7.0", nw: "0.80.0", chromium: "117.0.5938.63" };
+        if (_nativeProcess) v.quickjs = _nativeProcess.engine;
+        return v;
+    }
+
+    /* Monotonic [seconds, nanoseconds]; without the native clock, falls
+     * back to Date.now(), which has only millisecond resolution. */
+    function _hrtimeNow() {
+        if (_nativeProcess) return _nativeProcess.hrtime();
+        var ms = Date.now();
+        return [Math.floor(ms / 1000), (ms % 1000) * 1000000];
+    }
+
+    /* Node's process.hrtime([prev]): with prev, the time elapsed since it. */
+    function _hrtime(prev) {
+        var now = _hrtimeNow();
+        if (prev === undefined) return now;
+        if (!(prev instanceof Array) || prev.length !== 2) {
+            throw new TypeError("process.hrtime: argument must be an array of 2 numbers");
+        }
+        var s = now[0] - prev[0];
+        var ns = now[1] - prev[1];
+        if (ns < 0) {
+            s -= 1;
+            ns += 1000000000;
+        }
+        return [s, ns];
+    }
+
+    if (typeof BigInt === "function") {
+        _hrtime.bigint = function() {
+            var t = _hrtimeNow();
+            return BigInt(t[0]) * BigInt(1000000000) + BigInt(t[1]);
+        };
+    }
+
+    /* process.nextTick: callbacks run as one microtask, in order, before
+     * timers. Ticks queued while draining run in the same drain, ahead of
+     * Promise jobs queued meanwhile, as in Node. A Promise job queued before
+     * the first tick of a turn still runs first (Node would run the tick). */
+    var _tickQueue = [];
+    var _tickScheduled = false;
+
+    function _drainTicks() {
+        try {
+            while (_tickQueue.length > 0) {
+                var tick = _tickQueue.shift();
+                tick.fn.apply(undefined, tick.args);
+            }
+        } catch (e) {
+            /* Surface as an uncaught error, not a swallowed rejection. */
+            setTimeout(function() { throw e; }, 0);
+        } finally {
+            _tickScheduled = false;
+            if (_tickQueue.length > 0) _scheduleTicks();
+        }
+    }
+
+    function _scheduleTicks() {
+        if (_tickScheduled) return;
+        _tickScheduled = true;
+        Promise.resolve().then(_drainTicks);
+    }
+
+    function _nextTick(fn) {
+        if (typeof fn !== "function") {
+            throw new TypeError("process.nextTick: callback must be a function");
+        }
+        _tickQueue.push({ fn: fn, args: Array.prototype.slice.call(arguments, 1) });
+        _scheduleTicks();
+    }
 
     if (typeof globalThis.process === "undefined") {
         globalThis.process = {
@@ -347,8 +425,13 @@
                 /* StorageManager.fileDirectoryPath() derives save/ from this. */
                 filename: __native_io.getGameRoot() + "/index.html"
             },
-            platform: "linux",
-            env: {},
+            /* Real OS/CPU in Node's spelling; env is a start-up snapshot. */
+            platform: _nativeProcess ? _nativeProcess.platform : "linux",
+            arch: _nativeProcess ? _nativeProcess.arch : "x64",
+            env: _nativeProcess ? _nativeProcess.environ() : {},
+            versions: _processVersions(),
+            hrtime: _hrtime,
+            nextTick: _nextTick,
             argv: [],
             exit: function() {
                 _nwQuit();
