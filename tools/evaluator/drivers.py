@@ -1,5 +1,6 @@
 # Copyright (c) 2026 General Arcade (Pte. Ltd.)
 # Copyright (C) 2026 The smzuggler contributors
+# Modified 2026-11-01: add evaluate_nowait for fire-and-forget window close.
 # Modified 2026-11-01: accept an optional child environment for isolated save IO.
 # Modified 2026-11-01: document DriverError, free_port, NwjsDriver and OutsiderDriver.
 # SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
@@ -305,6 +306,16 @@ class OutsiderDriver:
 
     def evaluate(self, js, timeout=60.0):
         return self._command("eval", json.dumps(js), timeout)
+
+    def evaluate_nowait(self, js):
+        """Send an eval command without waiting for a JS reply.
+
+        Why: nw.Window.get().close() begins quitting before a control reply
+        can arrive, so evaluate() would hang. js is a borrowed expression
+        string; it is not retained. Raises DriverError if stdin is already
+        gone. Call from the CLI thread.
+        """
+        self._send("eval", json.dumps(js))
 
     def screenshot(self, png_path):
         from PIL import Image

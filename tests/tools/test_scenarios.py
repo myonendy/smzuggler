@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 The smzuggler contributors
+# Modified 2026-11-01: reject non-save file1 names; scan JSON keys; assert evaluate_nowait.
 # Modified 2026-11-01: assert the game process gets scratch HOME/XDG directories.
 # Modified 2026-11-01: capture Popen env and the save-check XDG path.
 # Modified 2026-11-01: assert the child control payload has no storage stubs.
@@ -41,6 +42,7 @@ class ScenarioTests(unittest.TestCase):
             for value in smzuggler.strings(data):
                 self.assertFalse(os.path.isabs(value))
                 self.assertNotRegex(value, r'(?i)([a-z]:[\\/]|\.rmmzsave|\.rpgsave|steamapps|compatdata)')
+            self.assertIn('name', list(smzuggler.strings(data)))
             self.assertEqual(data['name'], 'title-map-menu-save')
             self.assertEqual([s['wait'] for s in data['steps'] if 'wait' in s], [60, 240, 300])
             raw = path.read_text()
@@ -85,6 +87,13 @@ class ScenarioTests(unittest.TestCase):
         self.assertFalse(any('startMapId' in e for e in evals))
         self.assertFalse(any('mapId() !== 92' in e for e in evals))
 
+    def test_strings_include_dict_keys(self):
+        """A JSON key with a path or save suffix must be visible to the scan."""
+        found = list(smzuggler.strings({'/tmp/slot.rmmzsave': {'nested': 'ok'}}))
+        self.assertIn('/tmp/slot.rmmzsave', found)
+        self.assertIn('nested', found)
+        self.assertIn('ok', found)
+
     def test_scratch_save_check_requires_slot_file(self):
         """Save must reach the scratch save directory in either storage mode."""
         with tempfile.TemporaryDirectory() as tmp:
@@ -93,6 +102,18 @@ class ScenarioTests(unittest.TestCase):
             with self.assertRaisesRegex(smzuggler.DriverError, 'slot 1'):
                 smzuggler.check_scratch_save(stage)
             (stage / 'save' / 'forage_rmmzsave.x.file1').write_text('{}')
+            smzuggler.check_scratch_save(stage)
+
+    def test_scratch_save_check_ignores_non_save_file1(self):
+        """A file1 name without a save suffix is not a slot."""
+        with tempfile.TemporaryDirectory() as tmp:
+            stage = Path(tmp)
+            (stage / 'save').mkdir()
+            (stage / 'save' / 'file1.txt').write_text('{}')
+            (stage / 'save' / 'file1.dat').write_text('{}')
+            with self.assertRaisesRegex(smzuggler.DriverError, 'slot 1'):
+                smzuggler.check_scratch_save(stage)
+            (stage / 'save' / 'file1.rpgsave').write_text('{}')
             smzuggler.check_scratch_save(stage)
 
     def test_scratch_save_check_finds_xdg_slot_names(self):
@@ -291,13 +312,29 @@ class ScenarioTests(unittest.TestCase):
                 driver.proc.wait.return_value = 0
                 runner.return_value.run.return_value = [type('R', (), {'status': 'ok'})()]
                 smzuggler.play(run / 'host', run, run, {'steps': [{'wait': 1}]})
-            driver._send.assert_called_once_with('eval', json.dumps('nw.Window.get().close()'))
+            driver.evaluate_nowait.assert_called_once_with('nw.Window.get().close()')
+            driver._send.assert_not_called()
             save_check.assert_called_once()
             data_home = Path(save_check.call_args.args[1]).resolve()
             self.assertTrue(data_home.is_relative_to(run.resolve()))
             self.assertEqual(data_home.name, 'xdg-data')
             self.assertEqual(json.loads((run / 'summary.json').read_text())[-1],
                              {'step': 'window-close', 'status': 'ok'})
+
+    def test_nwjs_recipe_exports_scratch_xdg(self):
+        """The NW.js recipe must isolate the child via scratch HOME/XDG exports."""
+        text = (ROOT / 'docs/testing.md').read_text()
+        recipe = text[text.index('For NW.js reference captures'):]
+        self.assertIn('python3 -m tools.evaluator.cli', recipe)
+        for line in (
+                'export HOME=',
+                'export XDG_DATA_HOME=',
+                'export XDG_CONFIG_HOME=',
+                'export XDG_STATE_HOME=',
+                'export XDG_CACHE_HOME='):
+            self.assertIn(line, recipe)
+        self.assertIn('$XDG_DATA_HOME/<save-dir>/', recipe)
+        self.assertTrue(callable(smzuggler.OutsiderDriver.evaluate_nowait))
 
     def test_bundle_stages_only_allowed_reports(self):
         """Keep scratch inputs out and name JSON reports for the bundler allowlist."""

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 The smzuggler contributors
+# Modified 2026-11-01: scan JSON keys, match save-slot suffixes, close via evaluate_nowait.
 # Modified 2026-11-01: isolate the game process HOME and XDG directories under the run.
 # Modified 2026-11-01: keep the original play() error when driver close fails.
 """Local, isolated control scenarios for the QuickJS host.
@@ -64,11 +65,17 @@ def prelude_text():
 
 
 def strings(value):
-    """Yield borrowed string leaves of JSON so portability checks cover metadata."""
+    """Yield borrowed string keys and values so the portability scan sees both.
+
+    Why: a JSON key holding an absolute path or save suffix would otherwise
+    skip the check. value is borrowed nested JSON; yielded strings are also
+    borrowed. Call from the CLI or test thread.
+    """
     if isinstance(value, str):
         yield value
     elif isinstance(value, dict):
-        for item in value.values():
+        for key, item in value.items():
+            yield from strings(key)
             yield from strings(item)
     elif isinstance(value, list):
         for item in value:
@@ -146,12 +153,12 @@ def request_window_close(driver):
     """Fire nw.Window.get().close() without waiting for a JS reply.
 
     evaluate() waits for a control reply that never arrives once the window
-    begins quitting, so this sends the eval and returns. driver is the live
-    OutsiderDriver; nothing extra is retained. Raises DriverError if stdin
-    is already gone. The caller waits on the child and treats a zero exit
-    as a clean close; forced cleanup does not.
+    begins quitting, so this uses the driver's public fire-and-forget eval.
+    driver is the live OutsiderDriver; nothing extra is retained. Raises
+    DriverError if stdin is already gone. The caller waits on the child and
+    treats a zero exit as a clean close; forced cleanup does not.
     """
-    driver._send('eval', json.dumps('nw.Window.get().close()'))
+    driver.evaluate_nowait('nw.Window.get().close()')
 
 
 def play(exe, game, run, scenario):
@@ -217,8 +224,9 @@ def check_scratch_save(stage, data_home=None):
 
     stage is the scratch game root the host was given. data_home is the child's
     $XDG_DATA_HOME under the run directory; the save-location plugin writes
-    $XDG_DATA_HOME/<dir_save_name>/. Local mode writes file1.rmmzsave and
-    localforage mode a forage_ file whose key ends in file1. The folder name
+    $XDG_DATA_HOME/<dir_save_name>/. Local mode writes file1.rmmzsave or
+    file1.rpgsave; localforage mode writes a forage_ file whose key ends in
+    file1. Only those three name patterns count as slot 1. The folder name
     is not hard-coded: every immediate child of data_home is searched. Raise
     DriverError when neither location contains a slot-1 file.
     """
@@ -228,7 +236,9 @@ def check_scratch_save(stage, data_home=None):
         if home.is_dir():
             folders.extend(path for path in home.iterdir() if path.is_dir())
     for folder in folders:
-        if list(folder.glob('file1.*')) or list(folder.glob('forage_*file1')):
+        if (list(folder.glob('file1.rmmzsave'))
+                or list(folder.glob('file1.rpgsave'))
+                or list(folder.glob('forage_*file1'))):
             return
     raise DriverError('slot 1 was not written to the scratch save directory')
 

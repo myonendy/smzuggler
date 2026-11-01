@@ -4,6 +4,8 @@ Copyright (C) 2026 The smzuggler contributors
 Modified 2026-11-01: document isolated evaluator scenarios, the storage-preserving
 prelude, step summaries and local NW.js references.
 Modified 2026-11-01: document scratch HOME/XDG isolation for the evaluator game process.
+Modified 2026-11-01: export scratch HOME/XDG in the NW.js reference recipe so the
+child inherits isolated save paths.
 
 Local and CI validation of the QuickJS baseline, part of build infrastructure.
 Keep the game-free suite independent of any installed game; do not bypass skips.
@@ -134,10 +136,10 @@ replacement game-system object) and requests `nw.Window.get().close()`. The
 process must exit with status zero; forced cleanup does not count as a clean
 close. After the steps, the entry point also checks that a slot-1 file exists
 in the scratch copy's `save/` directory or under the child's
-`$XDG_DATA_HOME/<save-dir>/` (both `file1.rmmzsave` and `forage_*file1`
-names). The save-dir name is taken from the tree the plugin wrote; it is not
-hard-coded. Readiness can advance frames, so these capture offsets are
-relative to readiness, not engine boot.
+`$XDG_DATA_HOME/<save-dir>/` (`file1.rmmzsave`, `file1.rpgsave`, and
+`forage_*file1` names). The save-dir name is taken from the tree the plugin
+wrote; it is not hard-coded. Readiness can advance frames, so these capture
+offsets are relative to readiness, not engine boot.
 
 The upstream `prelude.js` stubs `StorageManager.saveObject`, `loadObject` and
 `exists` so its own scenarios never touch player data. That would make save
@@ -165,16 +167,34 @@ with the real packager.
 
 For NW.js reference captures, the owner uses another disposable local test
 copy with no personal saves, on the same battery configuration. Make the
-assets read-only and keep only that copy's scratch save directory writable.
-Write the storage-preserving prelude with
+copy's assets read-only. The save-location plugin writes under
+`$XDG_DATA_HOME/<save-dir>/` of the child's environment (U5). Isolation
+comes from exporting scratch HOME and XDG directories before launch. Write
+the storage-preserving prelude with
 `python3 -m tools.evaluator.smzuggler --print-prelude > <ref-dir>/prelude.js`,
-then run the inherited evaluator (`python3 -m tools.evaluator.cli`) against
-the copy with `--scenario tools/evaluator/scenarios/smz-basics.json`,
-`--prelude <ref-dir>/prelude.js`, `--skip-outsider` and `--out <ref-dir>`,
-where `<ref-dir>` is a separate directory under the evaluator state root. Its
-NW.js profile is created under that output directory. Never run this recipe on
-the original store directory. Inspect and compare the captures locally using
-the inherited comparison/report workflow; do not add any reference image to git.
+where `<ref-dir>` is a separate directory under the evaluator state root.
+Create scratch directories under `<ref-dir>` and export them in the same
+shell before launching the inherited evaluator, so `NwjsDriver` copies those
+values into the NW.js child:
+
+```sh
+export HOME=<ref-dir>/home
+export XDG_DATA_HOME=<ref-dir>/xdg-data
+export XDG_CONFIG_HOME=<ref-dir>/xdg-config
+export XDG_STATE_HOME=<ref-dir>/xdg-state
+export XDG_CACHE_HOME=<ref-dir>/xdg-cache
+mkdir -p "$HOME" "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" "$XDG_STATE_HOME" "$XDG_CACHE_HOME"
+python3 -m tools.evaluator.cli <game-copy> \
+  --scenario tools/evaluator/scenarios/smz-basics.json \
+  --prelude <ref-dir>/prelude.js --skip-outsider --out <ref-dir>
+```
+
+Its NW.js profile is created under that output directory. Inspect the slot
+file under `$XDG_DATA_HOME/<save-dir>/` of this scratch tree (`file1.rmmzsave`,
+`file1.rpgsave`, and `forage_*file1` names), the same location the host path
+checks. Never run this recipe on the original store directory. Inspect and
+compare the captures locally using the inherited comparison/report workflow;
+do not add any reference image to git.
 
 If the game copy or GUI is unavailable, the entry point reports
 **BLOCKED: needs dev-laptop GUI run** and exits non-zero. The real run and its
