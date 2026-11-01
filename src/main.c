@@ -103,6 +103,7 @@ bool rmmz_resolve_log_dir(bool use_data_dir, const char *data_dir_path,
     return true;
 }
 
+/* Test builds compile only the log-dir helper (see tests/test_data_dir.c). */
 #ifndef RMMZ_TEST_DATA_DIR
 
 #include "platform/platform.h"

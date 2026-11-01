@@ -5,6 +5,7 @@
 
 /* Resolved log directory for opt-in --data-dir (main.c). */
 
+#include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -39,6 +40,15 @@ static int tests_passed = 0;
         printf("FAIL: %s\n", msg); \
     } while (0)
 
+#define ASSERT(cond) \
+    do { \
+        if (!(cond)) { \
+            printf("FAIL\n    assertion failed: %s\n    at %s:%d\n", \
+                   #cond, __FILE__, __LINE__); \
+            return; \
+        } \
+    } while (0)
+
 static void test_setenv(const char *name, const char *value)
 {
 #ifdef _WIN32
@@ -65,37 +75,22 @@ static void test_restore_env(const char *name, char *saved)
     free(saved);
 }
 
-static void expect_path(const char *got, const char *want)
-{
-    char msg[TEST_PATH_MAX * 2];
-    if (got && want && strcmp(got, want) == 0) {
-        PASS();
-        return;
-    }
-    snprintf(msg, sizeof(msg), "got \"%s\" want \"%s\"",
-             got ? got : "(null)", want ? want : "(null)");
-    FAIL(msg);
-}
-
 static void test_without_flag(void)
 {
     char out[TEST_PATH_MAX];
     const char *game = test_tmp_path("rmmz_data_dir_game");
 
     TEST(without_flag_empty_without_game);
-    if (rmmz_resolve_log_dir(false, NULL, NULL, out, sizeof(out)) &&
-        out[0] == '\0') {
-        PASS();
-    } else {
-        FAIL(out);
-    }
+    ASSERT(rmmz_resolve_log_dir(false, NULL, NULL, out, sizeof(out)));
+    ASSERT(out[0] == '\0');
+    assert(out[0] == '\0');
+    PASS();
 
     TEST(without_flag_uses_game_dir);
-    if (!rmmz_resolve_log_dir(false, NULL, game, out, sizeof(out))) {
-        FAIL("resolve failed");
-    } else {
-        expect_path(out, game);
-    }
+    ASSERT(rmmz_resolve_log_dir(false, NULL, game, out, sizeof(out)));
+    ASSERT(strcmp(out, game) == 0);
+    assert(strcmp(out, game) == 0);
+    PASS();
 }
 
 static void test_with_path(void)
@@ -105,11 +100,23 @@ static void test_with_path(void)
     const char *path = test_tmp_path("rmmz_data_dir_explicit");
 
     TEST(with_path_uses_path);
-    if (!rmmz_resolve_log_dir(true, path, game, out, sizeof(out))) {
-        FAIL("resolve failed");
-    } else {
-        expect_path(out, path);
-    }
+    ASSERT(rmmz_resolve_log_dir(true, path, game, out, sizeof(out)));
+    ASSERT(strcmp(out, path) == 0);
+    assert(strcmp(out, path) == 0);
+    PASS();
+}
+
+static void test_with_flag_not_game_dir(void)
+{
+    char out[TEST_PATH_MAX];
+    const char *game = test_tmp_path("rmmz_data_dir_game");
+
+    TEST(flag_without_path_not_game_dir);
+    ASSERT(rmmz_resolve_log_dir(true, NULL, game, out, sizeof(out)));
+    ASSERT(out[0] != '\0');
+    ASSERT(strcmp(out, game) != 0);
+    assert(strcmp(out, game) != 0);
+    PASS();
 }
 
 #if defined(__linux__) && !defined(__ANDROID__)
@@ -120,18 +127,43 @@ static void test_with_flag_xdg(void)
     char *saved_xdg = test_getenv_copy("XDG_STATE_HOME");
     const char *state = test_tmp_path("rmmz_data_dir_state");
     const char *game = test_tmp_path("rmmz_data_dir_game");
+    const char *path = test_tmp_path("rmmz_data_dir_explicit");
+    int ok;
 
     test_setenv("XDG_STATE_HOME", state);
     snprintf(expect, sizeof(expect), "%s/%s", state, RMMZ_DATA_APP);
+    ok = rmmz_resolve_log_dir(true, NULL, game, out, sizeof(out));
+    test_restore_env("XDG_STATE_HOME", saved_xdg);
 
     TEST(flag_uses_xdg_state_home);
-    if (!rmmz_resolve_log_dir(true, NULL, game, out, sizeof(out))) {
-        FAIL("resolve failed");
-    } else {
-        expect_path(out, expect);
-    }
+    ASSERT(ok);
+    ASSERT(strcmp(out, expect) == 0);
+    assert(strcmp(out, expect) == 0);
+    PASS();
 
+    /* PATH wins over XDG_STATE_HOME when both are present. */
+    saved_xdg = test_getenv_copy("XDG_STATE_HOME");
+    test_setenv("XDG_STATE_HOME", state);
+    ok = rmmz_resolve_log_dir(true, path, game, out, sizeof(out));
     test_restore_env("XDG_STATE_HOME", saved_xdg);
+
+    TEST(path_wins_over_xdg);
+    ASSERT(ok);
+    ASSERT(strcmp(out, path) == 0);
+    assert(strcmp(out, path) == 0);
+    PASS();
+
+    /* Without the flag, XDG must not move logs out of the game dir. */
+    saved_xdg = test_getenv_copy("XDG_STATE_HOME");
+    test_setenv("XDG_STATE_HOME", state);
+    ok = rmmz_resolve_log_dir(false, NULL, game, out, sizeof(out));
+    test_restore_env("XDG_STATE_HOME", saved_xdg);
+
+    TEST(without_flag_ignores_xdg);
+    ASSERT(ok);
+    ASSERT(strcmp(out, game) == 0);
+    assert(strcmp(out, game) == 0);
+    PASS();
 }
 
 static void test_xdg_unset(void)
@@ -142,21 +174,21 @@ static void test_xdg_unset(void)
     char *saved_xdg = test_getenv_copy("XDG_STATE_HOME");
     char *saved_home = test_getenv_copy("HOME");
     const char *game = test_tmp_path("rmmz_data_dir_game");
+    int ok;
 
     snprintf(home, sizeof(home), "%s/rmmz_data_dir_home", test_tmp_root());
     test_setenv("XDG_STATE_HOME", NULL);
     test_setenv("HOME", home);
     snprintf(expect, sizeof(expect), "%s/.local/state/%s", home, RMMZ_DATA_APP);
-
-    TEST(xdg_unset_uses_home_local_state);
-    if (!rmmz_resolve_log_dir(true, NULL, game, out, sizeof(out))) {
-        FAIL("resolve failed");
-    } else {
-        expect_path(out, expect);
-    }
-
+    ok = rmmz_resolve_log_dir(true, NULL, game, out, sizeof(out));
     test_restore_env("XDG_STATE_HOME", saved_xdg);
     test_restore_env("HOME", saved_home);
+
+    TEST(xdg_unset_uses_home_local_state);
+    ASSERT(ok);
+    ASSERT(strcmp(out, expect) == 0);
+    assert(strcmp(out, expect) == 0);
+    PASS();
 }
 #endif
 
@@ -165,6 +197,7 @@ int main(void)
     printf("=== Data-dir log path tests ===\n");
     test_without_flag();
     test_with_path();
+    test_with_flag_not_game_dir();
 #if defined(__linux__) && !defined(__ANDROID__)
     test_with_flag_xdg();
     test_xdg_unset();
