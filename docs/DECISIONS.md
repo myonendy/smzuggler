@@ -434,3 +434,16 @@ so a stale or hand-assembled directory cannot claim the pin. The pin
 check runs before `third_party` is configured, so a bad V8 fails in seconds. Until the
 engine port lands, `SMZ_JS_ENGINE=v8` only adds `smz::v8` and the smoke test: the runtime
 still links QuickJS, and no `SMZ_JS_ENGINE_*` define reaches the sources yet.
+
+## DEC-M1-T003 — jsb getters are strict, and jsb.h has a small runtime API
+The typed argument getters do not coerce: `jsb_arg_i32`/`_f64` need a Number, `_bool` a
+Boolean, `_str` a String and `_obj` an Object, and a missing argument counts as undefined, so
+it is a TypeError too. QuickJS's `JS_ToInt32` and friends coerce silently, which hides
+shim bugs; a binding that wants WebIDL-style coercion converts in its JS shim, where the
+reference behaviour is visible. Numbers given to `_i32` still wrap like ToInt32. A string
+too long for the caller's buffer is a RangeError, never a silent truncation. Only the
+first `jsb_throw_*` of a call counts. §4.1 lists no host-side calls, but bindings and their
+C tests need a live engine, so `jsb.h` also has `jsb_runtime_create/_destroy/_setup/_eval`;
+`js_engine.c` is expected to build on them when it moves to V8. `jsb_val`s are kept in a
+per-call deque inside the stack-allocated `jsb_ctx`, which dies before its HandleScope,
+so §15.8's "no Local in a struct" holds in spirit: nothing outlives the scope.

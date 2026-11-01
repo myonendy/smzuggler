@@ -211,6 +211,7 @@ changes together.
 | `src/engine/` | Script engine, loader, frame loop and errors; upstream with fork log privacy. |
 | `src/input/` | Native keyboard, mouse and controller state; upstream. |
 | `src/io/` | Filesystem access and game-root resolution; upstream. |
+| `src/jsb/` | C binding seam `jsb.h` and its V8 backend ([JS binding](docs/js-binding.md)); fork. |
 | `src/platform/` | SDL window/events, graphics setup and OS adapters; upstream. |
 | `src/rendering/` | Renderer, images, fonts, Canvas2D, filters and tilemaps; upstream. |
 | `src/rendering/shaders/` | Native rendering shader sources; upstream. |

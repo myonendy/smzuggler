@@ -4,6 +4,7 @@
 # Modified 2026-10-31: map tools/compat to the process/require inventory.
 # Modified 2026-11-01: map data-directory sources to docs/data-dirs.md.
 # Modified 2026-11-01: map tools/v8 to docs/build-v8.md.
+# Modified 2026-11-01: map src/jsb to docs/js-binding.md.
 # Documentation obligations for the read-only gate in tools/doclint/docs_touched.py.
 # This is repository tooling, outside browser/NW.js emulation; keep paths relative.
 # Run: python3 tools/doclint/docs_touched.py --base REV (Python 3.11+).
@@ -24,6 +25,10 @@ docs = ['docs/audio.md']
 
 [[areas]]
 path = 'src/bindings/**'
+docs = ['docs/js-binding.md']
+
+[[areas]]
+path = 'src/jsb/**'
 docs = ['docs/js-binding.md']
 
 [[areas]]

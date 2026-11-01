@@ -6,6 +6,7 @@
 # Modified 2026-10-31: restore Outsider's copyright and SPDX lines (spec section 12).
 # Modified 2026-11-01: compile host data-directory resolution into the runtime.
 # Modified 2026-11-01: add SMZ_JS_ENGINE and import prebuilt V8 (cmake/V8.cmake).
+# Modified 2026-11-01: build the jsb seam's V8 backend as smz_jsb (src/jsb/).
 # Build orchestration; see docs/DECISIONS.md (DEC-M0-T001).
 
 cmake_minimum_required(VERSION 3.20)
@@ -312,6 +313,16 @@ if(RMMZ_GAME_DIR)
         PATTERN "icon" EXCLUDE
         PATTERN "css" EXCLUDE
     )
+endif()
+
+# The jsb binding seam (spec section 4.1, docs/js-binding.md). Its V8
+# backend is a static library that C bindings and tests link; it exists
+# only with SMZ_JS_ENGINE=v8 until the transitional QuickJS backend
+# (DEC-SETUP-008) lands.
+if(SMZ_JS_ENGINE STREQUAL "v8")
+    add_library(smz_jsb STATIC src/jsb/jsb_v8.cc)
+    target_include_directories(smz_jsb PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/jsb)
+    target_link_libraries(smz_jsb PUBLIC smz::v8)
 endif()
 
 # Tests

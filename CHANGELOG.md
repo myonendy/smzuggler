@@ -35,6 +35,10 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Add the `jsb` binding seam: `src/jsb/jsb.h` (plain C11) and its V8 backend
+  `src/jsb/jsb_v8.cc`, built as `smz_jsb` in v8 mode, with the `jsb_core` test
+  and a C11 header check; API and handle rules in `docs/js-binding.md`
+  (DEC-M1-T003).
 - Add the `SMZ_JS_ENGINE` CMake option (`quickjs` default, `v8`) and
   `cmake/V8.cmake`, which imports the pinned prebuilt V8 from `SMZ_V8_DIR` as
   `smz::v8` and fails at configure time if it is missing or another version;
