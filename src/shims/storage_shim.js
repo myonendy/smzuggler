@@ -351,7 +351,7 @@
             env: {},
             argv: [],
             exit: function() {
-                if (typeof __native_platform !== "undefined") __native_platform.quit();
+                _nwQuit();
             },
             cwd: function() {
                 return __native_io.getGameRoot() || ".";
@@ -396,8 +396,24 @@
         }
     }
 
+    /* Set once the app has decided to quit, so the SDL quit event that
+     * __native_platform.quit() pushes is not turned into another "close". */
+    var _nwQuitRequested = false;
+
     function _nwQuit() {
+        _nwQuitRequested = true;
         if (typeof __native_platform !== "undefined") __native_platform.quit();
+    }
+
+    /* Called by the game loop on SDL quit or window close. Emits "close" on
+     * the window like NW.js; returns true when the loop should stop, i.e. the
+     * app already asked to quit or nobody listens for "close". */
+    function _nwHostClose() {
+        var win = globalThis.nw && globalThis.nw.Window.get();
+        if (_nwQuitRequested || !win || typeof win.listeners !== "function") return true;
+        if (win.listeners("close").length === 0) return true;
+        win.emit("close");
+        return _nwQuitRequested;
     }
 
     if (typeof globalThis.nw === "undefined") {
@@ -484,6 +500,7 @@
                 quit: _nwQuit
             }
         };
+        globalThis.__nw_hostClose = _nwHostClose;
     }
 
 })();

@@ -22,6 +22,7 @@ All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
 - Report navigator.platform and userAgent for the real OS in Chrome's format, following process.platform/arch, instead of always Windows (U6).
+- Deliver the `close` event on SDL quit and window close; a listener keeps the app running until `close(true)` or `nw.App.quit()` (U4).
 - Answer canPlayType from the decoders the build has (MPEG-1, Ogg Vorbis, WAV); webm, MP4 and MP3 now answer '' (U11).
 - Make `nw.Window.get()` a Node-style EventEmitter with the §5.2 window methods, so CleanExit-style `removeAllListeners("close")` works (U3).
 - Add subtree tag lookup and simple tag/id/class selector queries with syntax errors for unsupported selectors (U2).

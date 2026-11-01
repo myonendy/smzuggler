@@ -19,7 +19,7 @@ no new test infrastructure or unrelated paths may enter an offer.
 | U1 | Document tag lookup includes head/body/html (§5.1) | `src/shims/dom_shim.js`, `tests/test_dom_shim.c` | — | ready to cut | up/U1-document-tags | — | Singleton identity, case-insensitive tags and wildcard covered by QuickJS shim tests |
 | U2 | Element subtree tag/id/class selectors (§5.1, §5.7) | `src/shims/dom_shim.js`, `tests/test_dom_shim.c` | — | ready to cut | up/U2-element-selectors | — | Tree-order tag/id/class, compounds, comma lists and syntax errors covered by QuickJS shim tests |
 | U3 | Window EventEmitter and window methods (§5.2) | `src/shims/storage_shim.js`, `tests/test_storage.c` | — | ready to cut | up/U3-window-events | — | Listener order, once, off, removeAllListeners, emit result, listeners copy and singleton covered by QuickJS shim tests |
-| U4 | SDL close event and forced quit (§5.2) | `src/platform/platform_sdl3.c`, `src/engine/game_loop.c`, `src/shims/storage_shim.js`, `tests/test_game_loop.c`, `tests/test_storage.c` | U3 | planned | up/U4-close-delivery | — | 50–120 lines; C and control-mode tests |
+| U4 | SDL close event and forced quit (§5.2) | `src/platform/platform_sdl3.c`, `src/engine/game_loop.c`, `src/shims/storage_shim.js`, `tests/test_game_loop.c` | U3 | ready to cut | up/U4-window-close-event | — | Listener defers quit, `close(true)`/`nw.App.quit()` stop, no listener quits: QuickJS tests in `test_game_loop.c`; control-mode run exits 0 |
 | U5 | Process environment, platform, versions, arch, timing and nextTick (§5.3) | `src/shims/storage_shim.js`, `src/bindings/bind_platform.c`, `tests/test_storage.c` | — | planned | up/U5-process | — | 80–150 lines; shim unit test |
 | U6 | OS-consistent navigator identity (§5.3) | `src/shims/navigator_shim.js`, `tests/test_dom_shim.c` | — | ready to cut | up/U6-navigator-platform | — | Chrome-format platform/UA for linux (x64/arm64), darwin, win32 and android from process.platform/arch, Chrome/120.0.0.0 kept, in QuickJS shim tests; U5 makes process.platform real |
 | U7 | Refuse relative and game-root save writes (§5.3) | `src/bindings/bind_io.c`, `src/io/file_io.c`, `tests/test_file_io.c` | — | planned | up/U7-save-guard | — | 50–100 lines; C test |
@@ -46,6 +46,21 @@ window, `emit` returns whether any listener ran, and `listeners` returns a copy.
 `removeListener` drops only the most recently added matching registration, as in
 Node. `close()` emits `close` when a listener exists and quits otherwise;
 `close(true)` always quits. Host delivery of `close` is U4.
+
+U4 delivers that `close` from the host. `platform_poll_events()` reports both
+`SDL_EVENT_QUIT` and `SDL_EVENT_WINDOW_CLOSE_REQUESTED` (with
+`SDL_HINT_QUIT_ON_LAST_WINDOW_CLOSE` off, so one click is one request), and
+`game_loop_step()` then calls the shim's `__nw_hostClose()`. That emits `close`
+when a listener exists and returns whether to stop: the loop keeps running until
+`close(true)`, `nw.App.quit()` or `process.exit()` sets the shim's quit flag, so the
+`SDL_EVENT_QUIT` those push ends the loop instead of emitting `close` again. With no
+listener, or no shim, the loop stops as before. A listener that throws is logged and
+the loop stops, so the window can always be closed. The control-mode `quit` command
+stays immediate. The C test drives `__nw_hostClose()` through QuickJS because
+upstream's `test_game_loop` target links neither SDL nor `game_loop.c`; the SDL path
+was checked with a control-mode run (`__native_platform.quit()` pushes a raw
+`SDL_EVENT_QUIT`; with CleanExit's `removeAllListeners`/`on("close")` pattern the
+process exits 0).
 
 ## Building and opening offers (§8.2)
 

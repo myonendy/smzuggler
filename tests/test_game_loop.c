@@ -1142,6 +1142,137 @@ TEST(pixi_errors_captured_gracefully)
     PASS();
 }
 
+/* Window close: game_loop_step() calls __nw_hostClose() when
+   platform_poll_events() reports SDL_EVENT_QUIT or a window close request,
+   and stops only when it returns true. __native_platform.quit() (which pushes
+   SDL_EVENT_QUIT) is replaced by a counter so no SDL display is needed. */
+
+static JSEngine *create_close_test_engine(void)
+{
+    JSEngine *engine = create_test_engine();
+    if (!engine) return NULL;
+    if (!script_loader_load_shims(engine, "src/shims") ||
+        !eval_ok(engine,
+            "var pushedQuits = 0, closeRuns = 0;\n"
+            "globalThis.__native_platform = { quit: function() { pushedQuits++; } };\n")) {
+        js_engine_shutdown(engine);
+        return NULL;
+    }
+    return engine;
+}
+
+static bool js_is(JSEngine *engine, const char *expr, const char *expected)
+{
+    char *r = eval_str(engine, expr);
+    bool same = r && strcmp(r, expected) == 0;
+    js_engine_free_string(r);
+    return same;
+}
+
+/* What the loop does with an SDL quit event: "stop" or "run". */
+static bool host_close_is(JSEngine *engine, const char *expected)
+{
+    return js_is(engine, "__nw_hostClose() ? 'stop' : 'run'", expected);
+}
+
+TEST(close_listener_defers_quit_until_close_true)
+{
+    JSEngine *engine = create_close_test_engine();
+    ASSERT(engine != NULL);
+    ASSERT(eval_ok(engine, "nw.Window.get().on('close', function() { closeRuns++; });"));
+
+    /* SDL quit: the listener runs and the loop keeps running. */
+    ASSERT(host_close_is(engine, "run"));
+    ASSERT(js_is(engine, "String(closeRuns)", "1"));
+    ASSERT(js_is(engine, "String(pushedQuits)", "0"));
+
+    /* A second close request emits again, still without quitting. */
+    ASSERT(host_close_is(engine, "run"));
+    ASSERT(js_is(engine, "String(closeRuns)", "2"));
+
+    /* close(true) pushes an SDL quit, and that quit stops the loop
+       without emitting "close" again. */
+    ASSERT(eval_ok(engine, "nw.Window.get().close(true);"));
+    ASSERT(js_is(engine, "String(pushedQuits)", "1"));
+    ASSERT(host_close_is(engine, "stop"));
+    ASSERT(js_is(engine, "String(closeRuns)", "2"));
+
+    js_engine_shutdown(engine);
+    PASS();
+}
+
+TEST(close_without_listener_quits)
+{
+    JSEngine *engine = create_close_test_engine();
+    ASSERT(engine != NULL);
+    ASSERT(host_close_is(engine, "stop"));
+
+    /* A listener that was removed again no longer holds the window open. */
+    ASSERT(eval_ok(engine,
+        "var w = nw.Window.get(); w.on('close', function() { closeRuns++; });\n"
+        "w.removeAllListeners('close');"));
+    ASSERT(host_close_is(engine, "stop"));
+    ASSERT(js_is(engine, "String(closeRuns)", "0"));
+
+    js_engine_shutdown(engine);
+    PASS();
+}
+
+TEST(close_listener_app_quit_stops_loop)
+{
+    JSEngine *engine = create_close_test_engine();
+    ASSERT(engine != NULL);
+    ASSERT(eval_ok(engine, "nw.Window.get().on('close', function() { closeRuns++; });"));
+    ASSERT(host_close_is(engine, "run"));
+
+    ASSERT(eval_ok(engine, "nw.App.quit();"));
+    ASSERT(js_is(engine, "String(pushedQuits)", "1"));
+    ASSERT(host_close_is(engine, "stop"));
+    ASSERT(js_is(engine, "String(closeRuns)", "1"));
+
+    js_engine_shutdown(engine);
+    PASS();
+}
+
+TEST(close_listener_forcing_close_stops_same_frame)
+{
+    /* CleanExit's pattern: replace all close listeners with one that
+       calls close(true); the quit takes effect on that same SDL event. */
+    JSEngine *engine = create_close_test_engine();
+    ASSERT(engine != NULL);
+    ASSERT(eval_ok(engine,
+        "var w = nw.Window.get(); w.on('close', function() { closeRuns += 100; });\n"
+        "w.removeAllListeners('close');\n"
+        "w.on('close', function() { closeRuns++; this.close(true); });"));
+    ASSERT(host_close_is(engine, "stop"));
+    ASSERT(js_is(engine, "String(closeRuns)", "1"));
+    ASSERT(js_is(engine, "String(pushedQuits)", "1"));
+
+    js_engine_shutdown(engine);
+    PASS();
+}
+
+TEST(close_without_force_only_emits)
+{
+    /* As in NW.js, close() with a listener only emits "close"; with no
+       listener it quits. */
+    JSEngine *engine = create_close_test_engine();
+    ASSERT(engine != NULL);
+    ASSERT(eval_ok(engine,
+        "var w = nw.Window.get(); w.on('close', function() { closeRuns++; });\n"
+        "w.close();"));
+    ASSERT(js_is(engine, "String(closeRuns)", "1"));
+    ASSERT(js_is(engine, "String(pushedQuits)", "0"));
+    ASSERT(host_close_is(engine, "run"));
+
+    ASSERT(eval_ok(engine, "w.removeAllListeners(); w.close();"));
+    ASSERT(js_is(engine, "String(pushedQuits)", "1"));
+    ASSERT(host_close_is(engine, "stop"));
+
+    js_engine_shutdown(engine);
+    PASS();
+}
+
 /* Main */
 
 int main(void)
@@ -1192,6 +1323,13 @@ int main(void)
     run_window_event_dispatch_after_shims();
     run_control_shim_replies();
     run_pixi_errors_captured_gracefully();
+
+    printf("\n-- Window Close --\n");
+    run_close_listener_defers_quit_until_close_true();
+    run_close_without_listener_quits();
+    run_close_listener_app_quit_stops_loop();
+    run_close_listener_forcing_close_stops_same_frame();
+    run_close_without_force_only_emits();
 
     cleanup_test_dir();
 
