@@ -5,6 +5,7 @@
 # Modified 2026-10-31: build and stage the headless shim inventory.
 # Modified 2026-10-31: restore Outsider's copyright and SPDX lines (spec section 12).
 # Modified 2026-11-01: compile host data-directory resolution into the runtime.
+# Modified 2026-11-01: add SMZ_JS_ENGINE and import prebuilt V8 (cmake/V8.cmake).
 # Build orchestration; see docs/DECISIONS.md (DEC-M0-T001).
 
 cmake_minimum_required(VERSION 3.20)
@@ -87,6 +88,22 @@ if(RMMZ_RENDER_BACKEND STREQUAL "gpu")
             "    python tools/compile_shaders.py --shadercross /path/to/shadercross\n"
             "or build the OpenGL backend with -DRMMZ_RENDER_BACKEND=gl.")
     endif()
+endif()
+
+# JavaScript engine (spec section 4.1). "quickjs" is Outsider's engine and
+# still runs the game; "v8" additionally imports the pinned prebuilt V8 from
+# SMZ_V8_DIR as smz::v8 (cmake/V8.cmake, docs/build-v8.md) while the engine
+# is being moved. Checked before any dependency is configured, so a missing
+# V8 fails fast with a message naming SMZ_V8_DIR.
+set(SMZ_JS_ENGINE "quickjs" CACHE STRING "JavaScript engine: quickjs or v8")
+set_property(CACHE SMZ_JS_ENGINE PROPERTY STRINGS quickjs v8)
+set(SMZ_V8_DIR "" CACHE PATH "V8 install prefix from tools/v8/build_v8.sh (SMZ_JS_ENGINE=v8)")
+if(NOT SMZ_JS_ENGINE MATCHES "^(quickjs|v8)$")
+    message(FATAL_ERROR "SMZ_JS_ENGINE must be quickjs or v8, not '${SMZ_JS_ENGINE}'")
+endif()
+if(SMZ_JS_ENGINE STREQUAL "v8")
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/V8.cmake)
+    smz_import_v8()
 endif()
 
 # Platform-specific system libraries and compiler settings.

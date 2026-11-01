@@ -35,6 +35,10 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Add the `SMZ_JS_ENGINE` CMake option (`quickjs` default, `v8`) and
+  `cmake/V8.cmake`, which imports the pinned prebuilt V8 from `SMZ_V8_DIR` as
+  `smz::v8` and fails at configure time if it is missing or another version;
+  v8 mode builds the `v8_smoke` test (`docs/build-v8.md`, DEC-M1-T002).
 - Add `tools/v8/build_v8.sh`, which builds the proposed V8 pin 13.6.233.8 as a
   static monolith into `$SMZ_DEPS_DIR/v8/<version>/` with a `v8-config.cmake`
   manifest; `--print-args` shows the GN args (`docs/build-v8.md`, DEC-M1-T001).

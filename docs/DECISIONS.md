@@ -424,3 +424,13 @@ Chrome/NW.js, smaller heap) and the V8 sandbox off (it forbids the no-copy exter
 ArrayBuffers of `jsb`). Reasons per arg are in docs/build-v8.md. **This is a proposal: the
 owner must approve the pin at checkpoint H1, and run the build once on dev-laptop, before
 M1-T002 merges.**
+
+## DEC-M1-T002 — SMZ_V8_DIR is checked against the headers, and v8 mode still runs QuickJS
+`cmake/V8.cmake` defines `smz::v8` itself instead of including the install's
+`v8-config.cmake`, and takes the version from `include/v8-version.h`, not from the manifest,
+so a stale or hand-assembled directory cannot claim the pin. The pin
+(`SMZ_V8_VERSION_PIN`) is duplicated from `tools/v8/build_v8.sh`;
+`tests/tools/test_v8_cmake.py` fails if the two or the pointer-compression defines drift. The
+check runs before `third_party` is configured, so a bad V8 fails in seconds. Until the
+engine port lands, `SMZ_JS_ENGINE=v8` only adds `smz::v8` and the smoke test: the runtime
+still links QuickJS, and no `SMZ_JS_ENGINE_*` define reaches the sources yet.

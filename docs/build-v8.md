@@ -57,6 +57,37 @@ interrupted run never leaves a half-installed version. The host build uses
 `include("$SMZ_DEPS_DIR/v8/<version>/v8-config.cmake")` and links
 `V8::v8_monolith`; the manifest also sets `V8_VERSION` and `V8_ICU_DATA`.
 
+## Using V8 from CMake (`SMZ_JS_ENGINE`)
+
+The host build chooses its JavaScript engine with the cache option
+`SMZ_JS_ENGINE`: `quickjs` (default, Outsider's engine, unchanged) or `v8`.
+
+```sh
+cmake -S . -B build-v8 -DSMZ_JS_ENGINE=v8 \
+      -DSMZ_V8_DIR="$SMZ_DEPS_DIR/v8/13.6.233.8" ...   # plus the usual dep flags
+ctest --test-dir build-v8 -R v8_smoke --output-on-failure
+```
+
+In v8 mode the top-level `CMakeLists.txt` includes `cmake/V8.cmake`, which:
+
+* checks `SMZ_V8_DIR` before any dependency is configured, and stops with a
+  message naming `SMZ_V8_DIR` if it is unset, not a directory, its
+  `include/v8-version.h` is not the pin (`SMZ_V8_VERSION_PIN`, equal to
+  `V8_VERSION` in `build_v8.sh`), or `lib/libv8_monolith.a` or
+  `share/icudtl.dat` is missing;
+* defines the imported static target `smz::v8`: the monolith, its headers,
+  `V8_COMPRESS_POINTERS` and `V8_31BIT_SMIS_ON_64BIT_ARCH`, C++20, threads and
+  libdl;
+* sets `SMZ_V8_ICU_DATA`, the `icudtl.dat` path V8 needs at startup.
+
+The version is read from the headers, not from `v8-config.cmake`
+(DEC-M1-T002). The test `v8_smoke` (`tests/smz/test_v8_smoke.cc`) is built
+only in v8 mode: it creates an isolate and a context, runs `1+1`, and checks
+that `V8::GetVersion()` equals the pin, printing both. Until the engine port
+lands, v8 mode still runs the game on QuickJS; it only adds `smz::v8` and the
+smoke test. The forge gates build quickjs mode; adding a v8-mode build to them
+is human checkpoint H2 (DEC-SETUP-006).
+
 ## GN args
 
 One line of why for each (`--print-args` prints exactly these):
