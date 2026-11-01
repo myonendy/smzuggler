@@ -3494,68 +3494,32 @@
 
     PIXI.Ticker = Ticker;
 
-    /* [PROF] missing-member warnings. One console.warn per distinct
-       Class.member a game actually reads, and only while profiling is on
-       (__OUTSIDER_PROF, process.env.OUTSIDER_PROF, or argv --prof).
-       Accessors are installed on the renderer instance so dump-surface
-       still omits the gaps. */
-
     var _profMissingSeen = {};
-
-    /* True when the host asked for the diagnostic; off is the default. */
-    function pixiProfEnabled() {
-        if (globalThis.__OUTSIDER_PROF) return true;
-        var proc = globalThis.process;
-        if (!proc) return false;
-        if (proc.env && proc.env.OUTSIDER_PROF) return true;
-        var argv = proc.argv;
-        if (!argv) return false;
-        var i;
-        for (i = 0; i < argv.length; i++) {
-            if (argv[i] === "--prof") return true;
+    /* [PROF] one console.warn per distinct missing Class.member a game reads,
+       only when profiling is on (__OUTSIDER_PROF, OUTSIDER_PROF, argv --prof). */
+    function installRendererMissingWatches(r) {
+        var p = globalThis.process, a = p && p.argv, i, names, plugins;
+        if (!globalThis.__OUTSIDER_PROF && !(p && p.env && p.env.OUTSIDER_PROF)) {
+            if (!a || a.indexOf("--prof") < 0) return;
         }
-        return false;
-    }
-
-    /* Log at most one [PROF] missing: Class.member line per key. */
-    function warnMissingMember(className, member) {
-        if (!pixiProfEnabled()) return;
-        var key = className + "." + member;
-        if (_profMissingSeen[key]) return;
-        _profMissingSeen[key] = 1;
-        console.warn("[PROF] missing: " + key);
-    }
-
-    /* Own getter/setter so a later assignment still sticks. */
-    function watchMissingMember(obj, className, member) {
-        if (!obj || (member in obj)) return;
-        var value;
-        Object.defineProperty(obj, member, {
-            configurable: true,
-            enumerable: false,
-            get: function() {
-                if (value === undefined) warnMissingMember(className, member);
-                return value;
-            },
-            set: function(v) { value = v; }
-        });
-    }
-
-    /* Skip names the instance already implements. */
-    function watchMissingMembers(obj, className, names) {
-        var i;
-        for (i = 0; i < names.length; i++) {
-            watchMissingMember(obj, className, names[i]);
+        /* Own getter so a later assignment sticks; warn once per Class.member. */
+        function watch(obj, className, member) {
+            var value;
+            if (!obj || (member in obj)) return;
+            Object.defineProperty(obj, member, { configurable: true, enumerable: false,
+                /* Read path: first undefined get logs the gap. */
+                get: function() {
+                    var key = className + "." + member;
+                    if (value === undefined && !_profMissingSeen[key])
+                        { _profMissingSeen[key] = 1; console.warn("[PROF] missing: " + key); }
+                    return value;
+                },
+                /* Write path: later assignment replaces the stub. */
+                set: function(v) { value = v; } });
         }
-    }
-
-    /* Renderer/plugin gaps from the original [PROF] list (§2, §4.2). */
-    function installRendererMissingWatches(renderer) {
-        if (!pixiProfEnabled()) return;
-        watchMissingMembers(renderer, "Renderer",
-            ["renderTexture", "filter", "mask", "context", "buffer"]);
-        watchMissingMembers(renderer.plugins, "plugins",
-            ["rpgtilemap", "um7tilemap"]);
+        names = ["renderTexture", "filter", "mask", "context", "buffer"]; plugins = ["rpgtilemap", "um7tilemap"];
+        for (i = 0; i < names.length; i++) watch(r, "Renderer", names[i]);
+        for (i = 0; i < plugins.length; i++) watch(r.plugins, "plugins", plugins[i]);
     }
 
     /* PIXI.Renderer (wraps __native_renderer) */
