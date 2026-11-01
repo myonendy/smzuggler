@@ -18,7 +18,7 @@ no new test infrastructure or unrelated paths may enter an offer.
 |---|---|---|---|---|---|---|---|
 | U1 | Document tag lookup includes head/body/html (§5.1) | `src/shims/dom_shim.js`, `tests/test_dom_shim.c` | — | ready to cut | up/U1-document-tags | — | Singleton identity, case-insensitive tags and wildcard covered by QuickJS shim tests |
 | U2 | Element subtree tag/id/class selectors (§5.1, §5.7) | `src/shims/dom_shim.js`, `tests/test_dom_shim.c` | — | ready to cut | up/U2-element-selectors | — | Tree-order tag/id/class, compounds, comma lists and syntax errors covered by QuickJS shim tests |
-| U3 | Window EventEmitter and window methods (§5.2) | `src/shims/storage_shim.js`, `tests/test_storage.c` | — | planned | up/U3-window-events | — | 100–150 lines; shim unit test |
+| U3 | Window EventEmitter and window methods (§5.2) | `src/shims/storage_shim.js`, `tests/test_storage.c` | — | ready to cut | up/U3-window-events | — | Listener order, once, off, removeAllListeners, emit result, listeners copy and singleton covered by QuickJS shim tests |
 | U4 | SDL close event and forced quit (§5.2) | `src/platform/platform_sdl3.c`, `src/engine/game_loop.c`, `src/shims/storage_shim.js`, `tests/test_game_loop.c`, `tests/test_storage.c` | U3 | planned | up/U4-close-delivery | — | 50–120 lines; C and control-mode tests |
 | U5 | Process environment, platform, versions, arch, timing and nextTick (§5.3) | `src/shims/storage_shim.js`, `src/bindings/bind_platform.c`, `tests/test_storage.c` | — | planned | up/U5-process | — | 80–150 lines; shim unit test |
 | U6 | OS-consistent navigator identity (§5.3) | `src/shims/navigator_shim.js`, `tests/test_platform.c` | — | planned | up/U6-navigator | — | <50 lines; shim unit test; U5 helps |
@@ -39,6 +39,13 @@ identifiers use ASCII letters/underscore followed by letters, digits, underscore
 or hyphen. Other syntax, including combinators, attributes and escapes, throws an
 Error named `SyntaxError`. The head singleton is attached before body so document
 queries use the same traversal as element queries.
+
+U3 gives the `nw.Window.get()` singleton Node EventEmitter semantics:
+`on`/`addListener`/`once`/`off`/`removeListener`/`removeAllListeners` return the
+window, `emit` returns whether any listener ran, and `listeners` returns a copy.
+`removeListener` drops only the most recently added matching registration, as in
+Node. `close()` emits `close` when a listener exists and quits otherwise;
+`close(true)` always quits. Host delivery of `close` is U4.
 
 ## Building and opening offers (§8.2)
 

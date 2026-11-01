@@ -679,6 +679,164 @@ TEST(nw_shim_exists)
     js_teardown();
 }
 
+TEST(nw_window_get_is_singleton)
+{
+    js_setup();
+    ASSERT(js_check("nw.Window.get() === nw.Window.get()"));
+    ASSERT(js_check(
+        "nw.Window.get().on('x', function() {});"
+        "nw.Window.get().listeners('x').length === 1"
+    ));
+    js_teardown();
+}
+
+TEST(nw_window_listener_order)
+{
+    js_setup();
+    ASSERT(js_check(
+        "var w = nw.Window.get(), log = [];"
+        "w.on('ev', function(a) { log.push('a' + a); });"
+        "w.addListener('ev', function(a) { log.push('b' + a); });"
+        "w.once('ev', function(a) { log.push('c' + a); });"
+        "w.emit('ev', 1);"
+        "log.join(',') === 'a1,b1,c1'"
+    ));
+    js_teardown();
+}
+
+TEST(nw_window_once_fires_once)
+{
+    js_setup();
+    ASSERT(js_check(
+        "var w = nw.Window.get(), n = 0;"
+        "w.once('ev', function() { n++; });"
+        "w.emit('ev'); w.emit('ev');"
+        "n === 1 && w.listeners('ev').length === 0"
+    ));
+    ASSERT(js_check(
+        "var w = nw.Window.get(), n = 0, f = function() { n++; };"
+        "w.on('dup', f); w.once('dup', f);"
+        "w.emit('dup'); w.emit('dup');"
+        "n === 3 && w.listeners('dup').length === 1"
+    ));
+    js_teardown();
+}
+
+TEST(nw_window_off_removes_one_registration)
+{
+    js_setup();
+    ASSERT(js_check(
+        "var w = nw.Window.get(), n = 0, f = function() { n++; };"
+        "w.on('ev', f); w.on('ev', f);"
+        "w.off('ev', f); w.emit('ev');"
+        "n === 1 && w.listeners('ev').length === 1"
+    ));
+    ASSERT(js_check(
+        "n = 0; w.removeListener('ev', f); w.emit('ev');"
+        "n === 0 && w.listeners('ev').length === 0"
+    ));
+    ASSERT(js_check(
+        "var w = nw.Window.get(), g = function() {};"
+        "w.off('missing', g) === w && w.removeListener('missing', g) === w"
+    ));
+    js_teardown();
+}
+
+TEST(nw_window_remove_all_listeners)
+{
+    js_setup();
+    ASSERT(js_check(
+        "var w = nw.Window.get(), f = function() {};"
+        "w.on('close', f); w.on('close', f); w.on('blur', f);"
+        "w.removeAllListeners('close') === w &&"
+        "w.listeners('close').length === 0 && w.listeners('blur').length === 1"
+    ));
+    ASSERT(js_check(
+        "var w = nw.Window.get(), f = function() {};"
+        "w.on('close', f);"
+        "w.removeAllListeners() === w &&"
+        "w.listeners('close').length === 0 && w.listeners('blur').length === 0"
+    ));
+    js_teardown();
+}
+
+TEST(nw_window_emit_reports_listeners)
+{
+    js_setup();
+    ASSERT(js_check("nw.Window.get().emit('nobody') === false"));
+    ASSERT(js_check(
+        "var w = nw.Window.get(), got = null;"
+        "w.on('ev', function(a, b) { got = [this === w, a, b]; });"
+        "w.emit('ev', 2, 3) === true && got[0] && got[1] === 2 && got[2] === 3"
+    ));
+    js_teardown();
+}
+
+TEST(nw_window_listeners_returns_copy)
+{
+    js_setup();
+    ASSERT(js_check(
+        "var w = nw.Window.get(), f = function() {};"
+        "w.on('ev', f);"
+        "var l = w.listeners('ev'); l.push(f); l.length = 0;"
+        "w.listeners('ev').length === 1 && w.listeners('ev')[0] === f &&"
+        "w.listeners('none').length === 0"
+    ));
+    js_teardown();
+}
+
+TEST(nw_window_methods_return_this)
+{
+    js_setup();
+    ASSERT(js_check(
+        "var w = nw.Window.get(), f = function() {};"
+        "w.on('a', f) === w && w.addListener('a', f) === w && w.once('a', f) === w"
+    ));
+    ASSERT(js_check(
+        "var threw = false;"
+        "try { nw.Window.get().on('a', 5); } catch (e) { threw = e instanceof TypeError; }"
+        "threw"
+    ));
+    js_teardown();
+}
+
+TEST(nw_window_clean_exit_pattern)
+{
+    js_setup();
+    /* removeAllListeners('close') then on('close', ...); close() emits instead of quitting. */
+    ASSERT(js_check(
+        "var w = nw.Window.get(), hit = 0;"
+        "w.on('close', function() { hit += 10; });"
+        "w.removeAllListeners('close');"
+        "w.on('close', function() { hit++; });"
+        "w.close();"
+        "hit === 1"
+    ));
+    js_teardown();
+}
+
+TEST(nw_window_methods_exist)
+{
+    js_setup();
+    ASSERT(js_check(
+        "var w = nw.Window.get(), names = ['closeDevTools', 'close', 'focus', 'show',"
+        " 'hide', 'maximize', 'restore', 'enterFullscreen', 'leaveFullscreen',"
+        " 'toggleFullscreen'], ok = true;"
+        "for (var i = 0; i < names.length; i++) ok = ok && typeof w[names[i]] === 'function';"
+        "ok && typeof w.width === 'number' && typeof w.height === 'number' &&"
+        "typeof w.x === 'number' && typeof w.y === 'number' &&"
+        "typeof w.title === 'string' && w.zoomLevel === 0"
+    ));
+    ASSERT(js_check(
+        "var w = nw.Window.get();"
+        "w.enterFullscreen(); var a = w.isFullscreen;"
+        "w.toggleFullscreen(); var b = w.isFullscreen;"
+        "w.toggleFullscreen(); w.leaveFullscreen();"
+        "a === true && b === false && w.isFullscreen === false"
+    ));
+    js_teardown();
+}
+
 /* Main */
 
 int main(int argc, char *argv[])
@@ -742,6 +900,16 @@ int main(int argc, char *argv[])
 
     printf("\n--- nw shim tests ---\n");
     RUN(nw_shim_exists);
+    RUN(nw_window_get_is_singleton);
+    RUN(nw_window_listener_order);
+    RUN(nw_window_once_fires_once);
+    RUN(nw_window_off_removes_one_registration);
+    RUN(nw_window_remove_all_listeners);
+    RUN(nw_window_emit_reports_listeners);
+    RUN(nw_window_listeners_returns_copy);
+    RUN(nw_window_methods_return_this);
+    RUN(nw_window_clean_exit_pattern);
+    RUN(nw_window_methods_exist);
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) {

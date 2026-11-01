@@ -11,6 +11,7 @@ Modified 2026-10-31: record the API-members-only surface dump.
 Modified 2026-10-31: record the smaller-shim compatibility inventory.
 Modified 2026-10-31: record the dom_shim.js compatibility inventory.
 Modified 2026-10-31: add the share-bundle packager.
+Modified 2026-10-31: record the nw.Window EventEmitter (U3).
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 <!-- Records project changes for release review; keep entries free of private data. -->
@@ -20,6 +21,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Make `nw.Window.get()` a Node-style EventEmitter with the §5.2 window methods, so CleanExit-style `removeAllListeners("close")` works (U3).
 - Add subtree tag lookup and simple tag/id/class selector queries with syntax errors for unsupported selectors (U2).
 - Pin SoLoud and SDL_shadercross to the revisions in the offline dependency cache (U12).
 - Include head, body and html in document tag lookups, including wildcard matches (U1).
