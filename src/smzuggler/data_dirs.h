@@ -9,12 +9,27 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+/** Byte capacity of each SmzHostDirs path, matching main.c's path buffers. */
+#define SMZ_DATA_DIR_MAX 1024
+
 /** Which host directory to resolve. Values are the three XDG bases in §13. */
 typedef enum {
     SMZ_DATA_DIR_STATE = 0,  /* logs: debug.log, console.log */
     SMZ_DATA_DIR_CACHE = 1,  /* disposable .jsc parent */
     SMZ_DATA_DIR_CONFIG = 2  /* runtime config directory */
 } SmzDataDirKind;
+
+/** Paths main() uses at startup. Empty string means that kind failed.
+ * Caller-owned; the resolver never mkdir's or retains pointers.
+ */
+typedef struct SmzHostDirs {
+    char log_dir[SMZ_DATA_DIR_MAX];
+    char debug_log[SMZ_DATA_DIR_MAX];
+    char console_log[SMZ_DATA_DIR_MAX];
+    char cache_dir[SMZ_DATA_DIR_MAX];
+    char jsc_dir[SMZ_DATA_DIR_MAX];
+    char config_dir[SMZ_DATA_DIR_MAX];
+} SmzHostDirs;
 
 /** True when path is absolute and is not the game root or a child of it.
  * game_root may be NULL or empty (then only the absolute check applies).
@@ -32,5 +47,23 @@ bool smz_data_dir_usable(const char *path, const char *game_root);
  */
 bool smz_data_dir(SmzDataDirKind kind, const char *game_root,
                   char *out, size_t out_size);
+
+/** Choose the log directory the way main() does: --data-dir=PATH if PATH is
+ * usable, else the host state dir (default-on; a bare --data-dir is the
+ * same). argv is borrowed; game_root may be NULL. out is caller-owned.
+ * Never mkdir's. Main thread (getenv). Returns true when out is absolute
+ * and outside the game root.
+ */
+bool smz_choose_log_dir(int argc, char **argv, const char *game_root,
+                        char *out, size_t out_size);
+
+/** Fill dirs the way main() does at startup: logs honor --data-dir, cache
+ * and config always use smz_data_dir (CONFIG is resolved even though the
+ * config file is read by a later card). argv and game_root are borrowed.
+ * dirs is caller-owned and zeroed first. Never mkdir's. Main thread.
+ * Returns true when at least one kind resolved.
+ */
+bool smz_host_dirs(int argc, char **argv, const char *game_root,
+                   SmzHostDirs *dirs);
 
 #endif

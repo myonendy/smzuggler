@@ -156,3 +156,62 @@ bool smz_data_dir(SmzDataDirKind kind, const char *game_root,
     }
     return true;
 }
+
+/** Write dir/name into out. name is a single path segment (no slash). */
+static int join_name(char *out, size_t n, const char *dir, const char *name)
+{
+    int k;
+    if (!out || n == 0) return 0;
+    out[0] = '\0';
+    if (!dir || !dir[0] || !name || !name[0]) return 0;
+    k = snprintf(out, n, "%s/%s", dir, name);
+    return k > 0 && (size_t)k < n;
+}
+
+/* See the public header for --data-dir vs default-on state-dir rules. */
+bool smz_choose_log_dir(int argc, char **argv, const char *game_root,
+                        char *out, size_t out_size)
+{
+    const char *path = NULL;
+    int i, n;
+    if (!out || out_size == 0) return false;
+    out[0] = '\0';
+    for (i = 1; argv && i < argc; i++) {
+        if (!argv[i]) continue;
+        if (strcmp(argv[i], "--data-dir") == 0) {
+            path = NULL;
+        } else if (strncmp(argv[i], "--data-dir=", 11) == 0) {
+            path = argv[i][11] ? argv[i] + 11 : NULL;
+        }
+    }
+    if (path) {
+        n = snprintf(out, out_size, "%s", path);
+        if (n > 0 && (size_t)n < out_size) {
+            trim_slash(out);
+            if (smz_data_dir_usable(out, game_root)) return true;
+        }
+        out[0] = '\0';
+    }
+    return smz_data_dir(SMZ_DATA_DIR_STATE, game_root, out, out_size);
+}
+
+/* See the public header: logs honor --data-dir; cache and config always run. */
+bool smz_host_dirs(int argc, char **argv, const char *game_root,
+                   SmzHostDirs *dirs)
+{
+    if (!dirs) return false;
+    memset(dirs, 0, sizeof(*dirs));
+    if (smz_choose_log_dir(argc, argv, game_root,
+                           dirs->log_dir, sizeof(dirs->log_dir))) {
+        join_name(dirs->debug_log, sizeof(dirs->debug_log),
+                  dirs->log_dir, "debug.log");
+        join_name(dirs->console_log, sizeof(dirs->console_log),
+                  dirs->log_dir, "console.log");
+    }
+    if (smz_data_dir(SMZ_DATA_DIR_CACHE, game_root,
+                     dirs->cache_dir, sizeof(dirs->cache_dir)))
+        join_name(dirs->jsc_dir, sizeof(dirs->jsc_dir), dirs->cache_dir, "jsc");
+    smz_data_dir(SMZ_DATA_DIR_CONFIG, game_root,
+                 dirs->config_dir, sizeof(dirs->config_dir));
+    return dirs->log_dir[0] || dirs->cache_dir[0] || dirs->config_dir[0];
+}

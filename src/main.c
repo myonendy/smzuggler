@@ -6,7 +6,7 @@
  * Modified 2026-10-31: dispatch headless surface inventory before startup.
  * Modified 2026-10-31: dispatch --share-bundle to the packager.
  * Modified 2026-10-31: return process.exitCode after a clean quit.
- * Modified 2026-11-01: default logs and the .jsc cache to host data dirs.
+ * Modified 2026-11-01: default logs, .jsc cache and config to host data dirs.
  *
  * Runtime entry point; owns startup and shutdown on the main thread.
  * See docs/DECISIONS.md (DEC-M0-T001) for identity ownership.
@@ -181,38 +181,6 @@ bool rmmz_resolve_log_dir(int argc, char **argv, const char *game_dir,
 #endif
 
 #define APP_TITLE RMMZ_APP_NAME
-
-#ifdef SMZUGGLER_NAME
-/** Choose the log directory: --data-dir=PATH if it is usable, else the
- * host state dir. argv is borrowed. game_dir may be NULL. out is
- * caller-owned. Returns true when out holds an absolute path outside
- * the game root; never mkdir's. Main thread (getenv). */
-static bool smz_choose_log_dir(int argc, char **argv, const char *game_dir,
-                               char *out, size_t out_size)
-{
-    const char *path = NULL;
-    int i, n;
-    if (!out || out_size == 0) return false;
-    out[0] = '\0';
-    for (i = 1; argv && i < argc; i++) {
-        if (!argv[i]) continue;
-        if (strcmp(argv[i], "--data-dir") == 0) {
-            path = NULL;
-        } else if (strncmp(argv[i], "--data-dir=", 11) == 0) {
-            path = argv[i][11] ? argv[i] + 11 : NULL;
-        }
-    }
-    if (path) {
-        n = snprintf(out, out_size, "%s", path);
-        if (n > 0 && (size_t)n < out_size) {
-            rmmz_trim_slash(out);
-            if (smz_data_dir_usable(out, game_dir)) return true;
-        }
-        out[0] = '\0';
-    }
-    return smz_data_dir(SMZ_DATA_DIR_STATE, game_dir, out, out_size);
-}
-#endif
 
 /* Report a fatal startup error: log it and, where the platform provides one,
    show a dialog so the message is visible even without a console. */
@@ -392,6 +360,13 @@ int main(int argc, char *argv[])
     const char *dump_path = NULL;
     bool share_requested = false;
     const char *share_path = NULL;
+#ifdef SMZUGGLER_NAME
+    SmzHostDirs host_dirs = {0};
+#else
+    char log_path_buf[1024];
+    char console_log_buf[1024];
+    char log_dir_buf[1024];
+#endif
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--dump-surface") == 0) {
@@ -438,7 +413,7 @@ int main(int argc, char *argv[])
             no_audio = 1;
         } else if (strcmp(argv[i], "--data-dir") == 0 ||
                    strncmp(argv[i], "--data-dir=", 11) == 0) {
-            /* Log dir. smz_choose_log_dir / rmmz_resolve_log_dir read argv later. */
+            /* Log dir. smz_host_dirs / rmmz_resolve_log_dir read argv later. */
             continue;
         } else if (argv[i][0] != '-') {
             /* Positional argument: treat as game directory. */
@@ -494,17 +469,12 @@ int main(int argc, char *argv[])
        the game directory unless --data-dir is passed. */
     const char *log_path = NULL;
     const char *console_log_path = NULL;
-    char log_path_buf[1024];
-    char console_log_buf[1024];
-    char log_dir_buf[1024];
 #ifdef SMZUGGLER_NAME
-    if (smz_choose_log_dir(argc, argv, game_dir, log_dir_buf,
-                           sizeof(log_dir_buf))) {
-        file_io_mkdir(log_dir_buf);
-        snprintf(log_path_buf, sizeof(log_path_buf), "%s/debug.log", log_dir_buf);
-        log_path = log_path_buf;
-        snprintf(console_log_buf, sizeof(console_log_buf), "%s/console.log", log_dir_buf);
-        console_log_path = console_log_buf;
+    smz_host_dirs(argc, argv, game_dir, &host_dirs);
+    if (host_dirs.log_dir[0]) {
+        file_io_mkdir(host_dirs.log_dir);
+        log_path = host_dirs.debug_log;
+        console_log_path = host_dirs.console_log;
     }
 #else
     log_path = "debug.log";
@@ -531,6 +501,10 @@ int main(int argc, char *argv[])
 
     error_handler_init(log_path, LOG_INFO);
     error_handler_log(LOG_INFO, SMZUGGLER_NAME " (RPG Maker MZ native runtime) starting");
+#ifdef SMZUGGLER_NAME
+    if (host_dirs.config_dir[0])
+        error_handler_log(LOG_INFO, "Config directory %s", host_dirs.config_dir);
+#endif
 
     /* Validate the game directory before opening a window, so a bad launch
        (wrong path, bare double-click) produces a clear error instead of a
@@ -593,17 +567,8 @@ int main(int argc, char *argv[])
     }
     error_handler_log(LOG_INFO, "QuickJS engine initialized");
 #ifdef SMZUGGLER_NAME
-    {
-        char cache_dir[1024];
-        char jsc_dir[1024];
-        int n;
-        if (smz_data_dir(SMZ_DATA_DIR_CACHE, game_dir, cache_dir,
-                         sizeof(cache_dir))) {
-            n = snprintf(jsc_dir, sizeof(jsc_dir), "%s/jsc", cache_dir);
-            if (n > 0 && (size_t)n < sizeof(jsc_dir))
-                js_engine_set_cache_dir(js, jsc_dir, game_dir);
-        }
-    }
+    if (host_dirs.jsc_dir[0])
+        js_engine_set_cache_dir(js, host_dirs.jsc_dir, game_dir);
 #endif
     if (watchdog_ms > 0) {
         js_engine_set_watchdog(js, (unsigned)watchdog_ms);

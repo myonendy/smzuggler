@@ -103,6 +103,27 @@ static void expect_dir(SmzDataDirKind kind, const char *game, const char *want)
     check(!exists_path(out), "resolver created a directory");
 }
 
+/** Expect got equals want; print both on mismatch (scratch paths only). */
+static void expect_eq(const char *got, const char *want, const char *what)
+{
+    if (got && want && strcmp(got, want) == 0) return;
+    fprintf(stderr, "data_dirs: %s mismatch\n", what);
+    if (got) fprintf(stderr, "data_dirs: got %s\n", got);
+    if (want) fprintf(stderr, "data_dirs: want %s\n", want);
+    exit(1);
+}
+
+/** Point XDG_* at scratch bases named after tag. Caller has stash_env. */
+static void set_scratch_xdg(const char *tag, char *state, char *cache, char *config)
+{
+    snprintf(state, TEST_PATH_MAX, "%s/%s-state", test_tmp_root(), tag);
+    snprintf(cache, TEST_PATH_MAX, "%s/%s-cache", test_tmp_root(), tag);
+    snprintf(config, TEST_PATH_MAX, "%s/%s-config", test_tmp_root(), tag);
+    check(setenv("XDG_STATE_HOME", state, 1) == 0, "set state");
+    check(setenv("XDG_CACHE_HOME", cache, 1) == 0, "set cache");
+    check(setenv("XDG_CONFIG_HOME", config, 1) == 0, "set config");
+}
+
 /** Scratch XDG_* bases produce $base/smzuggler-rt for each kind. */
 static void test_xdg_set(void)
 {
@@ -233,6 +254,145 @@ static void test_game_root(void)
     unstash_env();
 }
 
+/** No --data-dir still uses the state dir (default-on), never the game dir. */
+static void test_default_on(void)
+{
+    char state[TEST_PATH_MAX], cache[TEST_PATH_MAX], config[TEST_PATH_MAX];
+    char want_state[TEST_PATH_MAX], out[TEST_PATH_MAX];
+    char *argv[] = {"rt", "--game", NULL};
+    const char *game = test_tmp_path("smz-dd-def-game");
+    argv[2] = (char *)game;
+    stash_env();
+    set_scratch_xdg("smz-dd-def", state, cache, config);
+    snprintf(want_state, sizeof(want_state), "%s/%s", state, SMZUGGLER_BIN);
+    check(smz_choose_log_dir(3, argv, game, out, sizeof(out)), "default-on");
+    expect_eq(out, want_state, "default-on log dir");
+    check(strcmp(out, game) != 0, "default-on used game dir");
+    unstash_env();
+}
+
+/** --data-dir=PATH moves logs; cache and config stay on the XDG bases. */
+static void test_path_override(void)
+{
+    char state[TEST_PATH_MAX], cache[TEST_PATH_MAX], config[TEST_PATH_MAX];
+    char path[TEST_PATH_MAX], flag[TEST_PATH_MAX], want_debug[TEST_PATH_MAX];
+    char want_cache[TEST_PATH_MAX], want_config[TEST_PATH_MAX];
+    char want_jsc[TEST_PATH_MAX];
+    SmzHostDirs dirs;
+    char *argv[] = {"rt", flag};
+    const char *game = test_tmp_path("smz-dd-ov-game");
+    snprintf(path, sizeof(path), "%s/smz-dd-ov-path", test_tmp_root());
+    snprintf(flag, sizeof(flag), "--data-dir=%s/", path);
+    snprintf(want_debug, sizeof(want_debug), "%s/debug.log", path);
+    stash_env();
+    set_scratch_xdg("smz-dd-ov", state, cache, config);
+    snprintf(want_cache, sizeof(want_cache), "%s/%s", cache, SMZUGGLER_BIN);
+    snprintf(want_config, sizeof(want_config), "%s/%s", config, SMZUGGLER_BIN);
+    snprintf(want_jsc, sizeof(want_jsc), "%s/jsc", want_cache);
+    check(smz_host_dirs(2, argv, game, &dirs), "path override");
+    expect_eq(dirs.log_dir, path, "override log dir");
+    expect_eq(dirs.debug_log, want_debug, "override debug.log");
+    expect_eq(dirs.cache_dir, want_cache, "override cache");
+    expect_eq(dirs.jsc_dir, want_jsc, "override jsc");
+    expect_eq(dirs.config_dir, want_config, "override config");
+    unstash_env();
+}
+
+/** Bare --data-dir and --data-dir= use the host state dir. */
+static void test_empty_flag(void)
+{
+    char state[TEST_PATH_MAX], cache[TEST_PATH_MAX], config[TEST_PATH_MAX];
+    char want_state[TEST_PATH_MAX], out[TEST_PATH_MAX];
+    char *argv_flag[] = {"rt", "--data-dir"};
+    char *argv_eq[] = {"rt", "--data-dir="};
+    const char *game = test_tmp_path("smz-dd-flag-game");
+    stash_env();
+    set_scratch_xdg("smz-dd-flag", state, cache, config);
+    snprintf(want_state, sizeof(want_state), "%s/%s", state, SMZUGGLER_BIN);
+    check(smz_choose_log_dir(2, argv_flag, game, out, sizeof(out)), "bare flag");
+    expect_eq(out, want_state, "bare --data-dir");
+    check(smz_choose_log_dir(2, argv_eq, game, out, sizeof(out)), "empty eq");
+    expect_eq(out, want_state, "empty --data-dir=");
+    unstash_env();
+}
+
+/** --data-dir inside the game root is refused; logs fall back to state. */
+static void test_path_in_game(void)
+{
+    char state[TEST_PATH_MAX], cache[TEST_PATH_MAX], config[TEST_PATH_MAX];
+    char flag[TEST_PATH_MAX], want_state[TEST_PATH_MAX], out[TEST_PATH_MAX];
+    const char *game = test_tmp_path("smz-dd-bad-game");
+    char *argv[] = {"rt", flag};
+    snprintf(flag, sizeof(flag), "--data-dir=%s", game);
+    stash_env();
+    set_scratch_xdg("smz-dd-bad", state, cache, config);
+    snprintf(want_state, sizeof(want_state), "%s/%s", state, SMZUGGLER_BIN);
+    check(smz_choose_log_dir(2, argv, game, out, sizeof(out)), "refused path");
+    expect_eq(out, want_state, "game-root --data-dir fallback");
+    check(!smz_data_dir_usable(game, game), "game root usable");
+    unstash_env();
+}
+
+/** smz_host_dirs names debug.log, the jsc child and config as main() does. */
+static void test_host_paths(void)
+{
+    char state[TEST_PATH_MAX], cache[TEST_PATH_MAX], config[TEST_PATH_MAX];
+    char want_state[TEST_PATH_MAX], want_debug[TEST_PATH_MAX];
+    char want_jsc[TEST_PATH_MAX], want_config[TEST_PATH_MAX];
+    char *argv[] = {"rt"};
+    const char *game = test_tmp_path("smz-dd-host-game");
+    SmzHostDirs dirs;
+    stash_env();
+    set_scratch_xdg("smz-dd-host", state, cache, config);
+    snprintf(want_state, sizeof(want_state), "%s/%s", state, SMZUGGLER_BIN);
+    snprintf(want_debug, sizeof(want_debug), "%s/debug.log", want_state);
+    snprintf(want_jsc, sizeof(want_jsc), "%s/%s/jsc", cache, SMZUGGLER_BIN);
+    snprintf(want_config, sizeof(want_config), "%s/%s", config, SMZUGGLER_BIN);
+    check(smz_host_dirs(1, argv, game, &dirs), "host dirs");
+    expect_eq(dirs.log_dir, want_state, "host log dir");
+    expect_eq(dirs.debug_log, want_debug, "host debug.log");
+    expect_eq(dirs.jsc_dir, want_jsc, "host jsc dir");
+    expect_eq(dirs.config_dir, want_config, "host config dir");
+    check(smz_data_dir_usable(dirs.debug_log, game), "debug.log usable");
+    check(smz_data_dir_usable(dirs.jsc_dir, game), "jsc usable");
+    check(smz_data_dir_usable(dirs.config_dir, game), "config usable");
+    check(!exists_path(dirs.log_dir), "host dirs mkdir log");
+    check(!exists_path(dirs.cache_dir), "host dirs mkdir cache");
+    check(!exists_path(dirs.config_dir), "host dirs mkdir config");
+    unstash_env();
+}
+
+/** A write through the helper's debug.log path lands in state, not game or cwd. */
+static void test_logs_land(void)
+{
+    char state[TEST_PATH_MAX], cache[TEST_PATH_MAX], config[TEST_PATH_MAX];
+    char cwd[TEST_PATH_MAX], old_cwd[TEST_PATH_MAX], game_log[TEST_PATH_MAX];
+    char *argv[] = {"rt"};
+    const char *game = test_tmp_path("smz-dd-land-game");
+    SmzHostDirs dirs;
+    FILE *f;
+    snprintf(cwd, sizeof(cwd), "%s/smz-dd-land-cwd", test_tmp_root());
+    check(test_mkdir_p(cwd), "land cwd");
+    check(test_mkdir_p(game), "land game");
+    check(getcwd(old_cwd, sizeof(old_cwd)) != NULL, "getcwd");
+    check(chdir(cwd) == 0, "chdir land");
+    stash_env();
+    set_scratch_xdg("smz-dd-land", state, cache, config);
+    check(smz_host_dirs(1, argv, game, &dirs), "land host dirs");
+    check(test_mkdir_p(dirs.log_dir), "mkdir log dir");
+    f = fopen(dirs.debug_log, "w");
+    check(f != NULL, "open debug.log");
+    check(fputs("ok\n", f) >= 0, "write debug.log");
+    fclose(f);
+    check(exists_path(dirs.debug_log), "debug.log missing in state");
+    snprintf(game_log, sizeof(game_log), "%s/debug.log", game);
+    check(!exists_path(game_log), "debug.log in game dir");
+    check(!exists_path("debug.log"), "debug.log in cwd");
+    check(dir_is_empty(cwd), "log write created cwd files");
+    unstash_env();
+    check(chdir(old_cwd) == 0, "chdir back");
+}
+
 #endif /* linux */
 
 /** Reject bad arguments on every platform; XDG cases run on Linux. */
@@ -243,6 +403,8 @@ int main(void)
     check(!smz_data_dir(SMZ_DATA_DIR_STATE, NULL, out, 0), "zero size");
     check(!smz_data_dir((SmzDataDirKind)99, NULL, out, sizeof(out)), "bad kind");
     check(!smz_data_dir_usable(NULL, NULL), "NULL usable");
+    check(!smz_choose_log_dir(1, NULL, NULL, NULL, 10), "choose NULL out");
+    check(!smz_host_dirs(1, NULL, NULL, NULL), "host NULL dirs");
 #if defined(__linux__) && !defined(__ANDROID__)
     test_xdg_set();
     test_xdg_unset();
@@ -250,6 +412,12 @@ int main(void)
     test_relative_xdg();
     test_no_home();
     test_game_root();
+    test_default_on();
+    test_path_override();
+    test_empty_flag();
+    test_path_in_game();
+    test_host_paths();
+    test_logs_land();
 #endif
     return 0;
 }

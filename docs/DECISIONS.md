@@ -331,9 +331,12 @@ evaluator rows. No gate is relaxed.
 U9/U10's `--data-dir` stays opt-in in `rmmz_resolve_log_dir` so the upstream
 C test keeps writing logs to the game folder without the flag. When
 `SMZUGGLER_NAME` is defined, `src/main.c` ignores that default and uses
-`smz_data_dir()` (`SMZUGGLER_BIN` under the XDG bases, or `SDL_GetPrefPath`
-elsewhere). Empty or relative `XDG_*` values are treated as unset and fall
+`smz_host_dirs()` (`SMZUGGLER_BIN` under the XDG bases, or `SDL_GetPrefPath`
+elsewhere). That helper always resolves the config directory as well as logs
+and the `.jsc` cache, even though reading the config file is a later card.
+Empty or relative `XDG_*` values are treated as unset and fall
 back to `$HOME/.local/state` / `.cache` / `.config`; the resolver never
 mkdir's and never returns a cwd-relative path or a path under the game root.
 `--data-dir=PATH` still wins for logs when PATH is an absolute location
-outside the game folder.
+outside the game folder; a bare `--data-dir` uses the state dir. `--data-dir`
+does not move cache or config.

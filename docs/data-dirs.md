@@ -10,9 +10,11 @@ The game folder is never written; see spec §5.3, §5.6 and §13.
 smzuggler-rt never writes under the game folder. Host-owned files go to
 directories named after the binary (`smzuggler-rt`): the XDG bases on Linux,
 or `SDL_GetPrefPath("", "smzuggler-rt")` on Windows, macOS and Android.
-Resolution lives in `src/smzuggler/data_dirs.c`. Empty or relative `XDG_*`
-values are treated as unset, so nothing is created relative to the working
-directory. A path that would land in the game folder is refused.
+Resolution lives in `src/smzuggler/data_dirs.c`. Startup calls `smz_host_dirs()`
+so logs, the `.jsc` cache and the config directory are resolved together
+before any of them is created. Empty or relative `XDG_*` values are treated
+as unset, so nothing is created relative to the working directory. A path
+that would land in the game folder is refused.
 
 Upstream Outsider still writes logs next to the game unless `--data-dir` is
 passed. smzuggler turns that option on by default
@@ -48,8 +50,9 @@ running.
 ## Config: `$XDG_CONFIG_HOME/smzuggler-rt/`
 
 Runtime configuration. Spec §5.3 places `game_dir = <path>` in the `config`
-file inside this directory. This card only resolves the directory; reading
-that file is a later card.
+file inside this directory. Startup always resolves this directory (and logs
+the path) even though reading the file is a later card. `--data-dir` does
+not move config.
 
 Fallback: `$HOME/.config/smzuggler-rt/`.
 
