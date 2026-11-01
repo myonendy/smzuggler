@@ -5,6 +5,7 @@
  * Modified 2026-10-30: use the configurable runtime identity.
  * Modified 2026-10-31: dispatch headless surface inventory before startup.
  * Modified 2026-10-31: dispatch --share-bundle to the packager.
+ * Modified 2026-10-31: return process.exitCode after a clean quit.
  *
  * Runtime entry point; owns startup and shutdown on the main thread.
  * See docs/DECISIONS.md (DEC-M0-T001) for identity ownership.
@@ -204,6 +205,24 @@ static bool find_dir_next_to_exe(const char *name, char *out, size_t out_size)
     int n = snprintf(out, out_size, "%s%s", base, name);
     if (n <= 0 || (size_t)n >= out_size) return false;
     return file_io_is_directory(out);
+}
+
+/** Read process.exitCode after the loop stops so process.exit(code) becomes
+ * the process status. Borrows js on the main thread; 0 when the code is
+ * absent or evaluation fails. Node process.exit; compat process.exit. */
+static int process_exit_status(JSEngine *js)
+{
+    char *text;
+    int code;
+    if (!js) return 0;
+    text = js_engine_eval_string(js,
+        "(typeof process === 'object' && process &&"
+        " typeof process.exitCode === 'number') ? String(process.exitCode | 0) : '0'",
+        "<exit-code>");
+    if (!text) return 0;
+    code = atoi(text);
+    js_engine_free_string(text);
+    return code;
 }
 
 /** Start the runtime on the main thread using borrowed CLI arguments; return
@@ -539,9 +558,10 @@ int main(int argc, char *argv[])
     }
     bind_filters_shutdown();
     filters_shutdown();
+    int exit_status = process_exit_status(js);
     js_engine_shutdown(js);
     platform_shutdown(platform);
     error_handler_log(LOG_INFO, "Shutdown complete");
     error_handler_shutdown();
-    return 0;
+    return exit_status;
 }

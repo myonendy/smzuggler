@@ -3,6 +3,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
 Modified 2026-10-30: document runtime naming and format policy.
 Modified 2026-10-31: record the share-bundle last-run path.
+Modified 2026-10-31: record process.argv shape and throwing require.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 
@@ -278,6 +279,16 @@ directory under `$XDG_STATE_HOME/smzuggler-rt/runs/` (or `~/.local/state/...`
 when that variable is unset) as the last run. `scan.py` skips NUL binaries;
 the packager still searches them for deny-list terms and refuses to write the
 zip on a hit, printing only the file and `chunk`, never the matched text.
+
+## DEC-M0-T020 — Chrome/NW.js process.argv and throwing require
+`process.argv` is the pair `["chrome", "index.html"]`: argv[0] is the
+Chromium/NW.js binary name and argv[1] is the game-relative main HTML NW.js
+reports when cwd is the game root. Host argv is not forwarded, because
+smzuggler flags (`--game`, `--frames`) are not Chrome/NW.js shaped.
+`require('nw.gui')` returns the `nw` object so existing `typeof` checks
+keep working; any other unknown name throws `MODULE_NOT_FOUND` as Node does.
+`process.exit(code)` sets `process.exitCode` and calls the same `_nwQuit`
+path as `nw.App.quit()`; `src/main.c` returns that code after teardown.
 
 ## DEC-M0-T016 — Fail closed without filesystem containment
 

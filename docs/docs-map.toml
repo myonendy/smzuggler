@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 The smzuggler contributors
 # Modified 2026-10-31: map tools/share to docs/sharing.md.
+# Modified 2026-10-31: map tools/compat to the process/require inventory.
 # Documentation obligations for the read-only gate in tools/doclint/docs_touched.py.
 # This is repository tooling, outside browser/NW.js emulation; keep paths relative.
 # Run: python3 tools/doclint/docs_touched.py --base REV (Python 3.11+).
@@ -62,6 +63,10 @@ docs = ['docs/video.md']
 [[areas]]
 path = 'tools/commitmsg/**'
 docs = ['docs/FORGE.md']
+
+[[areas]]
+path = 'tools/compat/**'
+docs = ['docs/compat-surface.md', 'docs/shims.md']
 
 [[areas]]
 path = 'tools/doclint/**'

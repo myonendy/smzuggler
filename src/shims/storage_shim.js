@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2026 General Arcade (Pte. Ltd.)
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
+ * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-10-31: throw MODULE_NOT_FOUND; Chrome/NW.js argv, cwd, exit.
  */
 
 /*
@@ -330,13 +332,19 @@
         "path": pathModule
     };
 
+    /* Node require: load fs, path, or nw.gui (the nw object). Unknown names
+     * throw MODULE_NOT_FOUND so plugins feature-detect with try/catch.
+     * moduleName is ToString'd like Node; returns the module object or throws.
+     * Compat require; https://nodejs.org/api/modules.html#requireid */
     globalThis.require = function(moduleName) {
-        if (_modules[moduleName]) {
-            return _modules[moduleName];
+        var name = String(moduleName);
+        if (_modules[name]) return _modules[name];
+        if (name === "nw.gui" && typeof globalThis.nw === "object" && globalThis.nw) {
+            return globalThis.nw;
         }
-        /* Unknown modules (e.g. "nw.gui") get an empty stub rather than throwing. */
-        console.warn("require: unknown module '" + moduleName + "', returning stub");
-        return {};
+        var err = new Error("Cannot find module '" + name + "'");
+        err.code = "MODULE_NOT_FOUND";
+        throw err;
     };
 
     /* process: used by Utils.isNwjs(), StorageManager and save-location
@@ -419,11 +427,58 @@
         _scheduleTicks();
     }
 
+    /* Join the game root and a file name for process.mainModule.filename.
+     * Empty root yields the game-relative name, matching NW.js when cwd is
+     * the game folder. name is a basename; returns a new string. */
+    function _joinRoot(name) {
+        var root = "";
+        if (typeof __native_io !== "undefined" && __native_io.getGameRoot) {
+            root = String(__native_io.getGameRoot() || "");
+        }
+        if (!root) return name;
+        var last = root.charAt(root.length - 1);
+        if (last === "/" || last === "\\") return root + name;
+        return root + "/" + name;
+    }
+
+    /* Chrome/NW.js process.argv: argv[0] is the chromium/nw binary name,
+     * argv[1] is the app. NW.js launched from the game root reports the
+     * main HTML as a game-relative path. Returns a new array each call.
+     * Compat process.argv; https://nodejs.org/api/process.html#processargv */
+    function _processArgv() {
+        return ["chrome", "index.html"];
+    }
+
+    /* Node process.exit(code): record exitCode and take the same clean quit
+     * path as nw.App.quit() (SDL quit, no abort). code is ToInt32; omitted
+     * code keeps a numeric exitCode or becomes 0. Main-thread only.
+     * Compat process.exit; https://nodejs.org/api/process.html#processexitcode */
+    function _processExit(code) {
+        var p = globalThis.process;
+        if (arguments.length > 0) {
+            p.exitCode = (code === undefined || code === null) ? 0 : (code | 0);
+        } else if (typeof p.exitCode !== "number") {
+            p.exitCode = 0;
+        }
+        _nwQuit();
+    }
+
+    /* Node process.cwd(): the game root, or "." when none is set.
+     * Live value from __native_io; main-thread only; never throws.
+     * Compat process.cwd; https://nodejs.org/api/process.html#processcwd */
+    function _processCwd() {
+        if (typeof __native_io !== "undefined" && __native_io.getGameRoot) {
+            return __native_io.getGameRoot() || ".";
+        }
+        return ".";
+    }
+
     if (typeof globalThis.process === "undefined") {
         globalThis.process = {
             mainModule: {
-                /* StorageManager.fileDirectoryPath() derives save/ from this. */
-                filename: __native_io.getGameRoot() + "/index.html"
+                /* StorageManager.fileDirectoryPath() derives save/ from this.
+                 * Spec §5.3: `<root>/index.html`; game-relative when root is empty. */
+                filename: _joinRoot("index.html")
             },
             /* Real OS/CPU in Node's spelling; env is a start-up snapshot. */
             platform: _nativeProcess ? _nativeProcess.platform : "linux",
@@ -432,13 +487,9 @@
             versions: _processVersions(),
             hrtime: _hrtime,
             nextTick: _nextTick,
-            argv: [],
-            exit: function() {
-                _nwQuit();
-            },
-            cwd: function() {
-                return __native_io.getGameRoot() || ".";
-            }
+            argv: _processArgv(),
+            exit: _processExit,
+            cwd: _processCwd
         };
     }
 

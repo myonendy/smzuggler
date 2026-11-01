@@ -6,6 +6,7 @@ Modified 2026-10-31: seed pixi_shim.js inventory rows.
 Modified 2026-10-31: record PIXI.Circle, Ellipse, Polygon and SHAPES (U8).
 Modified 2026-10-31: record nw.Window.get EventEmitter and stubs (U3).
 Modified 2026-10-31: record real process env, platform, arch, versions, hrtime, nextTick (U5).
+Modified 2026-10-31: record process.argv/cwd/exit, throwing require (M0-T020).
 Compatibility inventory for browser, NW.js and Node replacements.
 See ../ARCHITECTURE.md for service ownership. Keep exact runtime names and
 shim attribution; statuses describe implementation, not conformance certification.
@@ -941,19 +942,21 @@ dump and rejection of a stale `name` row through the CLI.
 | `print.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op. |
 | `process` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | File-backed storage / limited Node and NW.js compatibility. |
 | `process.arch` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Compile-target CPU in Node spelling; "x64" when no native binding. dump_surface does not call bind_platform_register_process, so it sees the fallback; the running host gets it from __native_process (§5.3). |
-| `process.argv` | stub | `src/shims/storage_shim.js` | `-` | No-op / fixed compatibility response; no host semantics. |
-| `process.argv.length` | stub | `src/shims/storage_shim.js` | `-` | No-op / fixed compatibility response; no host semantics. |
-| `process.cwd` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | File-backed storage / limited Node and NW.js compatibility. |
-| `process.cwd.prototype.constructor` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | File-backed storage / limited Node and NW.js compatibility. |
+| `process.argv` | partial | `src/shims/storage_shim.js` | `tests/smz/test_process_shim.c` | Chrome/NW.js-shaped `[chrome, index.html]`; index.html is game-relative (§5.3). |
+| `process.argv.0` | partial | `src/shims/storage_shim.js` | `tests/smz/test_process_shim.c` | Chromium/NW.js binary name (`chrome`). |
+| `process.argv.1` | partial | `src/shims/storage_shim.js` | `tests/smz/test_process_shim.c` | Game-relative main HTML (`index.html`), as NW.js reports when cwd is the game root. |
+| `process.argv.length` | partial | `src/shims/storage_shim.js` | `tests/smz/test_process_shim.c` | 2 (chrome + index.html). |
+| `process.cwd` | partial | `src/shims/storage_shim.js` | `tests/smz/test_process_shim.c` | Game root from `__native_io.getGameRoot`, or "." if unset (§5.3). |
+| `process.cwd.prototype.constructor` | partial | `src/shims/storage_shim.js` | `tests/smz/test_process_shim.c` | Game root from `__native_io.getGameRoot`, or "." if unset (§5.3). |
 | `process.env` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Snapshot of the host environ at start; empty object when no native binding. dump_surface does not call bind_platform_register_process, so it sees the fallback; the running host gets it from __native_process (§5.3). |
-| `process.exit` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | File-backed storage / limited Node and NW.js compatibility. |
-| `process.exit.prototype.constructor` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | File-backed storage / limited Node and NW.js compatibility. |
+| `process.exit` | partial | `src/shims/storage_shim.js` | `tests/smz/test_process_shim.c` | Sets `process.exitCode` and takes the nw.App.quit / SDL-quit path; main returns that code. |
+| `process.exit.prototype.constructor` | partial | `src/shims/storage_shim.js` | `tests/smz/test_process_shim.c` | Sets `process.exitCode` and takes the nw.App.quit / SDL-quit path; main returns that code. |
 | `process.hrtime` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Monotonic [s, ns], or elapsed since prev; Date.now() fallback without the native clock. |
 | `process.hrtime.bigint` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Monotonic nanoseconds as BigInt; defined only when the engine has BigInt. |
 | `process.hrtime.bigint.prototype.constructor` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Monotonic nanoseconds as BigInt; defined only when the engine has BigInt. |
 | `process.hrtime.prototype.constructor` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Monotonic [s, ns], or elapsed since prev; Date.now() fallback without the native clock. |
-| `process.mainModule` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | File-backed storage / limited Node and NW.js compatibility. |
-| `process.mainModule.filename` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | File-backed storage / limited Node and NW.js compatibility. |
+| `process.mainModule` | partial | `src/shims/storage_shim.js` | `tests/smz/test_process_shim.c` | Holds `filename` so StorageManager can dirname it to the game root. |
+| `process.mainModule.filename` | partial | `src/shims/storage_shim.js` | `tests/smz/test_process_shim.c` | `<gameRoot>/index.html`, or `index.html` when the root is empty (§5.3). |
 | `process.nextTick` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Runs before timers in one microtask; a Promise job queued before the first tick of a turn runs first (Node runs the tick). |
 | `process.nextTick.prototype.constructor` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Runs before timers in one microtask; a Promise job queued before the first tick of a turn runs first (Node runs the tick). |
 | `process.platform` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Compile-target OS in Node spelling; "linux" when no native binding. dump_surface does not call bind_platform_register_process, so it sees the fallback; the running host gets it from __native_process (§5.3). |
@@ -967,8 +970,8 @@ dump and rejection of a stale `name` row through the CLI.
 | `removeEventListener.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Removes one window listener. |
 | `requestAnimationFrame` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Queued until the game loop flushes the frame. |
 | `requestAnimationFrame.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Queued until the game loop flushes the frame. |
-| `require` | partial | `src/shims/plugin_compat.js` | `tests/smz/test_dump_surface.c` | Compatibility polyfill; inventory test only. |
-| `require.prototype.constructor` | partial | `src/shims/plugin_compat.js` | `tests/smz/test_dump_surface.c` | Compatibility polyfill; inventory test only. |
+| `require` | partial | `src/shims/plugin_compat.js` | `tests/smz/test_process_shim.c` | storage_shim loads fs/path/nw.gui; unknown names throw MODULE_NOT_FOUND; plugin_compat wraps greenworks. |
+| `require.prototype.constructor` | partial | `src/shims/plugin_compat.js` | `tests/smz/test_process_shim.c` | storage_shim loads fs/path/nw.gui; unknown names throw MODULE_NOT_FOUND; plugin_compat wraps greenworks. |
 | `resizeBy` | stub | `src/shims/dom_shim.js` | `-` | No-op; window size is not changed from JS. |
 | `resizeBy.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op; window size is not changed from JS. |
 | `resizeTo` | stub | `src/shims/dom_shim.js` | `-` | No-op; window size is not changed from JS. |
