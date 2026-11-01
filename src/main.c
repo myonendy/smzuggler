@@ -75,18 +75,29 @@ static bool rmmz_platform_state_dir(char *out, size_t out_size)
 }
 
 /** Resolve the directory that debug.log and console.log are written to.
- * use_data_dir is the opt-in --data-dir flag; data_dir_path is PATH when
- * --data-dir=PATH was given, otherwise NULL (platform state dir). game_dir
- * is the --game path, or NULL. Without the flag the game directory is used
- * and an empty result means logs stay in the working directory, matching
- * the historical default. out is caller-owned. Returns false if the path
- * does not fit in out_size. */
-bool rmmz_resolve_log_dir(bool use_data_dir, const char *data_dir_path,
-                          const char *game_dir, char *out, size_t out_size)
+ * argv is borrowed and scanned for --data-dir / --data-dir=PATH (last one
+ * wins). game_dir is the already-resolved --game path, or NULL. Without the
+ * flag the game directory is used and an empty result means logs stay in
+ * the working directory, matching the historical default. out is
+ * caller-owned. Returns false if the path does not fit in out_size. */
+bool rmmz_resolve_log_dir(int argc, char **argv, const char *game_dir,
+                          char *out, size_t out_size)
 {
-    int n;
+    bool use_data_dir = false;
+    const char *data_dir_path = NULL;
+    int i, n;
     if (!out || out_size == 0) return false;
     out[0] = '\0';
+    for (i = 1; argv && i < argc; i++) {
+        if (!argv[i]) continue;
+        if (strcmp(argv[i], "--data-dir") == 0) {
+            use_data_dir = true;
+            data_dir_path = NULL;
+        } else if (strncmp(argv[i], "--data-dir=", 11) == 0) {
+            use_data_dir = true;
+            data_dir_path = argv[i] + 11;
+        }
+    }
     if (use_data_dir) {
         if (data_dir_path && data_dir_path[0]) {
             n = snprintf(out, out_size, "%s", data_dir_path);
@@ -103,7 +114,8 @@ bool rmmz_resolve_log_dir(bool use_data_dir, const char *data_dir_path,
     return true;
 }
 
-/* Test builds compile only the log-dir helper (see tests/test_data_dir.c). */
+/* Compile-time seam so tests/test_data_dir.c can link this helper without
+ * pulling the rest of the runtime or a second main(). */
 #ifndef RMMZ_TEST_DATA_DIR
 
 #include "platform/platform.h"
@@ -344,8 +356,6 @@ int main(int argc, char *argv[])
     const char *dump_path = NULL;
     bool share_requested = false;
     const char *share_path = NULL;
-    bool use_data_dir = false;
-    const char *data_dir_path = NULL;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--dump-surface") == 0) {
@@ -390,12 +400,10 @@ int main(int argc, char *argv[])
             control_mode = true;
         } else if (strcmp(argv[i], "--no-audio") == 0) {
             no_audio = 1;
-        } else if (strcmp(argv[i], "--data-dir") == 0) {
-            /* Opt-in: write logs under the platform state dir, not the game. */
-            use_data_dir = true;
-        } else if (strncmp(argv[i], "--data-dir=", 11) == 0) {
-            use_data_dir = true;
-            data_dir_path = argv[i] + 11;
+        } else if (strcmp(argv[i], "--data-dir") == 0 ||
+                   strncmp(argv[i], "--data-dir=", 11) == 0) {
+            /* Opt-in log dir. rmmz_resolve_log_dir reads argv after game_dir. */
+            continue;
         } else if (argv[i][0] != '-') {
             /* Positional argument: treat as game directory. */
             game_dir = argv[i];
@@ -445,17 +453,19 @@ int main(int argc, char *argv[])
         }
     }
 
-    /* Determine log file paths. --data-dir sends them to the state dir
-       (or PATH); without it they stay in the game directory. */
+    /* Determine log file paths. --data-dir / --data-dir=PATH (scanned from
+       argv) send them to the state dir or PATH; without the flag they stay
+       in the game directory. */
     const char *log_path = "debug.log";
     const char *console_log_path = "console.log";
     char log_path_buf[1024];
     char console_log_buf[1024];
     char log_dir_buf[1024];
-    if (rmmz_resolve_log_dir(use_data_dir, data_dir_path, game_dir,
-                             log_dir_buf, sizeof(log_dir_buf)) &&
+    if (rmmz_resolve_log_dir(argc, argv, game_dir, log_dir_buf,
+                             sizeof(log_dir_buf)) &&
         log_dir_buf[0]) {
-        if (use_data_dir)
+        /* The game dir already exists; the state dir or explicit PATH may not. */
+        if (!game_dir || strcmp(log_dir_buf, game_dir) != 0)
             file_io_mkdir(log_dir_buf);
         snprintf(log_path_buf, sizeof(log_path_buf), "%s/debug.log", log_dir_buf);
         log_path = log_path_buf;
