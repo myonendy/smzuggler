@@ -32,6 +32,14 @@ static int tests_passed = 0;
         printf("FAIL: %s\n", msg); \
     } while (0)
 
+#define ASSERT(cond) \
+    do { \
+        if (!(cond)) { \
+            printf("FAIL at %s:%d: %s\n", __FILE__, __LINE__, #cond); \
+            return; \
+        } \
+    } while (0)
+
 /* Helper: read a shim file into a string */
 
 static char *read_shim(const char *relpath)
@@ -821,6 +829,92 @@ static void test_document(void)
     destroy_test_ctx(tc);
 }
 
+/* Helper: evaluate a script that yields "true" or "false" */
+
+static int js_is_true(TestCtx *tc, const char *script)
+{
+    char *r = js_engine_eval_string(tc->engine, script, "test");
+    int ok = r && strcmp(r, "true") == 0;
+    if (!ok) printf("(got %s) ", r ? r : "NULL");
+    js_engine_free_string(r);
+    return ok;
+}
+
+/* Tests: head, body and html are found by tag name, in either case, as the singletons */
+
+static void check_document_tag_singletons(TestCtx *tc)
+{
+    const char *tags[] = { "head", "HEAD", "body", "BODY", "html", "HTML" };
+    const char *properties[] = { "head", "head", "body", "body",
+                                 "documentElement", "documentElement" };
+    char script[256];
+
+    TEST(document_tag_singletons);
+    for (int i = 0; i < 6; i++) {
+        snprintf(script, sizeof(script),
+            "String(document.getElementsByTagName('%s').length === 1)", tags[i]);
+        ASSERT(js_is_true(tc, script));
+        snprintf(script, sizeof(script),
+            "String(document.getElementsByTagName('%s')[0] === document.%s)",
+            tags[i], properties[i]);
+        ASSERT(js_is_true(tc, script));
+    }
+    PASS();
+}
+
+/* Tests: other tags still match only the elements created with that tag */
+
+static void check_document_tag_other_matches(TestCtx *tc)
+{
+    TEST(document_tag_other_matches);
+    ASSERT(js_is_true(tc,
+        "var first = document.createElement('span');\n"
+        "var second = document.createElement('span');\n"
+        "var spans = document.getElementsByTagName('SPAN');\n"
+        "String(spans.length === 2 && spans[0] === first && spans[1] === second)"));
+    ASSERT(js_is_true(tc,
+        "String(document.getElementsByTagName('span').length === 2)"));
+    ASSERT(js_is_true(tc,
+        "String(document.getElementsByTagName('unknown-tag').length === 0)"));
+    ASSERT(js_is_true(tc,
+        "String(document.getElementsByTagName('canvas').length === 1 && "
+        "document.getElementsByTagName('canvas')[0] === "
+        "document.getElementById('refresher'))"));
+    PASS();
+}
+
+/* Tests: '*' returns every element, including head, body and html */
+
+static void check_document_tag_wildcard(TestCtx *tc)
+{
+    TEST(document_tag_wildcard);
+    ASSERT(js_is_true(tc,
+        "var all = document.getElementsByTagName('*');\n"
+        "String(all.length === 6)"));
+    ASSERT(js_is_true(tc, "String(all.indexOf(document.head) >= 0)"));
+    ASSERT(js_is_true(tc, "String(all.indexOf(document.body) >= 0)"));
+    ASSERT(js_is_true(tc, "String(all.indexOf(document.documentElement) >= 0)"));
+    ASSERT(js_is_true(tc,
+        "String(all.indexOf(first) >= 0 && all.indexOf(second) >= 0)"));
+    ASSERT(js_is_true(tc,
+        "String(all.indexOf(document.getElementById('refresher')) >= 0)"));
+    PASS();
+}
+
+/* Tests: document.getElementsByTagName with the head/body/html singletons */
+
+static void test_document_tags(void)
+{
+    TestCtx *tc = create_test_ctx();
+    if (!tc) { TEST(dom_setup); FAIL("engine setup"); return; }
+
+    check_document_tag_singletons(tc);
+    check_document_tag_other_matches(tc);
+    check_document_tag_wildcard(tc);
+
+    destroy_test_ctx(tc);
+}
+
 /* Tests: navigator object */
 
 static void test_navigator(void)
@@ -1166,6 +1260,7 @@ int main(void)
     printf("\n-- document --\n");
     test_inserted_scripts();
     test_document();
+    test_document_tags();
 
     printf("\n-- navigator --\n");
     test_navigator();

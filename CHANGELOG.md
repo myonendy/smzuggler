@@ -20,6 +20,9 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Include head, body and html in document tag lookups, including wildcard matches (U1).
+- Add a read-only game smoke runner with SHA-256 tree checks and scratch XDG storage.
+- Keep failed smoke diagnostics inside scratch, including when caller XDG paths name the game.
 - Verify literal `name` compatibility rows through the checker CLI, including stale-row rejection.
 - Recognize only the complete compatibility-table header, preserving the DOM `name` member.
 - Add compatibility-surface rows for every dump member credited to `dom_shim.js`.

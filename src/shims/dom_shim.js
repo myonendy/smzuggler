@@ -1266,7 +1266,7 @@
     _body.appendChild(_refresherCanvas);
 
     var _title = "";
-    var _allCreatedElements = [_refresherCanvas];
+    var _allCreatedElements = [_documentElement, _head, _body, _refresherCanvas];
 
     var document = {
         _listeners: {},
@@ -1338,7 +1338,7 @@
             var upper = tag.toUpperCase();
             var results = [];
             for (var i = 0; i < _allCreatedElements.length; i++) {
-                if (_allCreatedElements[i].tagName === upper) results.push(_allCreatedElements[i]);
+                if (upper === "*" || _allCreatedElements[i].tagName === upper) results.push(_allCreatedElements[i]);
             }
             return results;
         },
