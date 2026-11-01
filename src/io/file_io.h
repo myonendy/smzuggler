@@ -40,9 +40,13 @@ bool file_io_write_guard_enabled(void);
    one error on refusal, nothing on success. Does not consult the guard. */
 bool file_io_check_write_path(const char *path);
 
-/* Where file_io sends its error messages (one line, no trailing newline).
-   NULL restores the default, which prints to stderr. Main thread only. */
+/* Receives one file_io error message (one line, no trailing newline). The
+   string is only valid for the duration of the call. */
 typedef void (*FileIoLogFn)(const char *message);
+
+/* Redirect file_io's error messages, so the host can route them to its log
+   and tests can count them. NULL restores the default, which prints to
+   stderr. Main thread only. */
 void file_io_set_log_fn(FileIoLogFn fn);
 
 /* Read a whole file as a NUL-terminated string (free() it). Returns NULL on

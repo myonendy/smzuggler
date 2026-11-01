@@ -643,6 +643,16 @@ static void test_js_bindings(void)
 
 /* Save-path guard */
 
+/* Record one verdict: PASS if `cond` holds, otherwise FAIL with `msg`. */
+#define CHECK(cond, msg) \
+    do { \
+        if (cond) { \
+            PASS(); \
+        } else { \
+            FAIL(msg); \
+        } \
+    } while (0)
+
 static int guard_log_count = 0;
 static char guard_log_last[8192];
 
@@ -660,14 +670,10 @@ static void expect_write_check(const char *path, bool expect_ok)
     guard_log_last[0] = '\0';
     bool ok = file_io_check_write_path(path);
     int want_logs = expect_ok ? 0 : 1;
-    if (ok == expect_ok && guard_log_count == want_logs) {
-        PASS();
-    } else {
-        char msg[9000];
-        snprintf(msg, sizeof(msg), "%s: ok=%d logs=%d (%s)", path, ok,
-                 guard_log_count, guard_log_last);
-        FAIL(msg);
-    }
+    char msg[9000];
+    snprintf(msg, sizeof(msg), "%s: ok=%d logs=%d (%s)", path, ok,
+             guard_log_count, guard_log_last);
+    CHECK(ok == expect_ok && guard_log_count == want_logs, msg);
 }
 
 static void test_save_guard_paths(const char *root, const char *outside)
@@ -763,11 +769,8 @@ static void test_save_guard_js(const char *root, const char *outside)
     char rd[TEST_PATH_MAX * 2];
     snprintf(rd, sizeof(rd), "%s/saves/file1.rmmzsave", outside);
     char *text = file_io_read_text(rd, NULL);
-    if (ok && text && strcmp(text, "data") == 0 && guard_log_count == 0) {
-        PASS();
-    } else {
-        FAIL(text ? text : "save not written outside the root");
-    }
+    CHECK(ok && text && strcmp(text, "data") == 0 && guard_log_count == 0,
+          text ? text : "save not written outside the root");
     free(text);
 
     test_save_guard_js_refusals(engine, root);
@@ -785,13 +788,10 @@ static void test_save_guard_js_refusals(JSEngine *engine, const char *root)
         "try { __native_io.writeFileSync('save/file1.rmmzsave', 'x'); 'no_error'; }"
         "catch (e) { e.message; }", "test");
     snprintf(rd, sizeof(rd), "%s/save/file1.rmmzsave", root);
-    if (result && strncmp(result, "failed to write file", 20) == 0 &&
-        guard_log_count == 1 && !file_io_exists(rd) &&
-        !file_io_exists("save/file1.rmmzsave")) {
-        PASS();
-    } else {
-        FAIL(result ? result : "NULL");
-    }
+    CHECK(result && strncmp(result, "failed to write file", 20) == 0 &&
+          guard_log_count == 1 && !file_io_exists(rd) &&
+          !file_io_exists("save/file1.rmmzsave"),
+          result ? result : "NULL");
     js_engine_free_string(result);
 
     TEST(guard_js_inside_root_binary_write_throws);
@@ -801,12 +801,9 @@ static void test_save_guard_js_refusals(JSEngine *engine, const char *root)
     guard_log_count = 0;
     result = js_engine_eval_string(engine, js, "test");
     snprintf(rd, sizeof(rd), "%s/x.bin", root);
-    if (result && strncmp(result, "failed to write file", 20) == 0 &&
-        guard_log_count == 1 && !file_io_exists(rd)) {
-        PASS();
-    } else {
-        FAIL(result ? result : "NULL");
-    }
+    CHECK(result && strncmp(result, "failed to write file", 20) == 0 &&
+          guard_log_count == 1 && !file_io_exists(rd),
+          result ? result : "NULL");
     js_engine_free_string(result);
 
     TEST(guard_js_reads_unchanged);
@@ -814,11 +811,8 @@ static void test_save_guard_js_refusals(JSEngine *engine, const char *root)
     file_io_write_text(rd, "{}");
     guard_log_count = 0;
     result = js_engine_eval_string(engine, "__native_io.readFileSync('data.json')", "test");
-    if (result && strcmp(result, "{}") == 0 && guard_log_count == 0) {
-        PASS();
-    } else {
-        FAIL(result ? result : "NULL");
-    }
+    CHECK(result && strcmp(result, "{}") == 0 && guard_log_count == 0,
+          result ? result : "NULL");
     js_engine_free_string(result);
 }
 
@@ -834,11 +828,8 @@ static void test_save_guard(void)
     file_io_set_log_fn(guard_log_cb);
 
     TEST(guard_off_by_default);
-    if (!file_io_write_guard_enabled()) {
-        PASS();
-    } else {
-        FAIL("guard enabled before file_io_set_write_guard(true)");
-    }
+    CHECK(!file_io_write_guard_enabled(),
+          "guard enabled before file_io_set_write_guard(true)");
 
     test_save_guard_paths(root, outside);
 #ifndef _WIN32
