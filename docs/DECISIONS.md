@@ -12,6 +12,7 @@ Modified 2026-11-01: propose the V8 pin (DEC-M1-T001).
 Modified 2026-11-01: record jsb persistent callback handles.
 Modified 2026-11-01: record the V8 script watchdog design.
 Modified 2026-11-01: record how the game loop reaches JS without QuickJS.
+Modified 2026-11-01: record how the error handler reaches JS without QuickJS.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 
@@ -510,3 +511,24 @@ no engine handle at all. Phase order, the two job drains and the rAF timestamp a
 unchanged. Costs: five tiny compiles per frame on QuickJS, one (the rAF call) on V8, and
 in v8 mode the watchdog re-arms per eval. Once the runtime links jsb in both modes, the
 calls can move to `jsb_callback_call` on the same helper without changing its contract.
+
+## DEC-M1-T011 — error_handler reaches JS through js_engine.h, errors arrive as text
+§4.1 item 5 ports `error_handler.c` to jsb. jsb never hands C a JS value outside a call
+and catches every exception before C sees it (`jsb_callback_call`, DEC-M1-T006), and
+`js_engine_get_jsb` is NULL in quickjs mode, where the runtime still runs. So, like the
+game loop (DEC-M1-T009), `error_handler.c` talks to JS only through `js_engine.h`:
+window.onerror dispatch and the crash auto-save are short generated scripts run with
+`js_engine_eval` / `js_engine_eval_string`, with the message and stack escaped as string
+literals. Errors come in as text (`error_handler_report_js_error(engine, message, stack,
+fatal)`), and the listener gets a new `Error` with that message and stack instead of the
+thrown object (its class and own properties are lost; message and stack survive). jsb
+callback exceptions are logged by `error_handler_on_jsb_error`, a `jsb_error_fn` declared
+without `jsb.h` so that `error_handler.c` needs no engine-mode `#ifdef`; they are not
+passed to window.onerror because a jsb error handler must not run JS. Rejected: a jsb
+"global object" or "pending exception" call, which `jsb.h`/`jsb_quickjs.c` (not owned by
+the card) would need in both backends.
+`error_handler_report_js_exception(engine, fatal)` fetches QuickJS's pending exception,
+which only QuickJS API can do and which only the QuickJS-era `tests/test_error_handler.c`
+calls (it must keep passing until M1-T027 ports it). It is now a quickjs-mode `static
+inline` in `error_handler.h` that hands the text to `error_handler_report_js_error`, so
+`error_handler.c` has no QuickJS code; M1-T027 deletes it with QuickJS.

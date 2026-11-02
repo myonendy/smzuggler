@@ -38,6 +38,12 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Move `error_handler.c`'s window.onerror dispatch and crash auto-save off QuickJS onto
+  `js_engine.h`, add the engine-neutral `error_handler_report_js_error(engine, message,
+  stack, fatal)` and `error_handler_on_jsb_error`, a `jsb_error_fn` for jsb callback
+  exceptions; `error_handler_report_js_exception` (QuickJS's pending exception) is a
+  quickjs-mode inline in `error_handler.h`. Test `error_handler_jsb` (both modes).
+  Card M1-T011.
 - Take QuickJS out of `src/engine/game_loop.c`: every call into JS (timers, rAF, input,
   window close, control mode, exit probe) goes through `js_engine.h` to one JS helper,
   with phase order and timing unchanged, so the loop runs on both engines. Test

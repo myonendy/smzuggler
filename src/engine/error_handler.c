@@ -2,16 +2,22 @@
  * Copyright (c) 2026 General Arcade (Pte. Ltd.)
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-10-30: filter diagnostic home paths before output.
+ * Modified 2026-11-01: window.onerror dispatch and auto-save go through
+ *   js_engine.h; jsb callback errors are logged here (card M1-T011).
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
- * Engine diagnostics and crash recovery; see docs/privacy.md.
+ * Engine diagnostics and crash recovery; see docs/privacy.md and
+ * docs/js-binding.md ("Error handler").
  * Logging state belongs to the engine thread; callbacks borrow message buffers.
+ * JS is reached only through js_engine.h (and called back by jsb through
+ * error_handler_on_jsb_error), never by holding JS values,
+ * so no engine handle outlives a call (handle rules: docs/js-binding.md, §15.8).
+ * Fetching QuickJS's pending exception, which only the QuickJS-era tests need,
+ * is a quickjs-mode inline in error_handler.h and goes with QuickJS in M1-T027.
  */
 
 #include "engine/error_handler.h"
 #include "engine/js_engine.h"
 #include "smzuggler/log_scrub.h"
-
-#include <quickjs.h>
 #include <SDL3/SDL.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -139,106 +145,173 @@ void error_handler_show_error_dialog(const char *title, const char *message)
     }
 }
 
-void error_handler_report_js_exception(void *engine_ptr, bool fatal)
+/* ---- JS errors ---------------------------------------------------------- */
+
+/* Longest message or stack, in bytes, passed on to JS or a dialog; longer text
+   is cut, as the QuickJS-era handler cut its stack copy. */
+#define ERROR_TEXT_MAX 4096
+
+/* Calls window.onerror (through the DOM shim's __error_handler_dispatch) with
+   an Error rebuilt from %s (message) and %s (stack), both escaped by js_quote.
+   No dispatcher (shim not loaded) means nothing to do, as before. */
+static const char k_dispatch_fmt[] =
+    "(function (m, s) {\n"
+    "  if (typeof __error_handler_dispatch !== 'function') return;\n"
+    "  var e = new Error(m);\n"
+    "  if (s) e.stack = s;\n"
+    "  __error_handler_dispatch(m, e);\n"
+    "})(\"%s\", \"%s\");\n";
+
+/* Runs the shim's __error_handler_autoSave and answers "missing", "threw:<why>"
+   or its result as ToInt32 digits, so C can tell the three cases apart from
+   one string. */
+static const char k_autosave_src[] =
+    "(function () {\n"
+    "  if (typeof __error_handler_autoSave !== 'function') return 'missing';\n"
+    "  try { return String(__error_handler_autoSave() | 0); }\n"
+    "  catch (e) { return 'threw:' + String(e); }\n"
+    "})()";
+
+/** Writes at most ERROR_TEXT_MAX bytes of UTF-8 `s` into `out` as the body
+ * of a double-quoted JS string literal and NUL-terminates it.
+ * Why: errors reach the shim as script source through js_engine.h, so the
+ * text must arrive unchanged and must not be able to end the literal. Quote,
+ * backslash and control bytes are escaped; other bytes (UTF-8) pass through.
+ * `out` needs 6 * ERROR_TEXT_MAX + 1 bytes; neither pointer is kept. A cut
+ * may split a UTF-8 sequence, which JS then reads as U+FFFD. Any thread.
+ */
+static void js_quote(const char *s, char *out)
 {
-    JSEngine *engine = (JSEngine *)engine_ptr;
-    if (!engine) return;
-
-    JSContext *ctx = js_engine_get_context(engine);
-    if (!ctx) return;
-
-    JSValue exc = JS_GetException(ctx);
-
-    const char *msg_str = JS_ToCString(ctx, exc);
-    if (msg_str) {
-        error_handler_log(LOG_ERROR, "JS Exception: %s", msg_str);
-    }
-
-    char stack_buf[4096] = "";
-    if (JS_IsError(ctx, exc)) {
-        JSValue stack = JS_GetPropertyStr(ctx, exc, "stack");
-        if (!JS_IsUndefined(stack)) {
-            const char *stack_str = JS_ToCString(ctx, stack);
-            if (stack_str) {
-                error_handler_log(LOG_ERROR, "Stack trace:\n%s", stack_str);
-                snprintf(stack_buf, sizeof(stack_buf), "\n\nStack trace:\n%s", stack_str);
-                JS_FreeCString(ctx, stack_str);
-            }
+    static const char hex[] = "0123456789abcdef";
+    size_t n = 0;
+    for (size_t i = 0; s[i] && i < ERROR_TEXT_MAX; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c == '"' || c == '\\') {
+            out[n++] = '\\';
+            out[n++] = (char)c;
+        } else if (c < 0x20) {
+            memcpy(out + n, "\\u00", 4);
+            out[n + 4] = hex[c >> 4];
+            out[n + 5] = hex[c & 15];
+            n += 6;
+        } else {
+            out[n++] = (char)c;
         }
-        JS_FreeValue(ctx, stack);
     }
-
-    /* Dispatch to window.onerror via the shim, if present. */
-    {
-        JSValue global = JS_GetGlobalObject(ctx);
-        JSValue onerror_fn = JS_GetPropertyStr(ctx, global, "__error_handler_dispatch");
-        if (JS_IsFunction(ctx, onerror_fn)) {
-            JSValue args[2];
-            args[0] = JS_NewString(ctx, msg_str ? msg_str : "Unknown error");
-            args[1] = exc;
-            exc = JS_DupValue(ctx, exc); /* args[1] is freed below; keep our own ref */
-            JSValue ret = JS_Call(ctx, onerror_fn, global, 2, args);
-            JS_FreeValue(ctx, ret);
-            JS_FreeValue(ctx, args[0]);
-            JS_FreeValue(ctx, args[1]);
-        }
-        JS_FreeValue(ctx, onerror_fn);
-        JS_FreeValue(ctx, global);
-    }
-
-    if (fatal) {
-        char dialog_msg[8192];
-        snprintf(dialog_msg, sizeof(dialog_msg), "%s%s",
-                 msg_str ? msg_str : "Unknown JS error",
-                 stack_buf);
-        error_handler_show_error_dialog("RPG Maker MZ - JavaScript Error", dialog_msg);
-    }
-
-    if (msg_str) JS_FreeCString(ctx, msg_str);
-    JS_FreeValue(ctx, exc);
+    out[n] = '\0';
 }
 
+/** Implements the browser's report-an-exception step for errors that reach C:
+ * calls window.onerror and then 'error' listeners (WHATWG HTML "report an
+ * exception"; compat via dom_shim.js __error_handler_dispatch).
+ * Deviation: the listener gets a new Error whose message is the thrown
+ * value's String() form and whose stack is the original stack, not the
+ * thrown object itself, because exceptions never cross into C as JS values
+ * (docs/js-binding.md, "Error handler"). Borrows all arguments. Main thread,
+ * outside any JS call on the engine. A failure (out of memory, the script
+ * throwing) is logged; nothing is returned.
+ */
+static void dispatch_to_window(JSEngine *engine, const char *message, const char *stack)
+{
+    size_t cap = sizeof(k_dispatch_fmt) + 2 * (6 * ERROR_TEXT_MAX + 1);
+    char *quoted_msg = malloc(6 * ERROR_TEXT_MAX + 1);
+    char *quoted_stack = malloc(6 * ERROR_TEXT_MAX + 1);
+    char *src = malloc(cap);
+    if (!quoted_msg || !quoted_stack || !src) {
+        error_handler_log(LOG_ERROR, "window.onerror dispatch skipped: out of memory");
+    } else {
+        js_quote(message, quoted_msg);
+        js_quote(stack ? stack : "", quoted_stack);
+        snprintf(src, cap, k_dispatch_fmt, quoted_msg, quoted_stack);
+        if (!js_engine_eval(engine, src, "error_handler_dispatch.js")) {
+            error_handler_log(LOG_WARN, "window.onerror dispatch threw (reported above)");
+        }
+    }
+    free(quoted_msg);
+    free(quoted_stack);
+    free(src);
+}
+
+/** Logs a JS error's message and, when present, its stack at LOG_ERROR.
+ * Why: one format for every way an error reaches C (QuickJS pending
+ * exception, jsb callback, string report). Borrows both strings; a NULL or
+ * empty stack is not logged. Main thread.
+ */
+static void log_js_error(const char *message, const char *stack)
+{
+    error_handler_log(LOG_ERROR, "JS Exception: %s", message);
+    if (stack && stack[0]) {
+        error_handler_log(LOG_ERROR, "Stack trace:\n%s", stack);
+    }
+}
+
+/** Reports a JS error given as text: log, window.onerror, then a dialog if
+ * fatal. Why: the engine-neutral entry point; V8 never leaves a pending
+ * exception for C to fetch, so callers pass String(exception) and its stack.
+ * `engine` (a JSEngine*, may be NULL to skip dispatch), `message` (NULL means
+ * "Unknown error") and `stack` (may be NULL) are borrowed. Main thread, not
+ * from inside a jsb error handler (dispatch runs JS). Errors are logged.
+ */
+void error_handler_report_js_error(void *engine, const char *message,
+                                   const char *stack, bool fatal)
+{
+    const char *msg = message ? message : "Unknown error";
+    log_js_error(msg, stack);
+    if (engine) dispatch_to_window((JSEngine *)engine, msg, stack);
+    if (!fatal) return;
+
+    char dialog_msg[2 * ERROR_TEXT_MAX + 32];
+    if (stack && stack[0]) {
+        snprintf(dialog_msg, sizeof(dialog_msg), "%.*s\n\nStack trace:\n%.*s",
+                 ERROR_TEXT_MAX, msg, ERROR_TEXT_MAX, stack);
+    } else {
+        snprintf(dialog_msg, sizeof(dialog_msg), "%.*s", ERROR_TEXT_MAX, msg);
+    }
+    error_handler_show_error_dialog("RPG Maker MZ - JavaScript Error", dialog_msg);
+}
+
+/** A jsb_error_fn (jsb.h) that logs exceptions thrown by jsb callbacks (audio
+ * onended, video events); install it with jsb_set_error_handler(rt,
+ * error_handler_on_jsb_error, NULL). Why: jsb catches them before they reach
+ * C and would print them unscrubbed to stderr. It only logs: a jsb error
+ * handler must not run JS on its runtime, so window.onerror is not called
+ * (docs/js-binding.md). Borrows both strings for the call; `user` is unused.
+ * Main thread, called by jsb before jsb_callback_call returns.
+ */
+void error_handler_on_jsb_error(const char *message, const char *stack, void *user)
+{
+    (void)user;
+    log_js_error(message ? message : "Unknown error", stack);
+}
+
+/** Crash recovery: runs the shim's __error_handler_autoSave (DataManager save
+ * to slot 0, dom_shim.js) through js_engine.h. Returns true when it returned
+ * a non-zero value; false for a NULL `engine` (borrowed JSEngine*), a missing
+ * function or a throw, each logged. Main thread, outside any JS call.
+ */
 bool error_handler_attempt_auto_save(void *engine_ptr)
 {
     JSEngine *engine = (JSEngine *)engine_ptr;
     if (!engine) return false;
 
-    JSContext *ctx = js_engine_get_context(engine);
-    if (!ctx) return false;
-
     error_handler_log(LOG_INFO, "Attempting crash recovery auto-save...");
 
-    JSValue global = JS_GetGlobalObject(ctx);
-    JSValue save_fn = JS_GetPropertyStr(ctx, global, "__error_handler_autoSave");
-
+    char *out = js_engine_eval_string(engine, k_autosave_src, "error_handler_autosave.js");
     bool saved = false;
-    if (JS_IsFunction(ctx, save_fn)) {
-        JSValue ret = JS_Call(ctx, save_fn, global, 0, NULL);
-        if (!JS_IsException(ret)) {
-            int result = 0;
-            JS_ToInt32(ctx, &result, ret);
-            saved = (result != 0);
-        } else {
-            /* Auto-save itself threw; log and consume so nothing leaks into later JS. */
-            JSValue inner_exc = JS_GetException(ctx);
-            const char *inner_msg = JS_ToCString(ctx, inner_exc);
-            if (inner_msg) {
-                error_handler_log(LOG_ERROR, "Auto-save failed: %s", inner_msg);
-                JS_FreeCString(ctx, inner_msg);
-            }
-            JS_FreeValue(ctx, inner_exc);
-        }
-        JS_FreeValue(ctx, ret);
-    } else {
+    if (!out) {
+        error_handler_log(LOG_ERROR, "Auto-save failed: the auto-save script did not run");
+    } else if (strcmp(out, "missing") == 0) {
         error_handler_log(LOG_WARN, "Auto-save function not available");
+    } else if (strncmp(out, "threw:", 6) == 0) {
+        error_handler_log(LOG_ERROR, "Auto-save failed: %s", out + 6);
+    } else {
+        saved = strcmp(out, "0") != 0;
     }
-
-    JS_FreeValue(ctx, save_fn);
-    JS_FreeValue(ctx, global);
+    js_engine_free_string(out);
 
     if (saved) {
         error_handler_log(LOG_INFO, "Auto-save succeeded");
     }
-
     return saved;
 }
+

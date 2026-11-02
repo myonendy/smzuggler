@@ -4,6 +4,7 @@ Copyright (C) 2026 The smzuggler contributors
 Modified 2026-11-01: add persistent callbacks.
 Modified 2026-11-01: document the V8 script watchdog.
 Modified 2026-11-01: document how the game loop calls into JS.
+Modified 2026-11-01: document the error handler's js_engine.h path.
 How native C bindings talk to the JS engine through jsb.h, and the handle rules.
 -->
 # JS binding: the `jsb` seam
@@ -159,9 +160,9 @@ it and run it later from the host (DEC-M1-T006).
 * **Exceptions never cross into C.** A throw is caught, `String(exception)` and its
   `stack` property (or `""`) go to the runtime's error handler before the call returns,
   and the call returns `JSB_ERR_THREW`. Called from inside a native function, the
-  exception does not reach the enclosing JS caller either. The engine's
-  `error_handler.c` registers here when it is ported (§4.1, item 5). The handler must not
-  call jsb on that runtime.
+  exception does not reach the enclosing JS caller either. The engine's logger,
+  `error_handler_on_jsb_error`, is a handler for this slot (see "Error handler").
+  The handler must not call jsb on that runtime.
 * **Scopes.** Every call opens its own `HandleScope` (and enters the isolate and
   context), so it works from the host loop with no JS on the stack and inside a native
   call. The function is held in a Local for the call, so a callback may free its own
@@ -183,6 +184,37 @@ static void fn_set_onended(jsb_ctx *ctx) {
 jsb_cval id = {JSB_TYPE_NUMBER, false, 3, NULL};
 jsb_callback_call(g_onended, 1, &id, NULL);  /* JSB_ERR_THREW was reported already */
 ```
+
+## Error handler
+`src/engine/error_handler.c` turns JS errors that reach C into a log line, a
+window.onerror / `'error'` event and, when fatal, a dialog (§4.1 item 5, card M1-T011,
+DEC-M1-T011). It holds no JS value and has no QuickJS calls: it reaches JS only through
+`js_engine.h`, so it needs no handle rules of its own and works on both engines.
+
+| Call | Behaviour |
+| --- | --- |
+| `error_handler_report_js_error(engine, message, stack, fatal)` | Logs `JS Exception: <message>` and `Stack trace:` (scrubbed), runs the shim's `__error_handler_dispatch(message, error)`, then a dialog if `fatal`. `engine` NULL skips dispatch. |
+| `error_handler_on_jsb_error(message, stack, user)` | A `jsb_error_fn`: `jsb_set_error_handler(rt, error_handler_on_jsb_error, NULL)` sends jsb callback exceptions to this log instead of stderr. Declared without `jsb.h`, so it builds in both modes. Whoever owns the runtime installs it; `js_engine_v8.cc` does not yet (not this card's file). |
+| `error_handler_attempt_auto_save(engine)` | Runs the shim's `__error_handler_autoSave`; true if it returned non-zero. |
+| `error_handler_report_js_exception(engine, fatal)` | quickjs mode only, an inline in `error_handler.h` for the QuickJS-era tests: takes QuickJS's pending exception and reports it as above. Removed by M1-T027. |
+
+* **Text in, script out.** Message and stack (each cut at 4096 bytes) are escaped into a
+  short script run with `js_engine_eval`; quotes, backslashes and control characters
+  cannot end the literal. No dispatcher (DOM shim not loaded) is a no-op; a dispatcher
+  that throws is reported by the engine and logged as a warning.
+* **Deviation:** `error` in the listener is a new `Error` whose `message` is the thrown
+  value's `String()` form and whose `stack` is the original stack, not the thrown object
+  itself, because exceptions never cross into C as JS values.
+* **jsb callback errors** are logged only, not dispatched: a jsb error handler must not
+  run JS on its runtime (see "Persistent callbacks").
+* Main thread, outside any JS call.
+
+`tests/smz/test_error_handler_jsb.c` (ctest `error_handler_jsb`, both modes) checks the
+log lines, exact delivery of quotes, backslashes, newlines and UTF-8 to window.onerror,
+that a message cannot break out of its literal, missing and throwing dispatchers, every
+auto-save outcome, and in v8 mode that a throwing jsb callback is logged with its stack.
+The older `tests/test_error_handler.c` still calls QuickJS directly and runs on QuickJS
+in both modes until M1-T027 ports it.
 
 ## Handle rules (§15.8)
 These are the rules for code that touches V8 handles, in jsb and elsewhere (WebGL has
