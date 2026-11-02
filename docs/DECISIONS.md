@@ -13,6 +13,7 @@ Modified 2026-11-01: record jsb persistent callback handles.
 Modified 2026-11-01: record the V8 script watchdog design.
 Modified 2026-11-01: record how the game loop reaches JS without QuickJS.
 Modified 2026-11-01: record how the error handler reaches JS without QuickJS.
+Modified 2026-11-01: record the microtask checkpoint order.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 
@@ -511,6 +512,33 @@ no engine handle at all. Phase order, the two job drains and the rAF timestamp a
 unchanged. Costs: five tiny compiles per frame on QuickJS, one (the rAF call) on V8, and
 in v8 mode the watchdog re-arms per eval. Once the runtime links jsb in both modes, the
 calls can move to `jsb_callback_call` on the same helper without changing its contract.
+
+## DEC-M1-T010 — a checkpoint after every macrotask, nextTick before promise jobs
+§4.1 item 3 asks for `kExplicit` with a checkpoint after every macrotask. dom_shim.js
+(not owned by the card) runs all of a frame's timers, or all its rAF callbacks, in one
+call, so C cannot checkpoint between them. In v8 mode the engine therefore exposes
+`__smz_microtaskCheckpoint()`, a `PerformMicrotaskCheckpoint` from inside JS (what Node's
+`runMicrotasks()` does under `kExplicit`; V8 ignores it while microtasks run), and the
+game loop's helper wraps `setTimeout`, `setInterval` and `requestAnimationFrame` so that
+each callback is followed by a checkpoint. The helper also replaces the U5
+`process.nextTick` (which queued its ticks as one promise job, so a promise job queued
+earlier ran first) with a queue it drains before each checkpoint, until both are empty.
+The order in v8 mode, which is NW.js's, is per frame:
+1. each event dispatch phase (resize, input, gamepads), then its ticks, then its jobs;
+2. each due timer or interval callback, in id order, then its ticks (including ticks they
+   queue), then its promise jobs (including jobs they queue), repeated while ticks
+   remain; then the phase checkpoint;
+3. each rAF callback, in request order, then its ticks and jobs the same way; then the
+   phase checkpoint, which also reports unhandled rejections;
+4. video, audio, present.
+QuickJS mode cannot checkpoint from JS (`js_engine.c` is not owned), so the wrappers are
+not installed and the differences are: a phase's timer callbacks all run before any of
+their ticks and jobs, and likewise rAF callbacks; ticks still run before the phase's jobs.
+Shared by both modes: a tick queued from a promise job of a C-driven checkpoint runs as a
+promise job (after jobs queued before it), not after the whole queue; callbacks registered
+before the first frame (when the helper is installed) are unwrapped; input is one
+dispatch per phase, not per event, until dom_shim.js offers per-event dispatch.
+`tests/smz/test_microtasks.c` asserts both orders.
 
 ## DEC-M1-T011 — error_handler reaches JS through js_engine.h, errors arrive as text
 §4.1 item 5 ports `error_handler.c` to jsb. jsb never hands C a JS value outside a call

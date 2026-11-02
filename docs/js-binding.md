@@ -5,6 +5,7 @@ Modified 2026-11-01: add persistent callbacks.
 Modified 2026-11-01: document the V8 script watchdog.
 Modified 2026-11-01: document how the game loop calls into JS.
 Modified 2026-11-01: document the error handler's js_engine.h path.
+Modified 2026-11-01: document microtask checkpoints and nextTick order.
 How native C bindings talk to the JS engine through jsb.h, and the handle rules.
 -->
 # JS binding: the `jsb` seam
@@ -356,6 +357,32 @@ timing (DEC-M1-T009).
   microseconds); V8 reuses its compilation cache except for the rAF call, whose
   timestamp changes the source. In v8 mode each eval also re-arms the watchdog, so its
   limit applies per phase rather than per frame.
+
+### Microtask checkpoints
+V8 runs with `MicrotasksPolicy::kExplicit`: promise jobs run only at a checkpoint the
+embedder asks for, never when a script returns. Chrome (and so NW.js) runs one after every
+task, and Node runs the `process.nextTick` queue before promise jobs. Card M1-T010 makes
+the loop do the same (DEC-M1-T010 has the exact order):
+
+- **After each event dispatch.** `__dom_setWindowSize`, `__dom_flushInputEvents` and
+  `__dom_updateGamepads` are each followed by `js_engine_execute_pending_jobs`, as the
+  timer and rAF phases already were. (dom_shim.js dispatches a frame's queued input in
+  one call, so that call is the unit.)
+- **After each timer and rAF callback (v8 mode).** dom_shim.js runs a whole phase in one
+  call. `js_engine_v8.cc` defines the non-enumerable global `__smz_microtaskCheckpoint()`,
+  a nested `PerformMicrotaskCheckpoint` like Node's `runMicrotasks()`. When it exists the
+  helper wraps `setTimeout`, `setInterval` and `requestAnimationFrame` so each callback is
+  followed by its ticks and a checkpoint. Unhandled rejections are still reported by the
+  phase's own checkpoint. Callbacks registered before the helper is installed (the first
+  frame) are not wrapped.
+- **nextTick first.** The helper replaces `process.nextTick` with its own queue. It runs
+  after each wrapped callback and after each phase call, before that checkpoint's promise
+  jobs. A tick queued outside a task (script load, a promise job of a phase checkpoint)
+  is run by a promise job, as the U5 shim does.
+
+`tests/smz/test_microtasks.c` (ctest `microtasks`, both engine modes) runs the real
+`game_loop.c`, `dom_shim.js` and `storage_shim.js` and checks the order of timeouts, an
+interval, rAF callbacks, an input dispatch, promise jobs and ticks within one frame.
 
 `tests/smz/test_game_loop_js.c` (ctest `game_loop_js`, both engine modes) runs the real
 `game_loop.c` with the platform, renderer, audio, video and log calls stubbed. It checks

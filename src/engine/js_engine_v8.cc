@@ -264,9 +264,38 @@ void on_uncaught(v8::Local<v8::Message> message, v8::Local<v8::Value> error) {
                                         isolate->GetCurrentContext()).FromMaybe(0)));
 }
 
+// __smz_microtaskCheckpoint(): runs a V8 microtask checkpoint from inside
+// JS. Why: dom_shim.js runs a whole frame's timers (or rAF callbacks) in
+// one call, while Chrome runs a checkpoint after each of them (HTML "clean
+// up after running script"); game_loop.c's helper calls this after each
+// callback (card M1-T010, DEC-M1-T010). It is the same nested checkpoint
+// Node's runMicrotasks() makes under kExplicit. V8 ignores the call while
+// microtasks are already running, so a job cannot re-enter the queue.
+// Unhandled rejections are left for the checkpoint of
+// js_engine_execute_pending_jobs, which reports them. Returns undefined.
+void microtask_checkpoint(const v8::FunctionCallbackInfo<v8::Value> &info) {
+    v8::Isolate *isolate = info.GetIsolate();
+    v8::HandleScope scope(isolate);  // spec section 15.8: one per native call
+    isolate->PerformMicrotaskCheckpoint();
+}
+
+// Defines __smz_microtaskCheckpoint on the global object, not enumerable
+// so that scripts listing window properties do not see it. Returns false
+// if V8 could not create or define it.
+bool install_checkpoint(v8::Isolate *isolate, v8::Local<v8::Context> context) {
+    v8::Local<v8::Function> fn;
+    if (!v8::Function::New(context, microtask_checkpoint).ToLocal(&fn)) return false;
+    return context->Global()
+        ->DefineOwnProperty(context, v8_str(isolate, "__smz_microtaskCheckpoint"), fn,
+                            v8::DontEnum)
+        .FromMaybe(false);
+}
+
 // jsb_runtime_setup callback of js_engine_init: the runtime's isolate and
 // context are entered here, which is the only way jsb exposes them. Keeps
-// the context, installs console and the isolate callbacks.
+// the context, installs console, __smz_microtaskCheckpoint and the isolate
+// callbacks. Microtasks run only at explicit checkpoints (kExplicit), never
+// when a script returns, so the game loop decides when they run.
 bool adopt_runtime(jsb_ctx *, void *user) {
     JSEngine *engine = static_cast<JSEngine *>(user);
     engine->isolate = v8::Isolate::GetCurrent();
@@ -277,7 +306,7 @@ bool adopt_runtime(jsb_ctx *, void *user) {
     engine->isolate->SetPromiseHook(promise_hook);
     engine->isolate->SetPromiseRejectCallback(on_promise_reject);
     engine->isolate->AddMessageListener(on_uncaught);
-    return install_console(engine, context);
+    return install_console(engine, context) && install_checkpoint(engine->isolate, context);
 }
 
 // Returns `file:line:col` of the innermost JS frame, or "<unknown>" when
