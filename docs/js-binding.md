@@ -3,6 +3,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
 Modified 2026-11-01: add persistent callbacks.
 Modified 2026-11-01: document the V8 script watchdog.
+Modified 2026-11-01: document how the game loop calls into JS.
 How native C bindings talk to the JS engine through jsb.h, and the handle rules.
 -->
 # JS binding: the `jsb` seam
@@ -291,6 +292,45 @@ throw in `foo.js` line 3 reports `foo.js:3` from a file, a string and a SyntaxEr
 v8 mode also the game-relative name and that `js_engine_get_jsb()` sees the engine's
 globals. In v8 mode the unchanged `tests/test_js_engine.c` also runs on V8 as ctest
 `js_engine_on_v8` (`tests/smz/js_engine_v8.cmake`).
+
+## Game loop
+`src/engine/game_loop.c` drives the browser event loop that RPG Maker MZ expects: SDL
+events, then `__dom_setWindowSize` (on resize), `__dom_flushInputEvents` and
+`__dom_updateGamepads`; `__dom_flushTimers`; a job drain; `__dom_flushAnimationFrames(ts)`
+with the ms elapsed since `game_loop_create`; a second job drain; video, audio, present.
+Card M1-T009 removed its QuickJS calls (§4.1 item 5) without changing that order or the
+timing (DEC-M1-T009).
+
+- **One entry point.** On first use the loop evaluates a small helper that defines the
+  non-writable global `__smz_gameLoop(op, ...)`. Every call into JS (phases,
+  `__nw_hostClose`, `__control_eval`, the exit probe) is `js_engine_eval_string` of a
+  short call to it, so the loop uses only `js_engine.h` and runs unchanged on
+  `js_engine.c` and on `js_engine_v8.cc`, which sits on jsb. The helper answers with a
+  one-letter code (`n` missing, `t`/`f` truthy/falsy result, `x` threw, `v` value, `e`
+  probe error) followed by any text.
+- **No handles in C.** The helper snapshots the five `__dom_*` functions on the first
+  frame and keeps them inside JS, as Outsider's cached `JSValue`s did, so the loop holds
+  no `JSValue`, `jsb_val`, `jsb_callback` or `Global` and has nothing to release (§15.8).
+  The engine must still outlive `game_loop_destroy`.
+- **Errors.** A throwing phase is caught in JS, passed to `__error_handler_dispatch`
+  (window.onerror) and returned; C logs `JS Exception: <String(e)>` and, for an Error
+  with a stack, `Stack trace:`, the lines `error_handler_report_js_exception` writes. The
+  rest of the frame still runs. A missing or throwing `__nw_hostClose` lets the window
+  close.
+- **Control mode.** `__native_control_send` is a JS function that queues reply lines; the
+  loop prints them after each `eval` command, at the end of each frame (so replies sent
+  by promise jobs appear in the frame they settle) and at shutdown.
+- **Cost.** Each frame evaluates five short scripts. QuickJS compiles each one (a few
+  microseconds); V8 reuses its compilation cache except for the rAF call, whose
+  timestamp changes the source. In v8 mode each eval also re-arms the watchdog, so its
+  limit applies per phase rather than per frame.
+
+`tests/smz/test_game_loop_js.c` (ctest `game_loop_js`, both engine modes) runs the real
+`game_loop.c` with the platform, renderer, audio, video and log calls stubbed. It checks
+the phase order and arguments, both job drains, a growing Number timestamp, the
+first-frame snapshot, exception logging and dispatch, the `__nw_hostClose` outcomes,
+exit-probe values, errors and escaping, and control-mode replies (synchronous, promise,
+unknown command) through a stdin pipe.
 
 ## Tests
 `tests/smz/test_jsb_core.c` (ctest `jsb_core`, both engine modes) defines a module from C, calls

@@ -11,6 +11,7 @@ Modified 2026-11-01: record Map 92 report owner-run and JS-time gap definitions.
 Modified 2026-11-01: propose the V8 pin (DEC-M1-T001).
 Modified 2026-11-01: record jsb persistent callback handles.
 Modified 2026-11-01: record the V8 script watchdog design.
+Modified 2026-11-01: record how the game loop reaches JS without QuickJS.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 
@@ -495,3 +496,17 @@ is never hit by a late request. The watchdog keeps QuickJS mode's rule that the 
 from the last arm (no disarm). The `--js-timeout-ms` flag and the control-mode default
 named by the card need `src/main.c`, which the card does not own; `--watchdog <ms>`
 reaches the same code meanwhile.
+
+## DEC-M1-T009 — the game loop calls JS through js_engine.h and one JS helper
+`game_loop.c` cannot call jsb directly yet: in quickjs mode `js_engine_get_jsb()` is NULL
+(the transitional backend cannot adopt the engine's context), and neither the `outsider`
+executable nor `test_performance` links `smz_jsb`; both are set in CMake files the card
+does not own. So the loop drops QuickJS for the engine-neutral `js_engine.h`, which in v8
+mode is itself built on jsb: it installs a JS helper, `__smz_gameLoop(op, ...)`, and
+evaluates one short call to it per JS call. The helper keeps the snapshotted `__dom_*`
+functions, catches exceptions (dispatching them to `window.onerror` like
+`error_handler_report_js_exception`) and queues `__native_control_send` lines, so C holds
+no engine handle at all. Phase order, the two job drains and the rAF timestamp are
+unchanged. Costs: five tiny compiles per frame on QuickJS, one (the rAF call) on V8, and
+in v8 mode the watchdog re-arms per eval. Once the runtime links jsb in both modes, the
+calls can move to `jsb_callback_call` on the same helper without changing its contract.

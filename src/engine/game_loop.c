@@ -1,6 +1,28 @@
 /*
  * Copyright (c) 2026 General Arcade (Pte. Ltd.)
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
+ * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-01: call into JS only through js_engine.h, with no QuickJS
+ * calls, so the loop runs unchanged on both engines (card M1-T009).
+ */
+
+/*
+ * The frame loop: SDL events, JS timers, microtasks, requestAnimationFrame,
+ * video, audio and present, in that order, once per frame.
+ *
+ * Why: RPG Maker MZ expects a browser event loop; this stands in for
+ * Chromium's (as NW.js runs it), driving the dom_shim.js timer and rAF
+ * queues from C. See docs/js-binding.md, "Game loop".
+ *
+ * Rules a reader must not break:
+ * - Main thread only, except control_reader_thread, which touches nothing
+ *   but the control queue under control_mutex.
+ * - The loop holds no JS handle of any kind (spec section 15.8,
+ *   docs/js-binding.md "Handle rules"). Every call into JS goes through
+ *   js_engine.h to the helper in kLoopJs, which keeps the JS functions the
+ *   loop calls inside JS itself.
+ * - Phase order and the two job drains (after timers, after rAF) are the
+ *   game's timing contract; do not move them.
  */
 
 #include "engine/game_loop.h"
@@ -10,7 +32,6 @@
 #include "video/video_player.h"
 
 #include <SDL3/SDL.h>
-#include <quickjs.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -63,48 +84,238 @@ struct GameLoop {
     ControlLine *control_tail;
     long         control_shot_id;
     char        *control_shot_path;    /* screenshot requested this frame */
-    JSValue      js_controlEval;
 
-    /* Cached JS function references to avoid repeated lookups */
-    JSValue    js_global;
-    JSValue    js_setWindowSize;
-    JSValue    js_flushInputEvents;
-    JSValue    js_updateGamepads;
-    JSValue    js_flushTimers;
-    JSValue    js_flushAnimationFrames;
+    /* JS side: kLoopJs installed (js_ready) or failed to install (js_failed);
+       phase functions snapshotted on the first frame (js_funcs_cached). */
+    bool       js_ready;
+    bool       js_failed;
+    bool       js_cache_tried;
     bool       js_funcs_cached;
 };
 
 static void control_shutdown(GameLoop *loop);
 
-/* Cache frequently-called JS functions to avoid per-frame string lookups. */
-static void cache_js_functions(GameLoop *loop)
-{
-    JSContext *ctx = js_engine_get_context(loop->engine);
-    if (!ctx || loop->js_funcs_cached) return;
+/* ---- Calling into JS ------------------------------------------------------
+   kLoopJs defines the non-writable global __smz_gameLoop(op, args...), the
+   loop's single entry into JS. It returns a string whose first character is
+   a code:
+     'n'  the function is missing (not callable); nothing ran
+     't' / 'f'  it ran and returned a truthy / falsy value
+     'x'  it threw: message, then U+0001 and the stack if it had one. The
+          helper has already passed it to __error_handler_dispatch
+          (window.onerror) as error_handler_report_js_exception does
+     'v'  a value follows (probe result, drained control replies)
+     'e'  the probe threw: its message follows
+   Keeping the functions in JS keeps the loop free of engine handles, so the
+   same code runs on QuickJS and on V8 (docs/js-binding.md, "Game loop"). */
+static const char kLoopJs[] =
+    "(function (g) {\n"
+    "  'use strict';\n"
+    "  if (typeof g.__smz_gameLoop === 'function') return;\n"
+    "  var NAMES = ['__dom_setWindowSize', '__dom_flushInputEvents',\n"
+    "               '__dom_updateGamepads', '__dom_flushTimers',\n"
+    "               '__dom_flushAnimationFrames'];\n"
+    "  var phases = {}, controlEval, outbox = [];\n"
+    "  function report(e) {\n"
+    "    var msg = 'Unknown error', stack = null;\n"
+    "    try { msg = String(e); } catch (ignored) {}\n"
+    "    if (e instanceof Error) {\n"
+    "      try { if (e.stack !== undefined) stack = String(e.stack); } catch (ignored) {}\n"
+    "    }\n"
+    "    var dispatch = g.__error_handler_dispatch;\n"
+    "    if (typeof dispatch === 'function') {\n"
+    "      try { dispatch.call(g, msg, e); } catch (ignored) {}\n"
+    "    }\n"
+    "    return 'x' + msg + (stack === null ? '' : '\\u0001' + stack);\n"
+    "  }\n"
+    "  function invoke(fn, self, args) {\n"
+    "    if (typeof fn !== 'function') return 'n';\n"
+    "    try { return fn.apply(self, args) ? 't' : 'f'; } catch (e) { return report(e); }\n"
+    "  }\n"
+    "  var ops = {\n"
+    "    cache: function () {\n"
+    "      phases = {};\n"
+    "      for (var i = 0; i < NAMES.length; i++) phases[NAMES[i]] = g[NAMES[i]];\n"
+    "      return 't';\n"
+    "    },\n"
+    "    phase: function (a) { return invoke(phases[a[0]], g, a.slice(1)); },\n"
+    "    call: function (a) { return invoke(g[a[0]], g, a.slice(1)); },\n"
+    "    controlInit: function () {\n"
+    "      g.__native_control_send = function (text) {\n"
+    "        if (arguments.length < 1) return;\n"
+    "        try { outbox.push(String(text)); } catch (ignored) {}\n"
+    "      };\n"
+    "      controlEval = g.__control_eval;\n"
+    "      return typeof controlEval === 'function' ? 't' : 'f';\n"
+    "    },\n"
+    "    control: function (a) { return invoke(controlEval, undefined, a); },\n"
+    "    drain: function () {\n"
+    "      if (outbox.length === 0) return 'e';\n"
+    "      var text = outbox.join('\\n');\n"
+    "      outbox.length = 0;\n"
+    "      return 'v' + text;\n"
+    "    },\n"
+    "    probe: function (a) {\n"
+    "      try { return 'v' + String((0, eval)(a[0])); } catch (e) {\n"
+    "        var m = '?';\n"
+    "        try { m = String(e); } catch (ignored) {}\n"
+    "        return 'e' + m;\n"
+    "      }\n"
+    "    }\n"
+    "  };\n"
+    "  Object.defineProperty(g, '__smz_gameLoop', { value: function (op) {\n"
+    "    return ops[op](Array.prototype.slice.call(arguments, 1));\n"
+    "  } });\n"
+    "})(globalThis);\n";
 
-    loop->js_global = JS_GetGlobalObject(ctx);
-    loop->js_setWindowSize = JS_GetPropertyStr(ctx, loop->js_global, "__dom_setWindowSize");
-    loop->js_flushInputEvents = JS_GetPropertyStr(ctx, loop->js_global, "__dom_flushInputEvents");
-    loop->js_updateGamepads = JS_GetPropertyStr(ctx, loop->js_global, "__dom_updateGamepads");
-    loop->js_flushTimers = JS_GetPropertyStr(ctx, loop->js_global, "__dom_flushTimers");
-    loop->js_flushAnimationFrames = JS_GetPropertyStr(ctx, loop->js_global, "__dom_flushAnimationFrames");
-    loop->js_funcs_cached = true;
+/* One argument of a JS call built in C: a Number, or a String when `str`
+   is not NULL (borrowed for the call). */
+typedef struct LoopArg {
+    double      num;
+    const char *str;
+} LoopArg;
+
+/* A growable byte buffer for building call sources; `ok` turns false on
+   the first allocation failure and stays false. */
+typedef struct StrBuf {
+    char  *data;
+    size_t len, cap;
+    bool   ok;
+} StrBuf;
+
+/* Appends `n` bytes of `text` to `sb`, growing it; sets sb->ok = false if
+   memory runs out. The buffer stays NUL-terminated. */
+static void sb_append(StrBuf *sb, const char *text, size_t n)
+{
+    if (!sb->ok) return;
+    if (sb->len + n + 1 > sb->cap) {
+        size_t cap = sb->cap ? sb->cap : 256;
+        while (sb->len + n + 1 > cap) cap *= 2;
+        char *grown = realloc(sb->data, cap);
+        if (!grown) { sb->ok = false; return; }
+        sb->data = grown;
+        sb->cap = cap;
+    }
+    memcpy(sb->data + sb->len, text, n);
+    sb->len += n;
+    sb->data[sb->len] = '\0';
 }
 
-static void release_js_functions(GameLoop *loop)
+/* Appends `text` (UTF-8, borrowed) as a double-quoted JS string literal.
+   Why: control payloads and probe sources are arbitrary text and must
+   reach JS byte for byte, so quotes, backslashes and control characters
+   are escaped; other bytes pass through as UTF-8. */
+static void sb_js_string(StrBuf *sb, const char *text)
 {
-    if (!loop->js_funcs_cached) return;
-    JSContext *ctx = js_engine_get_context(loop->engine);
-    if (!ctx) return;
+    sb_append(sb, "\"", 1);
+    for (const unsigned char *p = (const unsigned char *)text; *p; p++) {
+        char esc[8];
+        if (*p == '"' || *p == '\\') {
+            esc[0] = '\\';
+            esc[1] = (char)*p;
+            sb_append(sb, esc, 2);
+        } else if (*p < 0x20) {
+            snprintf(esc, sizeof esc, "\\u%04x", *p);
+            sb_append(sb, esc, 6);
+        } else {
+            sb_append(sb, (const char *)p, 1);
+        }
+    }
+    sb_append(sb, "\"", 1);
+}
 
-    JS_FreeValue(ctx, loop->js_flushAnimationFrames);
-    JS_FreeValue(ctx, loop->js_flushTimers);
-    JS_FreeValue(ctx, loop->js_updateGamepads);
-    JS_FreeValue(ctx, loop->js_flushInputEvents);
-    JS_FreeValue(ctx, loop->js_setWindowSize);
-    JS_FreeValue(ctx, loop->js_global);
-    loop->js_funcs_cached = false;
+/* Installs kLoopJs once per loop. Why: the helper must exist before the
+   first call, and the shims it reads may load after game_loop_create.
+   Returns whether it is usable; a failure is logged once and the loop then
+   runs without JS, as it did when QuickJS had no context. Main thread. */
+static bool ensure_js(GameLoop *loop)
+{
+    if (loop->js_ready || loop->js_failed) return loop->js_ready;
+    loop->js_ready = js_engine_eval(loop->engine, kLoopJs, "<game-loop>");
+    if (!loop->js_ready) {
+        loop->js_failed = true;
+        error_handler_log(LOG_ERROR, "Game loop: cannot install its JS helper");
+    }
+    return loop->js_ready;
+}
+
+/* Runs __smz_gameLoop(op, argv...) and returns its result string.
+   `op` names one of kLoopJs's ops; `argv` holds `argc` (0..4) arguments.
+   Returns a malloc'd string the caller frees with js_engine_free_string,
+   or NULL when the helper is unavailable or JS was stopped uncatchably
+   (the watchdog); the engine has then reported why. Main thread only. */
+static char *loop_js(GameLoop *loop, const char *op, int argc, const LoopArg *argv)
+{
+    if (!ensure_js(loop)) return NULL;
+    StrBuf sb = { NULL, 0, 0, true };
+    sb_append(&sb, "__smz_gameLoop(", 15);
+    sb_js_string(&sb, op);
+    for (int i = 0; i < argc; i++) {
+        sb_append(&sb, ",", 1);
+        if (argv[i].str) {
+            sb_js_string(&sb, argv[i].str);
+        } else {
+            char num[40];
+            int n = snprintf(num, sizeof num, "%.17g", argv[i].num);
+            sb_append(&sb, num, (size_t)n);
+        }
+    }
+    sb_append(&sb, ")", 1);
+    char *res = NULL;
+    if (sb.ok) {
+        res = js_engine_eval_string(loop->engine, sb.data, "<game-loop>");
+    } else {
+        error_handler_log(LOG_ERROR, "Game loop: out of memory calling JS (%s)", op);
+    }
+    free(sb.data);
+    return res;
+}
+
+/* Logs a thrown exception from an 'x' result (`text` is what follows the
+   code) with the same lines error_handler_report_js_exception writes. */
+static void log_js_failure(const char *text)
+{
+    const char *sep = strchr(text, '\x01');
+    if (!sep) {
+        error_handler_log(LOG_ERROR, "JS Exception: %s", text);
+        return;
+    }
+    error_handler_log(LOG_ERROR, "JS Exception: %.*s", (int)(sep - text), text);
+    error_handler_log(LOG_ERROR, "Stack trace:\n%s", sep + 1);
+}
+
+/* Calls a JS function through the helper and reports an exception.
+   `op` is "phase" (a function snapshotted on the first frame), "call" (a
+   global looked up now) or "control"; `argv[0]` names the function for the
+   first two. Returns the result code ('n', 't', 'f', 'x'), or 0 when
+   nothing could run. Main thread only. */
+static char call_js(GameLoop *loop, const char *op, int argc, const LoopArg *argv)
+{
+    char *res = loop_js(loop, op, argc, argv);
+    if (!res) return 0;
+    char code = res[0];
+    if (code == 'x') log_js_failure(res + 1);
+    js_engine_free_string(res);
+    return code;
+}
+
+/* Calls the phase function `name` with `argc` (0..2) Number arguments. */
+static void call_phase(GameLoop *loop, const char *name, int argc,
+                       double a, double b)
+{
+    LoopArg argv[3] = { { 0, name }, { a, NULL }, { b, NULL } };
+    call_js(loop, "phase", argc + 1, argv);
+}
+
+/* Snapshots the dom_shim.js phase functions inside JS on the first frame.
+   Why: as in Outsider, later reassignment of those globals does not change
+   what the loop calls, and lookups by name are not repeated per frame.
+   Tried once per loop; if it fails the phases are skipped. */
+static void cache_js_functions(GameLoop *loop)
+{
+    if (loop->js_cache_tried) return;
+    loop->js_cache_tried = true;
+    loop->js_funcs_cached = call_js(loop, "cache", 0, NULL) == 't';
 }
 
 GameLoop *game_loop_create(Platform *platform, JSEngine *engine, int target_fps)
@@ -128,23 +339,16 @@ GameLoop *game_loop_create(Platform *platform, JSEngine *engine, int target_fps)
     loop->fps = 0.0;
     loop->frame_count = 0;
 
-    loop->js_global = JS_UNDEFINED;
-    loop->js_setWindowSize = JS_UNDEFINED;
-    loop->js_flushInputEvents = JS_UNDEFINED;
-    loop->js_updateGamepads = JS_UNDEFINED;
-    loop->js_flushTimers = JS_UNDEFINED;
-    loop->js_flushAnimationFrames = JS_UNDEFINED;
-    loop->js_funcs_cached = false;
-    loop->js_controlEval = JS_UNDEFINED;
-
     return loop;
 }
 
+/* Frees the loop. The engine must still be alive: control mode flushes
+   its last replies through JS. Neither the platform nor the engine is
+   destroyed. */
 void game_loop_destroy(GameLoop *loop)
 {
     if (!loop) return;
     control_shutdown(loop);
-    release_js_functions(loop);
     free(loop->screenshot_path);
     free(loop->probe_expr);
     free(loop);
@@ -214,19 +418,18 @@ static void control_send(long id, const char *status, const char *json)
     fflush(stdout);
 }
 
-/* JS: __native_control_send(text) prints one reply line. */
-static JSValue js_control_send(JSContext *ctx, JSValueConst this_val,
-                               int argc, JSValueConst *argv)
+/* Prints the lines control_shim.js passed to __native_control_send since
+   the last flush, in order. Why: the loop keeps no native function in JS,
+   so kLoopJs queues those lines and the loop prints them after each
+   command, at the end of every frame and at shutdown. Main thread only. */
+static void control_flush_replies(GameLoop *loop)
 {
-    (void)this_val;
-    if (argc < 1) return JS_UNDEFINED;
-    const char *text = JS_ToCString(ctx, argv[0]);
-    if (text) {
-        printf("%s\n", text);
+    char *res = loop_js(loop, "drain", 0, NULL);
+    if (res && res[0] == 'v') {
+        printf("%s\n", res + 1);
         fflush(stdout);
-        JS_FreeCString(ctx, text);
     }
-    return JS_UNDEFINED;
+    js_engine_free_string(res);
 }
 
 /* Read one line of any length from stdin (without the newline). */
@@ -289,24 +492,19 @@ static ControlLine *control_pop(GameLoop *loop, bool *eof)
     return line;
 }
 
+/* Turns on control mode. Defines __native_control_send through kLoopJs and
+   takes __control_eval from control_shim.js, which must already be loaded;
+   returns false (logged) if it is not, or the reader thread cannot start. */
 bool game_loop_enable_control(GameLoop *loop, struct Renderer **renderer_slot)
 {
     if (!loop || loop->control_enabled) return false;
-    JSContext *ctx = js_engine_get_context(loop->engine);
-    if (!ctx) return false;
+    if (!ensure_js(loop)) return false;
 
     loop->control_mutex = SDL_CreateMutex();
     if (!loop->control_mutex) return false;
 
-    JSValue global = JS_GetGlobalObject(ctx);
-    JS_SetPropertyStr(ctx, global, "__native_control_send",
-                      JS_NewCFunction(ctx, js_control_send, "__native_control_send", 1));
-    loop->js_controlEval = JS_GetPropertyStr(ctx, global, "__control_eval");
-    JS_FreeValue(ctx, global);
-    if (!JS_IsFunction(ctx, loop->js_controlEval)) {
+    if (call_js(loop, "controlInit", 0, NULL) != 't') {
         error_handler_log(LOG_ERROR, "Control mode: __control_eval missing (control_shim.js not loaded)");
-        JS_FreeValue(ctx, loop->js_controlEval);
-        loop->js_controlEval = JS_UNDEFINED;
         return false;
     }
 
@@ -322,8 +520,9 @@ bool game_loop_enable_control(GameLoop *loop, struct Renderer **renderer_slot)
     return true;
 }
 
-/* Handle one "<id> <command> [payload]" line. */
-static void control_handle_line(GameLoop *loop, JSContext *ctx, const char *text)
+/* Handle one "<id> <command> [payload]" line. An eval runs
+   __control_eval(id, payload) at once and prints the replies it sent. */
+static void control_handle_line(GameLoop *loop, const char *text)
 {
     char *end = NULL;
     long id = strtol(text, &end, 10);
@@ -336,17 +535,11 @@ static void control_handle_line(GameLoop *loop, JSContext *ctx, const char *text
     const char *payload = end;
 
     if (cmd_len == 4 && strncmp(cmd, "eval", 4) == 0) {
-        JSValue args[2];
-        args[0] = JS_NewInt64(ctx, id);
-        args[1] = JS_NewString(ctx, payload);
-        JSValue ret = JS_Call(ctx, loop->js_controlEval, JS_UNDEFINED, 2, args);
-        if (JS_IsException(ret)) {
-            error_handler_report_js_exception(loop->engine, false);
+        LoopArg argv[2] = { { (double)id, NULL }, { 0, payload } };
+        if (call_js(loop, "control", 2, argv) == 'x') {
             control_send(id, "err", "\"__control_eval threw\"");
         }
-        JS_FreeValue(ctx, ret);
-        JS_FreeValue(ctx, args[0]);
-        JS_FreeValue(ctx, args[1]);
+        control_flush_replies(loop);
     } else if (cmd_len == 4 && strncmp(cmd, "shot", 4) == 0) {
         if (loop->control_shot_path) {
             control_send(id, "err", "\"a screenshot is already pending this frame\"");
@@ -366,7 +559,7 @@ static void control_handle_line(GameLoop *loop, JSContext *ctx, const char *text
 
 /* Drain queued commands. Before the first frame this blocks until the
    driver has sent something, so a prelude can run before any game frame. */
-static void control_dispatch(GameLoop *loop, JSContext *ctx)
+static void control_dispatch(GameLoop *loop)
 {
     bool eof = false;
     for (;;) {
@@ -382,15 +575,18 @@ static void control_dispatch(GameLoop *loop, JSContext *ctx)
             continue;
         }
         loop->control_started = true;
-        control_handle_line(loop, ctx, line->text);
+        control_handle_line(loop, line->text);
         free(line->text);
         free(line);
         if (!loop->running) return;
     }
 }
 
+/* End of frame in control mode: print replies sent by promise jobs this
+   frame, then take a requested screenshot and answer it. */
 static void control_finish_frame(GameLoop *loop)
 {
+    control_flush_replies(loop);
     if (!loop->control_shot_path) return;
     bool ok = write_screenshot(loop, loop->control_shot_path);
     control_send(loop->control_shot_id, ok ? "ok" : "err",
@@ -399,14 +595,15 @@ static void control_finish_frame(GameLoop *loop)
     loop->control_shot_path = NULL;
 }
 
+/* Leaves control mode: prints replies still queued in JS (the engine is
+   still alive, see game_loop_destroy) and frees the pending shot path. */
 static void control_shutdown(GameLoop *loop)
 {
     if (!loop->control_enabled) return;
     /* The reader thread blocks in fgetc; detach it so shutdown never waits
        on a driver that keeps stdin open. */
     if (loop->control_thread) SDL_DetachThread(loop->control_thread);
-    JSContext *ctx = js_engine_get_context(loop->engine);
-    if (ctx) JS_FreeValue(ctx, loop->js_controlEval);
+    control_flush_replies(loop);
     free(loop->control_shot_path);
     /* Lines left in the queue are leaked deliberately: the reader thread
        may still be appending, and the process is about to exit. */
@@ -446,239 +643,120 @@ void game_loop_request_stop(GameLoop *loop)
 
 /* SDL quit or window close: let the nw.Window shim emit "close". As in NW.js,
  * a "close" listener keeps the app running until it calls win.close(true) or
- * nw.App.quit(). Returns true when the loop should stop. */
-static bool host_close_quits(GameLoop *loop, JSContext *ctx)
+ * nw.App.quit(). Returns true when the loop should stop: also when
+ * __nw_hostClose is missing or throws (logged), so a broken listener never
+ * leaves the window unclosable. */
+static bool host_close_quits(GameLoop *loop)
 {
-    if (!ctx) return true;
-
-    JSValue global = JS_GetGlobalObject(ctx);
-    JSValue fn = JS_GetPropertyStr(ctx, global, "__nw_hostClose");
-    bool quit = true;
-    if (JS_IsFunction(ctx, fn)) {
-        JSValue ret = JS_Call(ctx, fn, global, 0, NULL);
-        if (JS_IsException(ret)) {
-            /* A throwing listener must not leave the window unclosable. */
-            error_handler_report_js_exception(loop->engine, false);
-        } else {
-            quit = JS_ToBool(ctx, ret);
-        }
-        JS_FreeValue(ctx, ret);
-    }
-    JS_FreeValue(ctx, fn);
-    JS_FreeValue(ctx, global);
-
+    LoopArg name = { 0, "__nw_hostClose" };
+    bool quit = call_js(loop, "call", 1, &name) != 'f';
     if (!quit) error_handler_log(LOG_INFO, "Window close deferred to a 'close' listener");
     return quit;
 }
 
-bool game_loop_step(GameLoop *loop)
+/* Phase 1 after SDL polling: a resize, queued input events and gamepads go
+   to dom_shim.js. Skipped while the JS side is unavailable. */
+static void run_input_phase(GameLoop *loop)
 {
-    if (!loop || !loop->running) return false;
-
-    uint64_t frame_start = SDL_GetPerformanceCounter();
-    uint64_t phase_start, phase_end;
-
-    JSContext *ctx = js_engine_get_context(loop->engine);
-
-    if (!loop->js_funcs_cached && ctx) {
-        cache_js_functions(loop);
+    if (!loop->js_funcs_cached) return;
+    int rw, rh;
+    if (platform_check_resize(loop->platform, &rw, &rh)) {
+        call_phase(loop, "__dom_setWindowSize", 2, rw, rh);
     }
+    call_phase(loop, "__dom_flushInputEvents", 0, 0, 0);
+    call_phase(loop, "__dom_updateGamepads", 0, 0, 0);
+}
 
-    if (loop->control_enabled && ctx) {
-        control_dispatch(loop, ctx);
-        if (!loop->running) return false;
+/* Phase 4: rAF callbacks with the loop's elapsed time (ms since
+   game_loop_create) as their DOMHighResTimeStamp, then a job drain. */
+static void run_raf_phase(GameLoop *loop)
+{
+    if (loop->js_funcs_cached) {
+        call_phase(loop, "__dom_flushAnimationFrames", 1,
+                   game_loop_elapsed_ms(loop), 0);
     }
-
-    js_engine_watchdog_arm(loop->engine);
-
-    /* --- Phase 1: Events (SDL polling + resize + input) --- */
-    phase_start = frame_start;
-
-    if (!platform_poll_events(loop->platform) && host_close_quits(loop, ctx)) {
-        loop->running = false;
-        return false;
-    }
-
-    if (ctx && loop->js_funcs_cached) {
-        int rw, rh;
-        if (platform_check_resize(loop->platform, &rw, &rh)) {
-            if (JS_IsFunction(ctx, loop->js_setWindowSize)) {
-                JSValue args[2];
-                args[0] = JS_NewInt32(ctx, rw);
-                args[1] = JS_NewInt32(ctx, rh);
-                JSValue ret = JS_Call(ctx, loop->js_setWindowSize, loop->js_global, 2, args);
-                if (JS_IsException(ret)) {
-                    error_handler_report_js_exception(loop->engine, false);
-                }
-                JS_FreeValue(ctx, ret);
-                JS_FreeValue(ctx, args[0]);
-                JS_FreeValue(ctx, args[1]);
-            }
-        }
-
-        if (JS_IsFunction(ctx, loop->js_flushInputEvents)) {
-            JSValue ret = JS_Call(ctx, loop->js_flushInputEvents, loop->js_global, 0, NULL);
-            if (JS_IsException(ret)) {
-                error_handler_report_js_exception(loop->engine, false);
-            }
-            JS_FreeValue(ctx, ret);
-        }
-
-        if (JS_IsFunction(ctx, loop->js_updateGamepads)) {
-            JSValue ret = JS_Call(ctx, loop->js_updateGamepads, loop->js_global, 0, NULL);
-            if (JS_IsException(ret)) {
-                error_handler_report_js_exception(loop->engine, false);
-            }
-            JS_FreeValue(ctx, ret);
-        }
-    }
-
-    phase_end = SDL_GetPerformanceCounter();
-    loop->stats.events_ms = ticks_to_ms(loop, phase_end - phase_start);
-
-    /* --- Phase 2: Timers --- */
-    phase_start = phase_end;
-
-    if (ctx && loop->js_funcs_cached) {
-        if (JS_IsFunction(ctx, loop->js_flushTimers)) {
-            JSValue ret = JS_Call(ctx, loop->js_flushTimers, loop->js_global, 0, NULL);
-            if (JS_IsException(ret)) {
-                error_handler_report_js_exception(loop->engine, false);
-            }
-            JS_FreeValue(ctx, ret);
-        }
-    }
-
-    phase_end = SDL_GetPerformanceCounter();
-    loop->stats.timers_ms = ticks_to_ms(loop, phase_end - phase_start);
-
-    /* --- Phase 3: Microtasks/Jobs --- */
-    phase_start = phase_end;
-
     js_engine_execute_pending_jobs(loop->engine);
+}
 
-    phase_end = SDL_GetPerformanceCounter();
-    loop->stats.jobs_ms = ticks_to_ms(loop, phase_end - phase_start);
-
-    /* --- Phase 4: requestAnimationFrame callbacks --- */
-    phase_start = phase_end;
-
-    if (ctx && loop->js_funcs_cached) {
-        if (JS_IsFunction(ctx, loop->js_flushAnimationFrames)) {
-            double timestamp = game_loop_elapsed_ms(loop);
-            JSValue args[1];
-            args[0] = JS_NewFloat64(ctx, timestamp);
-            JSValue ret = JS_Call(ctx, loop->js_flushAnimationFrames, loop->js_global, 1, args);
-            if (JS_IsException(ret)) {
-                error_handler_report_js_exception(loop->engine, false);
-            }
-            JS_FreeValue(ctx, ret);
-            JS_FreeValue(ctx, args[0]);
-        }
+/* Evaluates the exit probe (or the default active-scene expression) and
+   writes its String() form, or "probe threw: <error>", to `out`; leaves
+   `out` alone when JS could not run at all. */
+static void run_exit_probe(GameLoop *loop, char *out, size_t cap)
+{
+    LoopArg src = { 0, loop->probe_expr ? loop->probe_expr :
+        "typeof SceneManager !== 'undefined' && SceneManager._scene"
+        "    ? SceneManager._scene.constructor.name : 'none'" };
+    char *res = loop_js(loop, "probe", 1, &src);
+    if (!res) return;                     /* reported by the engine */
+    if (res[0] == 'v') {
+        snprintf(out, cap, "%s", res + 1);
+    } else {
+        snprintf(out, cap, "probe threw: %s", res + 1);
     }
+    js_engine_free_string(res);
+}
 
-    js_engine_execute_pending_jobs(loop->engine);
-
-    /* --- Video: advance playback and draw it over the finished frame --- */
-    {
-        uint64_t prev = loop->prev_frame_start_ticks ? loop->prev_frame_start_ticks : frame_start;
-        double dt = ticks_to_ms(loop, frame_start - prev) / 1000.0;
-        loop->prev_frame_start_ticks = frame_start;
-        video_player_update(dt);
-        video_player_draw();
-    }
-
-    phase_end = SDL_GetPerformanceCounter();
-    loop->stats.raf_ms = ticks_to_ms(loop, phase_end - phase_start);
-
-    /* --- Audio update (fades, voice cleanup) --- */
-    audio_update();
-
-    /* --- Control mode: a requested screenshot is read back before the swap --- */
-    if (loop->control_enabled) control_finish_frame(loop);
-
-    /* --- Debug frame limit: capture the final frame before it is swapped --- */
+/* Debug frame limit: after max_frames frames, capture the final frame
+   before it is swapped, log where the game got to, and stop. */
+static void check_frame_limit(GameLoop *loop)
+{
     loop->total_frames++;
-    if (loop->max_frames > 0 && loop->total_frames >= loop->max_frames) {
-        if (loop->screenshot_path) {
-            write_screenshot(loop, loop->screenshot_path);
-        }
-        /* Report engine state so a log alone says where the game got to:
-           the active scene by default, or the caller's probe expression. */
-        char probe_result[1024] = "unknown";
-        if (ctx) {
-            const char *probe = loop->probe_expr ? loop->probe_expr :
-                "typeof SceneManager !== 'undefined' && SceneManager._scene"
-                "    ? SceneManager._scene.constructor.name : 'none'";
-            JSValue v = JS_Eval(ctx, probe, strlen(probe), "<exit-probe>", JS_EVAL_TYPE_GLOBAL);
-            if (!JS_IsException(v)) {
-                const char *s = JS_ToCString(ctx, v);
-                if (s) {
-                    snprintf(probe_result, sizeof(probe_result), "%s", s);
-                    JS_FreeCString(ctx, s);
-                }
-            } else {
-                JSValue exc = JS_GetException(ctx);
-                const char *s = JS_ToCString(ctx, exc);
-                snprintf(probe_result, sizeof(probe_result), "probe threw: %s", s ? s : "?");
-                if (s) JS_FreeCString(ctx, s);
-                JS_FreeValue(ctx, exc);
-            }
-            JS_FreeValue(ctx, v);
-        }
-        error_handler_log(LOG_INFO, "Frame limit reached (%d frames), stopping; %s: %s",
-                          loop->total_frames, loop->probe_expr ? "probe" : "scene",
-                          probe_result);
-        loop->running = false;
+    if (loop->max_frames <= 0 || loop->total_frames < loop->max_frames) return;
+    if (loop->screenshot_path) {
+        write_screenshot(loop, loop->screenshot_path);
     }
+    /* Report engine state so a log alone says where the game got to:
+       the active scene by default, or the caller's probe expression. */
+    char probe_result[1024] = "unknown";
+    run_exit_probe(loop, probe_result, sizeof(probe_result));
+    error_handler_log(LOG_INFO, "Frame limit reached (%d frames), stopping; %s: %s",
+                      loop->total_frames, loop->probe_expr ? "probe" : "scene",
+                      probe_result);
+    loop->running = false;
+}
 
-    /* --- Phase 5: Present --- */
-    phase_start = phase_end;
-
-    {
-        /* The frame was drawn into an offscreen surface; putting it on screen
-           is the renderer's job, and the window swap follows it. */
-        Renderer *r = loop->screenshot_renderer_slot ? *loop->screenshot_renderer_slot : NULL;
-        if (r) {
-            int ww = 0, wh = 0;
-            platform_get_window_size(loop->platform, &ww, &wh);
-            renderer_set_output_size(r, ww, wh);
-            renderer_present(r);
-        }
+/* Phase 5: the frame was drawn into an offscreen surface; putting it on
+   screen is the renderer's job, and the window swap follows it. */
+static void present_frame(GameLoop *loop)
+{
+    Renderer *r = loop->screenshot_renderer_slot ? *loop->screenshot_renderer_slot : NULL;
+    if (r) {
+        int ww = 0, wh = 0;
+        platform_get_window_size(loop->platform, &ww, &wh);
+        renderer_set_output_size(r, ww, wh);
+        renderer_present(r);
     }
-
     platform_swap_buffers(loop->platform);
+}
 
-    phase_end = SDL_GetPerformanceCounter();
-    loop->stats.swap_ms = ticks_to_ms(loop, phase_end - phase_start);
-
-    loop->stats.total_ms = ticks_to_ms(loop, phase_end - frame_start);
-
-    /* --- Optional periodic phase report (debug aid) --- */
-    if (loop->perf_interval > 0) {
-        loop->perf_acc.events_ms += loop->stats.events_ms;
-        loop->perf_acc.timers_ms += loop->stats.timers_ms;
-        loop->perf_acc.jobs_ms   += loop->stats.jobs_ms;
-        loop->perf_acc.raf_ms    += loop->stats.raf_ms;
-        loop->perf_acc.swap_ms   += loop->stats.swap_ms;
-        loop->perf_acc.total_ms  += loop->stats.total_ms;
-        if (++loop->perf_count >= loop->perf_interval) {
-            double n = (double)loop->perf_count;
-            error_handler_log(LOG_INFO,
-                "perf: %d frames avg %.1f ms (events %.1f, timers %.1f, jobs %.1f, "
-                "rAF %.1f, swap %.1f)",
-                loop->perf_count, loop->perf_acc.total_ms / n,
-                loop->perf_acc.events_ms / n, loop->perf_acc.timers_ms / n,
-                loop->perf_acc.jobs_ms / n, loop->perf_acc.raf_ms / n,
-                loop->perf_acc.swap_ms / n);
-            memset(&loop->perf_acc, 0, sizeof(loop->perf_acc));
-            loop->perf_count = 0;
-        }
+/* Optional periodic phase report (debug aid). */
+static void report_perf(GameLoop *loop)
+{
+    if (loop->perf_interval <= 0) return;
+    loop->perf_acc.events_ms += loop->stats.events_ms;
+    loop->perf_acc.timers_ms += loop->stats.timers_ms;
+    loop->perf_acc.jobs_ms   += loop->stats.jobs_ms;
+    loop->perf_acc.raf_ms    += loop->stats.raf_ms;
+    loop->perf_acc.swap_ms   += loop->stats.swap_ms;
+    loop->perf_acc.total_ms  += loop->stats.total_ms;
+    if (++loop->perf_count >= loop->perf_interval) {
+        double n = (double)loop->perf_count;
+        error_handler_log(LOG_INFO,
+            "perf: %d frames avg %.1f ms (events %.1f, timers %.1f, jobs %.1f, "
+            "rAF %.1f, swap %.1f)",
+            loop->perf_count, loop->perf_acc.total_ms / n,
+            loop->perf_acc.events_ms / n, loop->perf_acc.timers_ms / n,
+            loop->perf_acc.jobs_ms / n, loop->perf_acc.raf_ms / n,
+            loop->perf_acc.swap_ms / n);
+        memset(&loop->perf_acc, 0, sizeof(loop->perf_acc));
+        loop->perf_count = 0;
     }
+}
 
-    /* --- FPS tracking --- */
-    uint64_t now = phase_end;
-
+/* FPS tracking, then manual pacing to the target FPS in case VSync is off
+   or not working. `now` is the end of this frame's present. */
+static void pace_frame(GameLoop *loop, uint64_t now)
+{
     loop->frame_count++;
     uint64_t fps_elapsed = now - loop->fps_timer_ticks;
     double fps_elapsed_ms = ticks_to_ms(loop, fps_elapsed);
@@ -688,7 +766,6 @@ bool game_loop_step(GameLoop *loop)
         loop->fps_timer_ticks = now;
     }
 
-    /* If VSync is off or not working, manually pace to target FPS. */
     uint64_t frame_elapsed = now - loop->last_frame_ticks;
     double frame_elapsed_ms = ticks_to_ms(loop, frame_elapsed);
     if (frame_elapsed_ms < loop->frame_time_ms) {
@@ -698,7 +775,73 @@ bool game_loop_step(GameLoop *loop)
         }
     }
     loop->last_frame_ticks = SDL_GetPerformanceCounter();
+}
 
+/* Runs one frame: events, timers, jobs, rAF (+ jobs), video, audio,
+   control and frame-limit checks, present, then stats and pacing. Returns
+   false once the loop should exit. Main thread only. */
+bool game_loop_step(GameLoop *loop)
+{
+    if (!loop || !loop->running) return false;
+
+    uint64_t frame_start = SDL_GetPerformanceCounter();
+    uint64_t phase_start, phase_end;
+
+    cache_js_functions(loop);
+
+    if (loop->control_enabled) {
+        control_dispatch(loop);
+        if (!loop->running) return false;
+    }
+
+    js_engine_watchdog_arm(loop->engine);
+
+    /* --- Phase 1: Events (SDL polling + resize + input) --- */
+    phase_start = frame_start;
+    if (!platform_poll_events(loop->platform) && host_close_quits(loop)) {
+        loop->running = false;
+        return false;
+    }
+    run_input_phase(loop);
+    phase_end = SDL_GetPerformanceCounter();
+    loop->stats.events_ms = ticks_to_ms(loop, phase_end - phase_start);
+
+    /* --- Phase 2: Timers --- */
+    phase_start = phase_end;
+    if (loop->js_funcs_cached) call_phase(loop, "__dom_flushTimers", 0, 0, 0);
+    phase_end = SDL_GetPerformanceCounter();
+    loop->stats.timers_ms = ticks_to_ms(loop, phase_end - phase_start);
+
+    /* --- Phase 3: Microtasks/Jobs --- */
+    phase_start = phase_end;
+    js_engine_execute_pending_jobs(loop->engine);
+    phase_end = SDL_GetPerformanceCounter();
+    loop->stats.jobs_ms = ticks_to_ms(loop, phase_end - phase_start);
+
+    /* --- Phase 4: requestAnimationFrame callbacks, then video over the
+       finished frame --- */
+    phase_start = phase_end;
+    run_raf_phase(loop);
+    uint64_t prev = loop->prev_frame_start_ticks ? loop->prev_frame_start_ticks : frame_start;
+    loop->prev_frame_start_ticks = frame_start;
+    video_player_update(ticks_to_ms(loop, frame_start - prev) / 1000.0);
+    video_player_draw();
+    phase_end = SDL_GetPerformanceCounter();
+    loop->stats.raf_ms = ticks_to_ms(loop, phase_end - phase_start);
+
+    audio_update();                                  /* fades, voice cleanup */
+    if (loop->control_enabled) control_finish_frame(loop);
+    check_frame_limit(loop);
+
+    /* --- Phase 5: Present --- */
+    phase_start = phase_end;
+    present_frame(loop);
+    phase_end = SDL_GetPerformanceCounter();
+    loop->stats.swap_ms = ticks_to_ms(loop, phase_end - phase_start);
+    loop->stats.total_ms = ticks_to_ms(loop, phase_end - frame_start);
+
+    report_perf(loop);
+    pace_frame(loop, phase_end);
     return true;
 }
 

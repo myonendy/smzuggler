@@ -1,6 +1,9 @@
 /*
  * Copyright (c) 2026 General Arcade (Pte. Ltd.)
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
+ * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-01: document the engine-lifetime contract of the JS calls
+ * (card M1-T009; docs/js-binding.md, "Game loop").
  */
 
 #ifndef RMMZ_GAME_LOOP_H
@@ -29,7 +32,9 @@ typedef struct {
    target_fps controls frame pacing (typically 60). */
 GameLoop *game_loop_create(Platform *platform, JSEngine *engine, int target_fps);
 
-/* Destroy the game loop. Does NOT destroy the platform or engine. */
+/* Destroy the game loop. Does NOT destroy the platform or engine, but the
+   engine must still be alive: control mode prints its last queued replies
+   through JS. The loop holds no JS handles, so nothing else is released. */
 void game_loop_destroy(GameLoop *loop);
 
 /* Run a single frame of the game loop.

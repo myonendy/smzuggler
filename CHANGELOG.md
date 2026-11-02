@@ -28,6 +28,7 @@ Modified 2026-11-01: record guarded save reads (U15).
 Modified 2026-11-01: record the V8 build script and proposed pin.
 Modified 2026-11-01: record jsb persistent callbacks.
 Modified 2026-11-01: record the V8 script watchdog.
+Modified 2026-11-01: record the game loop off QuickJS.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 <!-- Records project changes for release review; keep entries free of private data. -->
@@ -37,6 +38,10 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Take QuickJS out of `src/engine/game_loop.c`: every call into JS (timers, rAF, input,
+  window close, control mode, exit probe) goes through `js_engine.h` to one JS helper,
+  with phase order and timing unchanged, so the loop runs on both engines. Test
+  `game_loop_js` (`docs/js-binding.md`, "Game loop"; DEC-M1-T009).
 - Stop runaway scripts on V8: a watchdog thread (`src/engine/js_watchdog.cc`), present
   only while `js_engine_set_watchdog` has a limit, interrupts the script, reports its
   `file:line:col` and terminates it with `Isolate::TerminateExecution`; the engine then
