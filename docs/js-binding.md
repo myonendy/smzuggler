@@ -269,6 +269,23 @@ auto-save outcome, and in v8 mode that a throwing jsb callback is logged with it
 The older `tests/test_error_handler.c` still calls QuickJS directly and runs on QuickJS
 in both modes until M1-T027 ports it.
 
+## Ported bindings
+Each port keeps its JS API byte-for-byte (names, order, `length`, results, errors) and
+adds `bind_<x>_define(jsb_runtime *rt, ...)`; the old `bind_<x>_register(struct JSContext
+*, ...)` stays as a one-line wrapper under `#ifdef SMZ_JSB_ADOPT` until M1-T026
+(DEC-M1-T014-JSB-ADOPT). Each has a `tests/smz/test_bind_<x>_jsb.c` ctest run in both modes.
+
+| Binding | Globals | Functions (`length`) | jsb calls used | Buffers | Callbacks |
+| --- | --- | --- | --- | --- | --- |
+| `bind_platform.c` (M1-T014) | `__native_platform`, `__native_process` | `setFullscreen` (1), `isFullscreen`, `getDisplaySize`, `getDisplayScale`, `getWindowSize`, `setWindowTitle` (1), `quit` (0 for the rest); process: `platform`, `arch`, `engine` strings, `environ`, `hrtime` (0) | `jsb_define_module`, `jsb_runtime_setup`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_truthy`, `jsb_arg_to_str`/`jsb_free_str`, `jsb_new_object`/`array`/`i32`/`f64`/`str`, `jsb_set_prop`, `jsb_set_index`, `jsb_ret_*`, `jsb_throw_type`, `jsb_throw_internal`, `jsb_engine_version` | none | none |
+
+* **bind_platform.** The `__native_process` helpers stay inline in `bind_platform.h`
+  (`bind_platform_define_process(rt)`), so window-less tests need no SDL;
+  `bind_platform_register_process(struct JSContext *)` is their transitional wrapper.
+  `bind_platform_define` also defines `__native_process`, as the old register did. The
+  `Platform *` is kept in a file static (jsb modules have no user pointer); no jsb handle
+  is stored. `engine` is `jsb_engine_version()`, the running engine's version.
+
 ## Handle rules (§15.8)
 These are the rules for code that touches V8 handles, in jsb and elsewhere (WebGL has
 its own GL-object rules in `webgl.md`).
