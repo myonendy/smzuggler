@@ -534,3 +534,12 @@ which only QuickJS API can do and which only the QuickJS-era `tests/test_error_h
 calls (it must keep passing until M1-T027 ports it). It is now a quickjs-mode `static
 inline` in `error_handler.h` that hands the text to `error_handler_report_js_error`, so
 `error_handler.c` has no QuickJS code; M1-T027 deletes it with QuickJS.
+
+## DEC-M1-T013-MAIN-THREAD — V8's stack size follows the main thread; no runtime thread
+
+Owner ruling, 2026-11-04. Spec §4.1 item 6 asks to set V8's `--stack-size` to match the
+main thread's stack. The runtime (SDL window, event pump, graphics context and JS) stays on
+the process main thread in every engine mode. M1-T013 reads the main thread's stack limit at
+startup and passes V8 a `--stack-size` below it with a safety margin. Rejected: starting a
+dedicated thread with a chosen stack size, which breaks the documented thread model and is
+unsafe where SDL video must run on the main thread.
