@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-04: value, coercion, array, error and length calls the
+ * binding ports need (card M1-T007b).
  *
  * jsb: the small C seam through which native bindings talk to the JS engine.
  *
@@ -353,6 +355,140 @@ jsb_status jsb_callback_call(jsb_callback cb, int argc, const jsb_cval *argv,
  * double free is reported rather than corrupting anything. Main thread
  * only; never from a jsb_free_fn. */
 bool jsb_callback_free(jsb_callback *cb);
+
+/* ---- Values for result objects (card M1-T007b) ------------------------ */
+/* Why: Outsider's bindings build result objects and arrays from C values
+ * (JS_NewInt32, JS_NewString, JS_NewArray, JS_NULL...); these keep that JS
+ * API byte-for-byte. Each returns a call-scoped handle (valid like any
+ * jsb_val until the ctx ends; nothing to free) and works in native calls
+ * and setup callbacks. Main thread only. */
+
+/* Returns an integer Number (JS_NewInt32). Never NULL. */
+jsb_val *jsb_new_i32(jsb_ctx *ctx, int32_t value);
+/* Returns a Number from an unsigned 32-bit integer (JS_NewUint32). */
+jsb_val *jsb_new_u32(jsb_ctx *ctx, uint32_t value);
+/* Returns a Number (JS_NewFloat64); NaN and infinities are kept. */
+jsb_val *jsb_new_f64(jsb_ctx *ctx, double value);
+/* Returns true or false (JS_NewBool, JS_TRUE, JS_FALSE). */
+jsb_val *jsb_new_bool(jsb_ctx *ctx, bool value);
+/* Returns null (JS_NULL). */
+jsb_val *jsb_new_null(jsb_ctx *ctx);
+
+/* Returns a String copied from NUL-terminated UTF-8 `utf8` (JS_NewString;
+ * borrowed). NULL is a TypeError and returns NULL; invalid UTF-8 is not
+ * defined to match between backends, so pass valid UTF-8. */
+jsb_val *jsb_new_str(jsb_ctx *ctx, const char *utf8);
+
+/* Returns a String from `len` bytes of UTF-8 at `utf8`, which may contain
+ * embedded NULs and need not be NUL-terminated (JS_NewStringLen).
+ * `utf8` may be NULL only when `len` is 0; otherwise NULL is a TypeError.
+ * More than INT32_MAX bytes is a RangeError. Both return NULL. */
+jsb_val *jsb_new_str_len(jsb_ctx *ctx, const char *utf8, size_t len);
+
+/* Returns a new empty Array (JS_NewArray). Never NULL. */
+jsb_val *jsb_new_array(jsb_ctx *ctx);
+
+/* Sets `obj[index] = val` as an ordinary assignment (JS_SetPropertyUint32),
+ * so an array grows. A non-object `obj` or NULL `val` is a TypeError.
+ * Returns false if the assignment threw (the exception stays pending). */
+bool jsb_set_index(jsb_ctx *ctx, jsb_val *obj, uint32_t index, jsb_val *val);
+
+/* Returns a new ArrayBuffer holding a copy of `len` bytes at `data`
+ * (JS_NewArrayBufferCopy). Unlike jsb_new_external_buffer the engine owns
+ * the copy and the caller keeps `data` (borrowed). `data` may be NULL only
+ * when `len` is 0 (TypeError); more than INT32_MAX bytes is a RangeError.
+ * Both return NULL. */
+jsb_val *jsb_new_buffer_copy(jsb_ctx *ctx, const void *data, size_t len);
+
+/* ---- Coercing reads (card M1-T007b) ----------------------------------- */
+/* Why: the typed getters above throw on a wrong type, but Outsider's
+ * bindings coerce (JS_ToBool, JS_ToInt32, JS_ToCString...), so `"3"` or an
+ * object with valueOf() is accepted; porting them must keep that. These
+ * apply the ECMAScript conversions, which run valueOf/toString/
+ * Symbol.toPrimitive and can therefore throw (a Symbol is a TypeError).
+ * On a throw they return false (or NULL) with the exception pending; the
+ * native function returns at once or calls jsb_clear_exception. A missing
+ * argument is undefined. */
+
+/* Returns ToBoolean(argument `index`) (JS_ToBool). Never throws. */
+bool jsb_arg_truthy(jsb_ctx *ctx, int index);
+
+/* Reads ToInt32(argument `index`) into `*out` (JS_ToInt32). */
+bool jsb_arg_to_i32(jsb_ctx *ctx, int index, int32_t *out);
+
+/* Reads ToUint32(argument `index`) into `*out` (JS_ToUint32). */
+bool jsb_arg_to_u32(jsb_ctx *ctx, int index, uint32_t *out);
+
+/* Reads ToNumber(argument `index`) into `*out` (JS_ToFloat64). */
+bool jsb_arg_to_f64(jsb_ctx *ctx, int index, double *out);
+
+/* Returns ToString(argument `index`) as NUL-terminated UTF-8 in new memory
+ * (JS_ToCStringLen); the caller frees it with jsb_free_str. `len` (may be
+ * NULL) gets the byte length without the NUL; embedded NULs are kept.
+ * Returns NULL when the conversion threw (a Symbol is a TypeError) or, as
+ * an InternalError "out of memory", when memory ran out. */
+char *jsb_arg_to_str(jsb_ctx *ctx, int index, size_t *len);
+
+/* Frees a string from jsb_arg_to_str (JS_FreeCString); NULL is ignored.
+ * Safe at any time, also after the call that made it has returned. */
+void jsb_free_str(char *str);
+
+/* ---- Reading array elements (card M1-T007b) --------------------------- */
+
+/* Returns whether `val` is an Array (Array.isArray, JS_IsArray); NULL is
+ * false. Never throws. */
+bool jsb_is_array(jsb_ctx *ctx, jsb_val *val);
+
+/* Returns `obj[index]` (undefined if absent), running getters
+ * (JS_GetPropertyUint32). A non-object `obj` is a TypeError; NULL is
+ * returned then and when a getter threw (the exception stays pending). */
+jsb_val *jsb_get_index(jsb_ctx *ctx, jsb_val *obj, uint32_t index);
+
+/* Reads ToNumber(`val`) into `*out` (JS_ToFloat64 on an element); NULL
+ * `val` is a TypeError. Throws and fails as the jsb_arg_to_* calls do. */
+bool jsb_val_to_f64(jsb_ctx *ctx, jsb_val *val, double *out);
+
+/* Reads ToInt32(`val`) (JS_ToInt32 on an element); as jsb_val_to_f64. */
+bool jsb_val_to_i32(jsb_ctx *ctx, jsb_val *val, int32_t *out);
+
+/* Reads ToUint32(`val`) (JS_ToUint32 on an element); as jsb_val_to_f64. */
+bool jsb_val_to_u32(jsb_ctx *ctx, jsb_val *val, uint32_t *out);
+
+/* Returns the kind of `val` (JS_IsNull, JS_IsUndefined and friends): NULL
+ * counts as undefined; objects, functions, symbols and BigInts are all
+ * JSB_TYPE_OBJECT. Never throws. */
+jsb_type jsb_val_type(jsb_ctx *ctx, jsb_val *val);
+
+/* ---- Errors and functions (card M1-T007b) ----------------------------- */
+
+/* Drops the call's pending exception, if any, so the native function can
+ * go on (JS_GetException + JS_FreeValue).
+ *
+ * Why: some bindings try one argument form, and on failure fall back to
+ * another or return null/0. Afterwards jsb_ret_* and jsb_throw_* work
+ * again. A script termination (the watchdog) is never dropped: it keeps
+ * unwinding. Does nothing when nothing is pending. */
+void jsb_clear_exception(jsb_ctx *ctx);
+
+/* Throws a plain Error (JS_ThrowPlainError); otherwise as jsb_throw_type. */
+void jsb_throw_error(jsb_ctx *ctx, const char *fmt, ...);
+
+/* Throws an InternalError (JS_ThrowInternalError; JS_ThrowOutOfMemory is
+ * jsb_throw_internal(ctx, "out of memory")); otherwise as jsb_throw_type.
+ * V8 has no InternalError, so there it is an Error whose own `name` is
+ * "InternalError": String(e) and e.name match QuickJS, e instanceof Error
+ * holds on both. */
+void jsb_throw_internal(jsb_ctx *ctx, const char *fmt, ...);
+
+/* As jsb_set_fn, and sets the function's `length` to `length` (0..255),
+ * as JS_CFUNC_DEF's arity does; out of range is a RangeError. */
+bool jsb_set_fn_n(jsb_ctx *ctx, jsb_val *obj, const char *name, jsb_fn fn,
+                  int length);
+
+/* Returns the engine's version string (JS_GetVersion; V8::GetVersion on
+ * V8), for process.versions-style reports. Static storage; never NULL.
+ * Any thread. */
+const char *jsb_engine_version(void);
 
 #ifdef __cplusplus
 }
