@@ -5,6 +5,7 @@
  * Modified 2026-11-01: add js_engine_get_jsb; js_engine_get_context is
  * QuickJS-mode only. The API has two implementations: js_engine.c (QuickJS)
  * and js_engine_v8.cc (SMZ_JS_ENGINE=v8). See docs/js-binding.md.
+ * Modified 2026-11-04: js_engine_get_jsb is non-NULL in quickjs mode too.
  */
 
 #ifndef RMMZ_JS_ENGINE_H
@@ -76,10 +77,10 @@ void js_engine_set_console_callback(JSEngine *engine, JSConsoleCallback cb, void
    Why: it replaces js_engine_get_context, which exposes QuickJS, for code
    that must work in both engine modes. Borrowed: owned by the engine and
    valid until js_engine_shutdown. Main thread only.
-   In v8 mode it is never NULL for a live engine. In quickjs mode it is
-   NULL: the transitional QuickJS jsb backend (DEC-SETUP-008) cannot yet
-   adopt the engine's existing JSContext, so callers there keep using
-   js_engine_get_context until it can (see docs/js-binding.md). */
+   It is never NULL for a live engine, and NULL for a NULL engine. In
+   quickjs mode it is the engine's own JSContext adopted by the
+   transitional QuickJS jsb backend (src/jsb/jsb_adopt.h, DEC-SETUP-008,
+   removed by M1-T027); see docs/js-binding.md, "Adoption". */
 struct jsb_runtime *js_engine_get_jsb(JSEngine *engine);
 
 #ifndef SMZ_JS_ENGINE_V8

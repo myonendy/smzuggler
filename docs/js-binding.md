@@ -42,6 +42,57 @@ QuickJS. Rules while it lives:
 - Known difference: a string argument holding a lone UTF-16 surrogate is read out in
   QuickJS's encoding of it, where V8 writes U+FFFD.
 
+## Adoption (transitional, removed by M1-T027)
+
+The game runs on `js_engine.c` (QuickJS) in both modes until M1-T027, so binding ports
+need a jsb runtime on *its* context (DEC-M1-T014-JSB-ADOPT). The private header
+`src/jsb/jsb_adopt.h` declares `jsb_runtime_adopt(JSContext *)`, which wraps a context
+without owning it (`js_engine_init` calls it; `js_engine_get_jsb()` returns it), and
+`jsb_runtime_of(JSContext *)`, which the port cards' `bind_<x>_register` wrappers use.
+jsb keeps its runtime in the QuickJS **runtime** opaque; the context opaque stays
+`js_engine.c`'s. `jsb_runtime_destroy` on an adopted runtime frees only jsb's own
+references and must run before the context is freed (`js_engine_shutdown` does).
+
+`smz_jsb_quickjs` is built in both modes and linked by `outsider` and by every test
+target that builds `js_engine.c` (the root `CMakeLists.txt` scans the `tests` targets).
+Its PUBLIC `SMZ_JSB_ADOPT` guards every use of `jsb_adopt.h` outside `src/jsb/`. In
+quickjs mode `smz_jsb` is an alias of it; in v8 mode `smz_jsb` is the V8 backend
+(via `smz_js_engine_v8`, which never sees `SMZ_JSB_ADOPT`). No target links both.
+
+## Seam calls for binding ports (M1-T007b)
+
+In `jsb.h` on both backends (test `jsb_values`); they stay after M1-T027. Coercing reads
+apply the ECMAScript conversions (valueOf runs; a Symbol is a TypeError).
+`jsb_clear_exception` never drops a watchdog termination; on V8 each native call runs
+in a `TryCatch` that it resets. On V8 `jsb_throw_internal` makes an `Error` whose own
+`name` is `"InternalError"`. Added beyond the card's list: `jsb_val_to_i32/u32`
+(bind_tilemap.c coerces elements), `jsb_val_type` and `jsb_engine_version`.
+
+| QuickJS in `src/bindings/` | jsb |
+| --- | --- |
+| `JS_CFUNC_DEF`, `JS_SetPropertyFunctionList`, `JS_NewCFunction` | `jsb_set_fn_n` (arity = `length`) |
+| `JS_GetGlobalObject` | `jsb_define_module` |
+| `JS_NewObject`, `JS_SetPropertyStr`, `JS_GetPropertyStr` | `jsb_new_object`, `jsb_set_prop`, `jsb_get_prop` |
+| `JS_NewAtomLen`, `JS_SetProperty`, `JS_FreeAtom` | `jsb_set_prop` on a NUL-terminated key copy |
+| `JS_NewArray`, `JS_IsArray` | `jsb_new_array`, `jsb_is_array` |
+| `JS_SetPropertyUint32`, `JS_GetPropertyUint32` | `jsb_set_index`, `jsb_get_index` |
+| `JS_NewInt32`, `JS_NewUint32`, `JS_NewFloat64` | `jsb_new_i32`, `jsb_new_u32`, `jsb_new_f64` (or `jsb_ret_*`) |
+| `JS_NewBool`, `JS_TRUE`, `JS_FALSE` | `jsb_new_bool`, `jsb_ret_bool` |
+| `JS_NULL`, `JS_UNDEFINED` | `jsb_new_null`, `jsb_ret_undefined` |
+| `JS_NewString`, `JS_NewStringLen` | `jsb_new_str`, `jsb_new_str_len` |
+| `JS_NewArrayBufferCopy` | `jsb_new_buffer_copy` |
+| `JS_GetArrayBuffer`, `JS_GetTypedArrayBuffer` | `jsb_arg_bytes` |
+| `JS_ToBool` | `jsb_arg_truthy` |
+| `JS_ToInt32`, `JS_ToUint32`, `JS_ToFloat64` | `jsb_arg_to_i32/u32/f64`; elements `jsb_val_to_i32/u32/f64` |
+| `JS_ToCString`, `JS_ToCStringLen`, `JS_FreeCString` | `jsb_arg_to_str`, `jsb_free_str` |
+| `JS_IsNull`, `JS_IsUndefined` | `jsb_val_type` |
+| `JS_IsException`, `JS_EXCEPTION` | false/NULL from the jsb call, then return |
+| `JS_GetException` | `jsb_clear_exception` |
+| `JS_FreeValue` | none: handles are call-scoped (§15.8) |
+| `JS_ThrowTypeError`, `JS_ThrowRangeError` | `jsb_throw_type`, `jsb_throw_range` |
+| `JS_ThrowInternalError`, `JS_ThrowOutOfMemory` | `jsb_throw_internal` (`"out of memory"`) |
+| `JS_GetVersion` | `jsb_engine_version` |
+
 ## API
 
 ### Host side
@@ -282,9 +333,8 @@ v8-mode library serves every caller that needs only `js_engine.h`, starting with
   a `.jsc` beside the script; see "Code cache" below.
 - **Watchdog**: see "Watchdog" below.
 - **`js_engine_get_context`** is declared only without `SMZ_JS_ENGINE_V8`. In quickjs
-  mode `js_engine_get_jsb()` returns NULL: the transitional backend creates its own
-  `JSContext` and has no way to adopt the engine's; that needs a change to
-  `jsb_quickjs.c`, so quickjs-mode callers keep `js_engine_get_context` meanwhile.
+  mode `js_engine_get_jsb()` returns the engine's own `JSContext` adopted by the
+  transitional backend (see "Adoption" above), so jsb modules share the game's globals.
 - **Handles** (§15.8): every entry point opens its own `HandleScope`; the engine owns
   exactly two kinds of `Global` (its context and pending rejections) and Resets them in
   `js_engine_shutdown` before the isolate is disposed of.

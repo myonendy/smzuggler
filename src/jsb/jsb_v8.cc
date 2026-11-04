@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The smzuggler contributors
+// Modified 2026-11-04: the seam calls of card M1-T007b; native calls run
+// inside a TryCatch so jsb_clear_exception can drop an error.
 //
 // V8 implementation of the jsb seam declared in src/jsb/jsb.h.
 //
@@ -29,6 +31,7 @@
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <memory>
@@ -41,13 +44,15 @@ struct jsb_val {
 };
 
 // Per-call state. `info` is NULL for setup callbacks, where there are no
-// arguments and no return slot.
+// arguments and no return slot. `tc` is the TryCatch around the call, so
+// jsb_clear_exception can drop what it caught.
 struct jsb_ctx {
     v8::Isolate *isolate;
     v8::Local<v8::Context> context;
     const v8::FunctionCallbackInfo<v8::Value> *info;
     std::deque<jsb_val> vals;
     bool threw;
+    v8::TryCatch *tc;
 };
 
 // "No free callback slot" in jsb_runtime's free list.
@@ -139,17 +144,37 @@ v8::Local<v8::String> utf8(v8::Isolate *isolate, const char *text) {
     return s;
 }
 
-// Throws a new TypeError (RangeError when `range`) with a printf-style
-// message, unless the call already threw: the first error is the specific
-// one, later ones are usually fallout.
-void throw_with(jsb_ctx *ctx, bool range, const char *fmt, va_list ap) {
+// The error constructors jsb_throw_* use.
+enum ErrKind { kErrType, kErrRange, kErrPlain, kErrInternal };
+
+// Makes the error of `kind`. V8 has no InternalError, so that one is an
+// Error whose own `name` says so (jsb.h: jsb_throw_internal).
+v8::Local<v8::Value> make_error(jsb_ctx *ctx, ErrKind kind,
+                                v8::Local<v8::String> text) {
+    switch (kind) {
+    case kErrRange: return v8::Exception::RangeError(text);
+    case kErrPlain: return v8::Exception::Error(text);
+    case kErrType: return v8::Exception::TypeError(text);
+    case kErrInternal: break;
+    }
+    v8::Local<v8::Value> err = v8::Exception::Error(text);
+    err.As<v8::Object>()
+        ->Set(ctx->context, utf8(ctx->isolate, "name"),
+              utf8(ctx->isolate, "InternalError"))
+        .Check();
+    return err;
+}
+
+// Throws a new error of `kind` with a printf-style message, unless the
+// call already threw: the first error is the specific one, later ones are
+// usually fallout.
+void throw_with(jsb_ctx *ctx, ErrKind kind, const char *fmt, va_list ap) {
     if (ctx->threw) return;
     char message[256];
     std::vsnprintf(message, sizeof message, fmt, ap);
     v8::Local<v8::String> text = utf8(ctx->isolate, message);
     ctx->threw = true;
-    ctx->isolate->ThrowException(range ? v8::Exception::RangeError(text)
-                                       : v8::Exception::TypeError(text));
+    ctx->isolate->ThrowException(make_error(ctx, kind, text));
 }
 
 // Returns argument `index`, undefined when missing or outside a call.
@@ -176,13 +201,18 @@ v8::Local<v8::Object> as_object(jsb_val *val) {
 
 // Entry point V8 calls for every jsb_set_fn function. Opens the call's
 // HandleScope, builds its jsb_ctx and runs the C function stored in Data.
+// A TryCatch holds what the call throws, so jsb_clear_exception can drop
+// it; anything still caught at the end is rethrown to the JS caller. A
+// termination needs no rethrow: the TryCatch passes it on by itself.
 void trampoline(const v8::FunctionCallbackInfo<v8::Value> &info) {
     v8::Isolate *isolate = info.GetIsolate();
     v8::HandleScope scope(isolate);
+    v8::TryCatch tc(isolate);
     jsb_fn fn = reinterpret_cast<jsb_fn>(
         info.Data().As<v8::External>()->Value());
-    jsb_ctx ctx{isolate, isolate->GetCurrentContext(), &info, {}, false};
+    jsb_ctx ctx{isolate, isolate->GetCurrentContext(), &info, {}, false, &tc};
     fn(&ctx);
+    if (tc.HasCaught() && !tc.HasTerminated()) tc.ReThrow();
 }
 
 // Writes String(value) as UTF-8 into `out` (truncated, NUL-terminated);
@@ -276,7 +306,7 @@ bool jsb_runtime_setup(jsb_runtime *rt, jsb_setup_fn fn, void *user) {
     v8::Local<v8::Context> context = rt->context.Get(rt->isolate);
     v8::Context::Scope context_scope(context);
     v8::TryCatch tc(rt->isolate);
-    jsb_ctx ctx{rt->isolate, context, nullptr, {}, false};
+    jsb_ctx ctx{rt->isolate, context, nullptr, {}, false, &tc};
     bool ok = fn(&ctx, user);
     if (tc.HasCaught()) {
         char message[512];
@@ -449,7 +479,7 @@ void jsb_ret_val(jsb_ctx *ctx, jsb_val *val) {
 void jsb_throw_type(jsb_ctx *ctx, const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
-    throw_with(ctx, false, fmt, ap);
+    throw_with(ctx, kErrType, fmt, ap);
     va_end(ap);
 }
 
@@ -457,7 +487,7 @@ void jsb_throw_type(jsb_ctx *ctx, const char *fmt, ...) {
 void jsb_throw_range(jsb_ctx *ctx, const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
-    throw_with(ctx, true, fmt, ap);
+    throw_with(ctx, kErrRange, fmt, ap);
     va_end(ap);
 }
 
@@ -468,6 +498,17 @@ jsb_val *jsb_new_object(jsb_ctx *ctx) {
 
 // See jsb.h: jsb_set_fn.
 bool jsb_set_fn(jsb_ctx *ctx, jsb_val *obj, const char *name, jsb_fn fn) {
+    return jsb_set_fn_n(ctx, obj, name, fn, 0);
+}
+
+// See jsb.h: jsb_set_fn_n. V8 takes the `length` when making the function.
+bool jsb_set_fn_n(jsb_ctx *ctx, jsb_val *obj, const char *name, jsb_fn fn,
+                  int length) {
+    if (length < 0 || length > 255) {
+        jsb_throw_range(ctx, "jsb_set_fn_n(%s): length %d is not 0..255",
+                        name, length);
+        return false;
+    }
     v8::Local<v8::Object> target = as_object(obj);
     if (target.IsEmpty() || !fn) {
         jsb_throw_type(ctx, "jsb_set_fn(%s): bad object or function", name);
@@ -476,7 +517,8 @@ bool jsb_set_fn(jsb_ctx *ctx, jsb_val *obj, const char *name, jsb_fn fn) {
     v8::Local<v8::External> data = v8::External::New(
         ctx->isolate, reinterpret_cast<void *>(fn));
     v8::Local<v8::Function> func;
-    if (!v8::Function::New(ctx->context, trampoline, data).ToLocal(&func))
+    if (!v8::Function::New(ctx->context, trampoline, data, length)
+             .ToLocal(&func))
         return false;
     v8::Local<v8::String> key = utf8(ctx->isolate, name);
     func->SetName(key);
@@ -738,5 +780,241 @@ bool jsb_callback_free(jsb_callback *cb) {
     rt->cb_free = index;
     return true;
 }
+
+}  // extern "C"
+
+// ---- Values, coercion and errors (card M1-T007b) ------------------------
+
+namespace {
+
+// Wraps `value` when V8 produced one; otherwise records the pending
+// exception as the call's throw and returns NULL.
+jsb_val *wrap_maybe(jsb_ctx *ctx, v8::MaybeLocal<v8::Value> value) {
+    v8::Local<v8::Value> v;
+    if (value.ToLocal(&v)) return wrap(ctx, v);
+    ctx->threw = true;
+    return nullptr;
+}
+
+// Stores a Maybe result of a V8 conversion in `*out`, or records its
+// pending exception as the call's throw. Returns whether it converted.
+template <typename T, typename U>
+bool take(jsb_ctx *ctx, v8::Maybe<U> result, T *out) {
+    U value;
+    if (!result.To(&value)) {
+        ctx->threw = true;
+        return false;
+    }
+    *out = static_cast<T>(value);
+    return true;
+}
+
+// Throws the jsb_val_to_* TypeError for a NULL handle; returns false.
+bool null_val(jsb_ctx *ctx, const char *who) {
+    jsb_throw_type(ctx, "%s: NULL value", who);
+    return false;
+}
+
+}  // namespace
+
+extern "C" {
+
+// See jsb.h: jsb_new_i32.
+jsb_val *jsb_new_i32(jsb_ctx *ctx, int32_t value) {
+    return wrap(ctx, v8::Integer::New(ctx->isolate, value));
+}
+
+// See jsb.h: jsb_new_u32.
+jsb_val *jsb_new_u32(jsb_ctx *ctx, uint32_t value) {
+    return wrap(ctx, v8::Integer::NewFromUnsigned(ctx->isolate, value));
+}
+
+// See jsb.h: jsb_new_f64.
+jsb_val *jsb_new_f64(jsb_ctx *ctx, double value) {
+    return wrap(ctx, v8::Number::New(ctx->isolate, value));
+}
+
+// See jsb.h: jsb_new_bool.
+jsb_val *jsb_new_bool(jsb_ctx *ctx, bool value) {
+    return wrap(ctx, v8::Boolean::New(ctx->isolate, value));
+}
+
+// See jsb.h: jsb_new_null.
+jsb_val *jsb_new_null(jsb_ctx *ctx) { return wrap(ctx, v8::Null(ctx->isolate)); }
+
+// See jsb.h: jsb_new_str.
+jsb_val *jsb_new_str(jsb_ctx *ctx, const char *utf8_text) {
+    if (!utf8_text) {
+        jsb_throw_type(ctx, "jsb_new_str: NULL string");
+        return nullptr;
+    }
+    return jsb_new_str_len(ctx, utf8_text, std::strlen(utf8_text));
+}
+
+// See jsb.h: jsb_new_str_len. A string over V8's length limit is a
+// RangeError, like QuickJS's.
+jsb_val *jsb_new_str_len(jsb_ctx *ctx, const char *utf8_text, size_t len) {
+    if (!utf8_text && len > 0) {
+        jsb_throw_type(ctx, "jsb_new_str_len: NULL string");
+        return nullptr;
+    }
+    v8::Local<v8::String> s;
+    if (len > INT32_MAX ||
+        !v8::String::NewFromUtf8(ctx->isolate, utf8_text ? utf8_text : "",
+                                 v8::NewStringType::kNormal,
+                                 static_cast<int>(len))
+             .ToLocal(&s)) {
+        jsb_throw_range(ctx, "jsb_new_str_len: %zu bytes is too long", len);
+        return nullptr;
+    }
+    return wrap(ctx, s);
+}
+
+// See jsb.h: jsb_new_array.
+jsb_val *jsb_new_array(jsb_ctx *ctx) {
+    return wrap(ctx, v8::Array::New(ctx->isolate));
+}
+
+// See jsb.h: jsb_set_index.
+bool jsb_set_index(jsb_ctx *ctx, jsb_val *obj, uint32_t index, jsb_val *val) {
+    v8::Local<v8::Object> target = as_object(obj);
+    if (target.IsEmpty() || !val) {
+        jsb_throw_type(ctx, "jsb_set_index(%u): bad object or value", index);
+        return false;
+    }
+    bool ok = false;
+    return take(ctx, target->Set(ctx->context, index, val->value), &ok) && ok;
+}
+
+// See jsb.h: jsb_new_buffer_copy. V8's allocator owns the copy.
+jsb_val *jsb_new_buffer_copy(jsb_ctx *ctx, const void *data, size_t len) {
+    if (!data && len > 0) {
+        jsb_throw_type(ctx, "jsb_new_buffer_copy: NULL data");
+        return nullptr;
+    }
+    if (len > INT32_MAX) {
+        jsb_throw_range(ctx, "jsb_new_buffer_copy: %zu bytes is too large "
+                             "for an ArrayBuffer", len);
+        return nullptr;
+    }
+    v8::Local<v8::ArrayBuffer> ab = v8::ArrayBuffer::New(ctx->isolate, len);
+    if (len > 0) std::memcpy(ab->GetBackingStore()->Data(), data, len);
+    return wrap(ctx, ab);
+}
+
+// See jsb.h: jsb_arg_truthy.
+bool jsb_arg_truthy(jsb_ctx *ctx, int index) {
+    return arg(ctx, index)->BooleanValue(ctx->isolate);
+}
+
+// See jsb.h: jsb_arg_to_i32.
+bool jsb_arg_to_i32(jsb_ctx *ctx, int index, int32_t *out) {
+    return take(ctx, arg(ctx, index)->Int32Value(ctx->context), out);
+}
+
+// See jsb.h: jsb_arg_to_u32.
+bool jsb_arg_to_u32(jsb_ctx *ctx, int index, uint32_t *out) {
+    return take(ctx, arg(ctx, index)->Uint32Value(ctx->context), out);
+}
+
+// See jsb.h: jsb_arg_to_f64.
+bool jsb_arg_to_f64(jsb_ctx *ctx, int index, double *out) {
+    return take(ctx, arg(ctx, index)->NumberValue(ctx->context), out);
+}
+
+// See jsb.h: jsb_arg_to_str. ToString first (which may throw), then UTF-8.
+char *jsb_arg_to_str(jsb_ctx *ctx, int index, size_t *len) {
+    v8::Local<v8::String> s;
+    if (!arg(ctx, index)->ToString(ctx->context).ToLocal(&s)) {
+        ctx->threw = true;
+        return nullptr;
+    }
+    v8::String::Utf8Value text(ctx->isolate, s);
+    size_t n = static_cast<size_t>(text.length());
+    char *copy = static_cast<char *>(std::malloc(n + 1));
+    if (!copy) {
+        jsb_throw_internal(ctx, "out of memory");
+        return nullptr;
+    }
+    if (n > 0) std::memcpy(copy, *text, n);
+    copy[n] = '\0';
+    if (len) *len = n;
+    return copy;
+}
+
+// See jsb.h: jsb_free_str.
+void jsb_free_str(char *str) { std::free(str); }
+
+// See jsb.h: jsb_is_array.
+bool jsb_is_array(jsb_ctx *ctx, jsb_val *val) {
+    (void)ctx;
+    return val && val->value->IsArray();
+}
+
+// See jsb.h: jsb_get_index.
+jsb_val *jsb_get_index(jsb_ctx *ctx, jsb_val *obj, uint32_t index) {
+    v8::Local<v8::Object> target = as_object(obj);
+    if (target.IsEmpty()) {
+        jsb_throw_type(ctx, "jsb_get_index(%u): not an object", index);
+        return nullptr;
+    }
+    return wrap_maybe(ctx, target->Get(ctx->context, index));
+}
+
+// See jsb.h: jsb_val_to_f64.
+bool jsb_val_to_f64(jsb_ctx *ctx, jsb_val *val, double *out) {
+    if (!val) return null_val(ctx, "jsb_val_to_f64");
+    return take(ctx, val->value->NumberValue(ctx->context), out);
+}
+
+// See jsb.h: jsb_val_to_i32.
+bool jsb_val_to_i32(jsb_ctx *ctx, jsb_val *val, int32_t *out) {
+    if (!val) return null_val(ctx, "jsb_val_to_i32");
+    return take(ctx, val->value->Int32Value(ctx->context), out);
+}
+
+// See jsb.h: jsb_val_to_u32.
+bool jsb_val_to_u32(jsb_ctx *ctx, jsb_val *val, uint32_t *out) {
+    if (!val) return null_val(ctx, "jsb_val_to_u32");
+    return take(ctx, val->value->Uint32Value(ctx->context), out);
+}
+
+// See jsb.h: jsb_val_type.
+jsb_type jsb_val_type(jsb_ctx *ctx, jsb_val *val) {
+    (void)ctx;
+    if (!val || val->value->IsUndefined()) return JSB_TYPE_UNDEFINED;
+    if (val->value->IsNull()) return JSB_TYPE_NULL;
+    if (val->value->IsBoolean()) return JSB_TYPE_BOOL;
+    if (val->value->IsNumber()) return JSB_TYPE_NUMBER;
+    if (val->value->IsString()) return JSB_TYPE_STRING;
+    return JSB_TYPE_OBJECT;
+}
+
+// See jsb.h: jsb_clear_exception. Resets the call's TryCatch, except for a
+// termination, which must keep unwinding.
+void jsb_clear_exception(jsb_ctx *ctx) {
+    if (ctx->tc && ctx->tc->HasTerminated()) return;
+    if (ctx->tc) ctx->tc->Reset();
+    ctx->threw = false;
+}
+
+// See jsb.h: jsb_throw_error.
+void jsb_throw_error(jsb_ctx *ctx, const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    throw_with(ctx, kErrPlain, fmt, ap);
+    va_end(ap);
+}
+
+// See jsb.h: jsb_throw_internal.
+void jsb_throw_internal(jsb_ctx *ctx, const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    throw_with(ctx, kErrInternal, fmt, ap);
+    va_end(ap);
+}
+
+// See jsb.h: jsb_engine_version.
+const char *jsb_engine_version(void) { return v8::V8::GetVersion(); }
 
 }  // extern "C"
