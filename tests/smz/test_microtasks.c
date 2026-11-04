@@ -199,10 +199,43 @@ static void test_tick_outside_task(void)
     js_engine_shutdown(engine);
 }
 
+/* Consumed overlay keys finish default actions and jobs before the next key.
+   Real overlay listeners bypass document.dispatchEvent; main thread only. */
+static void test_overlay_event_order(void)
+{
+    JSEngine *engine;
+    GameLoop *loop = make_loop(&engine);
+    assert(js_engine_eval_file(engine, "src/shims/dom_overlay.js"));
+    assert(js_engine_eval(engine,
+        "var field = document.createElement('input');"
+        "document.body.appendChild(field); field.value = 'abc'; field.focus();"
+        "field.selectionStart = field.selectionEnd = 3;"
+        "field.addEventListener('keydown', function () {"
+        " log.push('key:' + field.value);"
+        " process.nextTick(function () { log.push('tick:' + field.value); });"
+        " Promise.resolve().then(function () { log.push('promise:' + field.value); });"
+        "});"
+        "field.addEventListener('input', function () { log.push('input:' + field.value); });"
+        "events = [{type:'keydown', key:'Backspace'}, {type:'keydown', key:'Backspace'}];",
+        "overlay-order.js"));
+    assert(game_loop_step(loop));
+#ifdef SMZ_JS_ENGINE_V8
+    assert(js_is(engine, "log.join(',')",
+        "key:abc,input:ab,tick:ab,promise:ab,key:ab,input:a,tick:a,promise:a"));
+#else
+    assert(js_is(engine, "log.join(',')",
+        "key:abc,input:ab,key:ab,input:a,tick:a,tick:a,promise:a,promise:a"));
+#endif
+    game_loop_destroy(loop);
+    js_engine_shutdown(engine);
+}
+
+/* Run main-thread ordering regressions; assertions terminate on failure. */
 int main(void)
 {
     fprintf(stderr, "test_frame_order\n");
     test_frame_order();
+    test_overlay_event_order();
     fprintf(stderr, "test_tick_outside_task\n");
     test_tick_outside_task();
     fprintf(stderr, "microtasks: all passed\n");

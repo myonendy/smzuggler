@@ -361,6 +361,29 @@ const char kTickBootstrap[] = R"JS(
  })(globalThis);
 /** Preserve synchronous listeners while separating native input, resize and gamepad events. */
 (function (g) {
+    /** Deliver each polled event completely, including overlay default actions.
+     * Main-thread-only; restore the borrowed poll function even on exceptions.
+     * The dispatcher owns translation; singleton batches define task boundaries.
+     */
+    function inputTasks(fn, receiver, args) {
+        if (typeof g.__native_input === 'undefined') return fn.apply(receiver, args);
+        var input = g.__native_input, poll = input.pollEvents;
+        var events = poll.call(input), result;
+        if (!events || !events.length) return;
+        try {
+            for (var i = 0; i < events.length; i++) {
+                var batch = [events[i]];
+                /** Lend the current raw event to the existing DOM dispatcher. */
+                input.pollEvents = function () { return batch; };
+                try { result = fn.apply(receiver, args); }
+                finally {
+                    input.pollEvents = poll;
+                    g.__smz_microtaskCheckpoint();
+                }
+            }
+        } finally { input.pollEvents = poll; }
+        return result;
+    }
     /** Adopt a native phase, retaining its original dispatcher in this context. */
     function nativePhase(name) {
         var phase;
@@ -373,6 +396,8 @@ const char kTickBootstrap[] = R"JS(
                 if (typeof fn !== 'function') { phase = fn; return; }
                 /** Intercept event invocation only while native events are delivered. */
                 phase = function () {
+                    if (name === '__dom_flushInputEvents')
+                        return inputTasks(fn, this, arguments);
                     var depth = 0, restores = [];
                     /** Wrap one target; nested synchronous dispatch shares the depth. */
                     function intercept(target) {

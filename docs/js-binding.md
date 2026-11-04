@@ -364,11 +364,12 @@ embedder asks for, never when a script returns. Chrome (and so NW.js) runs one a
 task, and Node runs the `process.nextTick` queue before promise jobs. Card M1-T010 makes
 the loop do the same (DEC-M1-T010 has the exact order):
 
-- **After each native input event (V8).** The bootstrap intercepts installation of
-  the input, resize and gamepad phases. During these phases it temporarily wraps
-  document and window dispatch,
-  checkpointing after all listeners and nested synchronous dispatches return. The real
-  dispatcher still polls and translates every native event. Each phase also retains its engine-driven checkpoint.
+- **After each native input event (V8).** The bootstrap polls the input batch once,
+  then invokes the original input dispatcher with one raw event at a time. Each
+  invocation checkpoints after complete delivery, including consumed overlay events,
+  bubbling and default actions. The borrowed poll function is restored on errors.
+  Resize and gamepad phases temporarily wrap document/window dispatch with shared
+  nesting depth. Each phase also retains its engine-driven checkpoint.
 - **After each timer and rAF callback (V8).** Scheduler accessors installed at context
   creation wrap callbacks as the DOM shim installs its schedulers. Startup registrations
   are covered before the first frame. Each callback checkpoints in a finally block.
