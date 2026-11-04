@@ -111,6 +111,7 @@ A reviewer that finds any of these rejects the whole change.
 - **Changelog:** don't edit `CHANGELOG.md`. Put one line in your final report under
   `CHANGELOG:` saying what now exists (same style as the existing entries, without the
   card ID); forge adds it under "Unreleased" with the card ID.
+  When the card's `docs` list `CHANGELOG.md`, that line is required: never write `none`.
 
 ## 7. Token discipline
 - Don't re-read files, don't dump large files or logs (use grep and ranges; section 2 lists
@@ -120,6 +121,10 @@ A reviewer that finds any of these rejects the whole change.
 - Reuse before you write: grep for an existing helper (parsers, path helpers, test
   fixtures) and call it. Don't copy one into your files; if two cards need it, say so under
   `SPEC/INFRA ISSUES`.
+- Run `forge check` (and builds and tests) in the foreground and wait for it to return.
+  Never run it in the background and poll, and never list processes (`ps`, `pgrep`, `top`):
+  their output is huge and is re-sent on every later turn. Read only the tail or the first
+  error of a log, never whole test logs.
 - Stop when the acceptance criteria are met and `forge check` passes.
 
 ## 8. Commit messages (CONTRIBUTING.md, "Commit messages")
