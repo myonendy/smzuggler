@@ -88,6 +88,8 @@ struct JSEngine {
     int jobs_run = 0;
     // Set by the message listener when a microtask threw uncaught.
     bool job_failed = false;
+    // Nested dispatch from a promise must leave ticks to the outer checkpoint.
+    bool checkpoint_running = false;
     // Watchdog limit (0 = off) and its timer thread, which exists only
     // while the limit is on; see js_engine_set_watchdog.
     unsigned watchdog_ms = 0;
@@ -264,10 +266,147 @@ void on_uncaught(v8::Local<v8::Message> message, v8::Local<v8::Value> error) {
                                         isolate->GetCurrentContext()).FromMaybe(0)));
 }
 
+// Runs the engine-owned nextTick queue on the main thread. Locals stay in
+// the caller's scope; false means no ticks ran or an exception was thrown.
+bool drain_ticks(v8::Isolate *isolate, v8::Local<v8::Context> context) {
+    v8::TryCatch caught(isolate);
+    v8::Local<v8::Value> drain, result;
+    if (!context->Global()->Get(context, v8_str(isolate, "__smz_drainTicks")).ToLocal(&drain) ||
+        !drain->IsFunction()) return false;
+    if (!drain.As<v8::Function>()->Call(context, context->Global(), 0, nullptr)
+             .ToLocal(&result)) {
+        engine_of(isolate)->job_failed = true;
+        if (!caught.HasTerminated()) report_exception(engine_of(isolate), context, caught);
+        return false;
+    }
+    return result->BooleanValue(isolate);
+}
+
+// Implements Node's checkpoint ordering: exhaust ticks, drain promises,
+// then repeat if promises queued ticks. Main thread; no handles escape.
+void run_checkpoint(v8::Isolate *isolate, v8::Local<v8::Context> context) {
+    JSEngine *engine = engine_of(isolate);
+    if (engine->checkpoint_running) return;
+    engine->checkpoint_running = true;
+    drain_ticks(isolate, context);
+    do {
+        isolate->PerformMicrotaskCheckpoint();
+    } while (drain_ticks(isolate, context));
+    engine->checkpoint_running = false;
+}
+
+// Installs the dedicated tick queue before any application script executes.
+// The process setter preserves the storage shim's remaining Node properties.
+// Functions implement https://nodejs.org/api/process.html#processnexttickcallback-args
+// on the main thread; the closure owns callbacks until drained.
+const char kTickBootstrap[] = R"JS(
+/** Own Node ticks for the lifetime of this main-thread context. */
+(function (g) {
+    var ticks = [], processValue;
+    /** Queue a Node callback and owned argument array; reject non-functions. */
+    function nextTick(fn) {
+        if (typeof fn !== 'function') throw new TypeError('nextTick callback must be a function');
+        ticks.push([fn, Array.prototype.slice.call(arguments, 1)]);
+    }
+    /** Exhaust ticks before promises; errors propagate to the host checkpoint. */
+    g.__smz_drainTicks = function () {
+        var ran = ticks.length > 0;
+        while (ticks.length) {
+            var t = ticks.shift();
+            t[0].apply(undefined, t[1]);
+        }
+        return ran;
+    };
+    Object.defineProperty(g, 'process', {
+        configurable: true,
+        /** Return the shim's process object without transferring ownership. */
+        get: function () { return processValue; },
+        /** Adopt the shim object while supplying the engine's tick priority. */
+        set: function (value) {
+            processValue = value;
+            if (value) value.nextTick = nextTick;
+        }
+    });
+ })(globalThis);
+/** Install callback boundaries before DOM shims and application registration. */
+(function (g) {
+    /** Register host schedulers before shims load so startup callbacks are covered. */
+    function scheduler(name) {
+        var schedule;
+        Object.defineProperty(g, name, {
+            configurable: true,
+            /** Return the scheduler wrapper; the closure retains the shim function. */
+            get: function () { return schedule; },
+            /** Wrap callback invocation on the main thread, preserving arguments. */
+            set: function (fn) {
+                if (typeof fn !== 'function') { schedule = fn; return; }
+                /** Schedule an owned callback with a finally checkpoint. */
+                schedule = function (cb) {
+                    var args = Array.prototype.slice.call(arguments);
+                    if (typeof cb === 'function') {
+                        /** Finish this macrotask even when the callback throws. */
+                        args[0] = function () {
+                            try { return cb.apply(this, arguments); }
+                            finally { g.__smz_microtaskCheckpoint(); }
+                        };
+                    }
+                    return fn.apply(this, args);
+                };
+            }
+        });
+    }
+    scheduler('setTimeout');
+    scheduler('setInterval');
+    scheduler('requestAnimationFrame');
+ })(globalThis);
+/** Preserve synchronous listeners while separating native input, resize and gamepad events. */
+(function (g) {
+    /** Adopt a native phase, retaining its original dispatcher in this context. */
+    function nativePhase(name) {
+        var phase;
+        Object.defineProperty(g, name, {
+            configurable: true,
+            /** Return the phase wrapper without transferring its ownership. */
+            get: function () { return phase; },
+            /** Preserve the phase's arguments and return value, including errors. */
+            set: function (fn) {
+                if (typeof fn !== 'function') { phase = fn; return; }
+                /** Intercept event invocation only while native events are delivered. */
+                phase = function () {
+                    var depth = 0, restores = [];
+                    /** Wrap one target; nested synchronous dispatch shares the depth. */
+                    function intercept(target) {
+                        if (!target || typeof target.dispatchEvent !== 'function') return;
+                        var dispatch = target.dispatchEvent;
+                        restores.push([target, dispatch]);
+                        /** Checkpoint after all listeners and nested dispatch complete. */
+                        target.dispatchEvent = function () {
+                            depth++;
+                            try { return dispatch.apply(this, arguments); }
+                            finally { if (--depth === 0) g.__smz_microtaskCheckpoint(); }
+                        };
+                    }
+                    intercept(g);
+                    intercept(g.document);
+                    try { return fn.apply(this, arguments); }
+                    finally {
+                        for (var i = restores.length - 1; i >= 0; i--)
+                            restores[i][0].dispatchEvent = restores[i][1];
+                    }
+                };
+            }
+        });
+    }
+    nativePhase('__dom_flushInputEvents');
+    nativePhase('__dom_updateGamepads');
+    nativePhase('__dom_setWindowSize');
+})(globalThis);
+)JS";
+
 // __smz_microtaskCheckpoint(): runs a V8 microtask checkpoint from inside
 // JS. Why: dom_shim.js runs a whole frame's timers (or rAF callbacks) in
 // one call, while Chrome runs a checkpoint after each of them (HTML "clean
-// up after running script"); game_loop.c's helper calls this after each
+// up after running script"); the bootstrap calls this after each
 // callback (card M1-T010, DEC-M1-T010). It is the same nested checkpoint
 // Node's runMicrotasks() makes under kExplicit. V8 ignores the call while
 // microtasks are already running, so a job cannot re-enter the queue.
@@ -276,7 +415,7 @@ void on_uncaught(v8::Local<v8::Message> message, v8::Local<v8::Value> error) {
 void microtask_checkpoint(const v8::FunctionCallbackInfo<v8::Value> &info) {
     v8::Isolate *isolate = info.GetIsolate();
     v8::HandleScope scope(isolate);  // spec section 15.8: one per native call
-    isolate->PerformMicrotaskCheckpoint();
+    run_checkpoint(isolate, isolate->GetCurrentContext());
 }
 
 // Defines __smz_microtaskCheckpoint on the global object, not enumerable
@@ -306,7 +445,12 @@ bool adopt_runtime(jsb_ctx *, void *user) {
     engine->isolate->SetPromiseHook(promise_hook);
     engine->isolate->SetPromiseRejectCallback(on_promise_reject);
     engine->isolate->AddMessageListener(on_uncaught);
-    return install_console(engine, context) && install_checkpoint(engine->isolate, context);
+    if (!install_console(engine, context) || !install_checkpoint(engine->isolate, context))
+        return false;
+    v8::Local<v8::Script> bootstrap;
+    v8::Local<v8::Value> result;
+    return v8::Script::Compile(context, v8_str(engine->isolate, kTickBootstrap))
+               .ToLocal(&bootstrap) && bootstrap->Run(context).ToLocal(&result);
 }
 
 // Returns `file:line:col` of the innermost JS frame, or "<unknown>" when
@@ -731,7 +875,7 @@ int js_engine_execute_pending_jobs(JSEngine *engine) {
     engine->jobs_run = 0;
     engine->job_failed = false;
     begin_entry(engine);
-    isolate->PerformMicrotaskCheckpoint();
+    run_checkpoint(isolate, context);
     bool stopped = engine->terminated;
     if (!stopped) flush_rejections(engine, context);
     end_entry(engine);

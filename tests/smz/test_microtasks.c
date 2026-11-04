@@ -3,7 +3,7 @@
  *
  * The order of macrotasks and microtasks the game loop produces (card
  * M1-T010, spec section 4.1; docs/js-binding.md, "Microtask checkpoints";
- * docs/DECISIONS.md, DEC-M1-T010).
+ * docs/decisions/DEC-M1-T010.md).
  *
  * Why: RPG Maker MZ and its plugins were written against NW.js, where
  * Chrome runs a microtask checkpoint after every task (each timer, each
@@ -69,23 +69,22 @@ void error_handler_log(LogLevel level, const char *fmt, ...)
 
 /* ---- Helpers ------------------------------------------------------------ */
 
-/* Replaces the input phases of dom_shim.js (they read native input) with a
-   stand-in that runs `inputHook` as one native event dispatch. */
+/* Supply native events to the real input dispatcher; no DOM phase is replaced. */
 static const char *const kInputJs =
-    "var log = [], inputHook = null;\n"
-    "__dom_flushInputEvents = function () { if (inputHook) inputHook(); };\n"
-    "__dom_updateGamepads = function () {};\n";
+    "var log = [], events = [];\n"
+    "var __native_input = {pollEvents: function () { var e = events; events = []; return e; },\n"
+    "getGamepadCount: function () { return 0; }};\n";
 
 /* One frame's worth of tasks, each logging itself and the microtasks it
    queues: two timeouts, an interval, two rAF callbacks and one input
    dispatch. Names: t = timer, p = promise job, n = nextTick, i = input,
    r = rAF, iv = interval. */
 static const char *const kScenarioJs =
-    "inputHook = function () {\n"
-    "  inputHook = null;\n"
-    "  log.push('i');\n"
-    "  Promise.resolve().then(function () { log.push('ip'); });\n"
-    "};\n"
+    "events = [{type: 'keydown', key: 'a'}, {type: 'keydown', key: 'b'}];\n"
+    "document.addEventListener('keydown', function (e) {\n"
+    "  log.push(e.key);\n"
+    "  Promise.resolve().then(function () { log.push(e.key + 'p'); });\n"
+    "});\n"
     "setTimeout(function () {\n"
     "  log.push('t1');\n"
     "  Promise.resolve().then(function () { log.push('p1'); })\n"
@@ -114,14 +113,14 @@ static const char *const kScenarioJs =
 /* The order NW.js (Chrome's event loop with Node's tick queue) produces:
    a checkpoint after every task, ticks first. */
 static const char kChromeOrder[] =
-    "i,ip,t1,n1,n1b,p1,p1b,t2,p2,iv,ivp,r1,rn1,rp1,r2";
+    "a,ap,b,bp,t1,n1,n1b,p1,p1b,t2,p2,iv,ivp,r1,rn1,rp1,r2";
 
 /* The order quickjs mode produces: js_engine.c has no checkpoint callable
    from JS, so the timers and the rAF callbacks of a frame each share one
    checkpoint after their phase (DEC-M1-T010 lists the differences). Ticks
    still run before promise jobs, and each phase's jobs before the next. */
 static const char kQuickJsOrder[] =
-    "i,ip,t1,t2,iv,n1,n1b,p1,p2,ivp,p1b,r1,r2,rn1,rp1";
+    "a,b,ap,bp,t1,t2,iv,n1,n1b,p1,p2,ivp,p1b,r1,r2,rn1,rp1";
 
 /* True when `expr` evaluates to the string `expected`. */
 static bool js_is(JSEngine *engine, const char *expr, const char *expected)
@@ -133,9 +132,9 @@ static bool js_is(JSEngine *engine, const char *expr, const char *expected)
     return same;
 }
 
-/* A fresh engine with dom_shim.js, storage_shim.js and the input stand-in,
-   and a loop on it that has run its first frame (which installs the loop's
-   JS helper). The caller frees both. */
+/* A fresh engine with dom_shim.js, storage_shim.js and native input stubs,
+   and a loop that has not run a frame. Startup registration must work.
+   The caller frees both. */
 static GameLoop *make_loop(JSEngine **engine)
 {
     *engine = js_engine_init();
@@ -146,7 +145,6 @@ static GameLoop *make_loop(JSEngine **engine)
     assert(js_engine_eval(*engine, kInputJs, "input.js"));
     GameLoop *loop = game_loop_create((Platform *)&g_platform, *engine, 1000);
     assert(loop);
-    assert(game_loop_step(loop));
     return loop;
 }
 
@@ -170,24 +168,29 @@ static void test_frame_order(void)
 #endif
     fprintf(stderr, "  check: nothing is left for the next frame\n");
     assert(game_loop_step(loop));
-    assert(js_is(engine, "String(log.length)", "15"));
+    assert(js_is(engine, "String(log.length)", "17"));
     game_loop_destroy(loop);
     js_engine_shutdown(engine);
 }
 
 /* A tick queued outside any task (as during script load) runs at the next
-   checkpoint, before promise jobs queued after it and with its arguments;
+   checkpoint, before promise jobs queued before it and with its arguments;
    a non-function is a TypeError, as in Node. */
 static void test_tick_outside_task(void)
 {
     JSEngine *engine;
     GameLoop *loop = make_loop(&engine);
     assert(js_engine_eval(engine,
+        "Promise.resolve().then(function () { log.push('p'); });\n"
         "process.nextTick(function (a, b) { log.push('n' + a + b); }, 1, 2);\n"
-        "Promise.resolve().then(function () { log.push('p'); });\n",
+        "Promise.resolve().then(function () { process.nextTick(function () { log.push('pn'); }); });\n",
         "load.js"));
     assert(js_engine_execute_pending_jobs(engine) >= 0);
-    assert(js_is(engine, "log.join(',')", "n12,p"));
+#ifdef SMZ_JS_ENGINE_V8
+    assert(js_is(engine, "log.join(',')", "n12,p,pn"));
+#else
+    assert(js_is(engine, "log.join(',')", "p,n12,pn"));
+#endif
     assert(js_is(engine,
         "(function () { try { process.nextTick(1); return 'no'; }"
         " catch (e) { return e instanceof TypeError ? 'TypeError' : 'other'; } })()",

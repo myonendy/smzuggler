@@ -364,25 +364,22 @@ embedder asks for, never when a script returns. Chrome (and so NW.js) runs one a
 task, and Node runs the `process.nextTick` queue before promise jobs. Card M1-T010 makes
 the loop do the same (DEC-M1-T010 has the exact order):
 
-- **After each event dispatch.** `__dom_setWindowSize`, `__dom_flushInputEvents` and
-  `__dom_updateGamepads` are each followed by `js_engine_execute_pending_jobs`, as the
-  timer and rAF phases already were. (dom_shim.js dispatches a frame's queued input in
-  one call, so that call is the unit.)
-- **After each timer and rAF callback (v8 mode).** dom_shim.js runs a whole phase in one
-  call. `js_engine_v8.cc` defines the non-enumerable global `__smz_microtaskCheckpoint()`,
-  a nested `PerformMicrotaskCheckpoint` like Node's `runMicrotasks()`. When it exists the
-  helper wraps `setTimeout`, `setInterval` and `requestAnimationFrame` so each callback is
-  followed by its ticks and a checkpoint. Unhandled rejections are still reported by the
-  phase's own checkpoint. Callbacks registered before the helper is installed (the first
-  frame) are not wrapped.
-- **nextTick first.** The helper replaces `process.nextTick` with its own queue. It runs
-  after each wrapped callback and after each phase call, before that checkpoint's promise
-  jobs. A tick queued outside a task (script load, a promise job of a phase checkpoint)
-  is run by a promise job, as the U5 shim does.
+- **After each native input event (V8).** The bootstrap intercepts installation of
+  the input, resize and gamepad phases. During these phases it temporarily wraps
+  document and window dispatch,
+  checkpointing after all listeners and nested synchronous dispatches return. The real
+  dispatcher still polls and translates every native event. Each phase also retains its engine-driven checkpoint.
+- **After each timer and rAF callback (V8).** Scheduler accessors installed at context
+  creation wrap callbacks as the DOM shim installs its schedulers. Startup registrations
+  are covered before the first frame. Each callback checkpoints in a finally block.
+- **nextTick first (V8).** The context owns a dedicated tick queue. Every native and
+  engine-driven checkpoint exhausts ticks before draining promises, then repeats if
+  promises queued more ticks. The process shim keeps its other properties.
 
-`tests/smz/test_microtasks.c` (ctest `microtasks`, both engine modes) runs the real
-`game_loop.c`, `dom_shim.js` and `storage_shim.js` and checks the order of timeouts, an
-interval, rAF callbacks, an input dispatch, promise jobs and ticks within one frame.
+The exact orders and QuickJS phase-level differences are recorded in
+[DEC-M1-T010](decisions/DEC-M1-T010.md). `tests/smz/test_microtasks.c` runs the real
+loop and DOM input dispatcher, registering startup timers and rAF callbacks before
+any frame. It also checks promises queued before ticks and ticks queued by promises.
 
 `tests/smz/test_game_loop_js.c` (ctest `game_loop_js`, both engine modes) runs the real
 `game_loop.c` with the platform, renderer, audio, video and log calls stubbed. It checks

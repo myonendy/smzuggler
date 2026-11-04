@@ -6,6 +6,7 @@
  * calls, so the loop runs unchanged on both engines (card M1-T009).
  * Modified 2026-11-01: a microtask checkpoint after every macrotask, with
  * process.nextTick jobs ahead of promise jobs (card M1-T010).
+ * Modified 2026-11-04: move V8 callback and tick integration to context startup.
  */
 
 /*
@@ -25,9 +26,8 @@
  *   loop calls inside JS itself.
  * - Phase order and the microtask checkpoints are the game's timing
  *   contract; do not move them. Chrome runs a checkpoint after every task:
- *   in v8 mode each timer and rAF callback is followed by one (the wrappers
- *   in kLoopJs), and every phase call is followed by one in both modes
- *   (run_checkpoint). docs/DECISIONS.md, DEC-M1-T010, has the exact order.
+ *   in v8 mode each timer and rAF callback is followed by one (the DOM dispatcher), and every phase call is followed by one in both modes
+ *   (run_checkpoint). docs/decisions/DEC-M1-T010.md, has the exact order.
  */
 
 #include "engine/game_loop.h"
@@ -114,16 +114,8 @@ static void control_shutdown(GameLoop *loop);
    Keeping the functions in JS keeps the loop free of engine handles, so the
    same code runs on QuickJS and on V8 (docs/js-binding.md, "Game loop").
 
-   Microtask order (card M1-T010, DEC-M1-T010). The helper replaces
-   process.nextTick with a queue of its own, drained before promise jobs
-   after each macrotask, as Node does in NW.js; a tick queued outside a
-   macrotask (script load, a promise job of a C-driven phase) is drained by
-   a promise job instead, as the U5 shim does. When the engine provides
-   __smz_microtaskCheckpoint (v8 mode), the helper also wraps setTimeout,
-   setInterval and requestAnimationFrame so that each callback is followed
-   by its ticks and a checkpoint (HTML "clean up after running script"),
-   not only each phase. Callbacks registered before the helper is installed
-   (the first frame) keep the phase-level checkpoint. */
+   V8 owns nextTick priority and checkpoints; QuickJS retains its phase-level
+   tick queue. See docs/decisions/DEC-M1-T010.md for ordering. */
 static const char kLoopJs[] =
     "(function (g) {\n"
     "  'use strict';\n"
@@ -132,54 +124,25 @@ static const char kLoopJs[] =
     "               '__dom_updateGamepads', '__dom_flushTimers',\n"
     "               '__dom_flushAnimationFrames'];\n"
     "  var phases = {}, controlEval, outbox = [];\n"
-    "  var ticks = [], tickJob = false, turnDepth = 0;\n"
-    "  var checkpoint = g.__smz_microtaskCheckpoint;\n"
+    "  var ticks = [], tickJob = false;\n"
+    "  /** Main-thread QuickJS fallback: exhaust owned callbacks before phase jobs. */\n"
     "  function drainTicks() {\n"
     "    tickJob = false;\n"
-    "    while (ticks.length > 0) {\n"
+    "    while (ticks.length) {\n"
     "      var t = ticks.shift();\n"
     "      try { t.fn.apply(undefined, t.args); } catch (e) {\n"
+    "        /** Re-throw tick errors as tasks so later ticks still run. */\n"
     "        g.setTimeout(function () { throw e; }, 0);\n"
     "      }\n"
     "    }\n"
     "  }\n"
+    "  /** Queue Node callbacks in QuickJS; V8 supplies its own queue at startup. */\n"
     "  function nextTick(fn) {\n"
-    "    if (typeof fn !== 'function') {\n"
-    "      throw new TypeError('process.nextTick: callback must be a function');\n"
-    "    }\n"
-    "    ticks.push({ fn: fn, args: Array.prototype.slice.call(arguments, 1) });\n"
-    "    if (turnDepth === 0 && !tickJob) {\n"
-    "      tickJob = true;\n"
-    "      Promise.resolve().then(drainTicks);\n"
-    "    }\n"
+    "    if (typeof fn !== 'function') throw new TypeError('nextTick callback must be a function');\n"
+    "    ticks.push({fn: fn, args: Array.prototype.slice.call(arguments, 1)});\n"
+    "    if (!tickJob) { tickJob = true; Promise.resolve().then(drainTicks); }\n"
     "  }\n"
-    "  function turn(cb, self, args) {\n"
-    "    turnDepth++;\n"
-    "    try { return cb.apply(self, args); } finally {\n"
-    "      try {\n"
-    "        do { drainTicks(); checkpoint(); } while (ticks.length > 0);\n"
-    "      } finally { turnDepth--; }\n"
-    "    }\n"
-    "  }\n"
-    "  function wrapScheduler(name) {\n"
-    "    var orig = g[name];\n"
-    "    if (typeof orig !== 'function') return;\n"
-    "    g[name] = function (cb) {\n"
-    "      var args = Array.prototype.slice.call(arguments);\n"
-    "      if (typeof cb === 'function') {\n"
-    "        args[0] = function () { return turn(cb, this, arguments); };\n"
-    "      }\n"
-    "      return orig.apply(this, args);\n"
-    "    };\n"
-    "  }\n"
-    "  if (g.process && typeof g.process.nextTick === 'function') {\n"
-    "    g.process.nextTick = nextTick;\n"
-    "  }\n"
-    "  if (typeof checkpoint === 'function') {\n"
-    "    wrapScheduler('setTimeout');\n"
-    "    wrapScheduler('setInterval');\n"
-    "    wrapScheduler('requestAnimationFrame');\n"
-    "  }\n"
+    "  if (!g.__smz_microtaskCheckpoint && g.process) g.process.nextTick = nextTick;\n"
     "  function report(e) {\n"
     "    var msg = 'Unknown error', stack = null;\n"
     "    try { msg = String(e); } catch (ignored) {}\n"
