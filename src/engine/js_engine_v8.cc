@@ -29,7 +29,11 @@
 //   calls the thread-safe Isolate::RequestInterrupt. Everything else, the
 //   location report and TerminateExecution, runs on the main thread inside
 //   the interrupt (docs/js-binding.md, "Watchdog").
+// - Compiled code is cached only through js_codecache.h, under the cache
+//   directory; nothing is ever written next to a script (spec section 5.6,
+//   docs/js-binding.md, "Code cache").
 
+#include "engine/js_codecache.h"
 #include "engine/js_engine.h"
 #include "engine/js_watchdog.h"
 
@@ -37,9 +41,8 @@
 
 #include <v8.h>
 
-#include <sys/stat.h>
-
 #include <atomic>
+#include <climits>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -49,10 +52,6 @@
 #include <utility>
 #include <vector>
 
-#ifdef _WIN32
-#include <direct.h>
-#endif
-
 #ifndef SMZ_V8_ICU_DATA_PATH
 #error "SMZ_V8_ICU_DATA_PATH must name icudtl.dat (set by CMakeLists.txt)"
 #endif
@@ -61,10 +60,6 @@ namespace {
 
 // Isolate data slot holding the JSEngine (slot 0 is jsb's runtime).
 constexpr uint32_t kEngineSlot = 1;
-
-// First bytes of a V8 .jsc file, after the source mtime. A QuickJS .jsc left
-// by a quickjs-mode build lacks it and is simply recompiled and replaced.
-constexpr char kJscMagic[8] = {'S', 'M', 'Z', 'V', '8', 'J', 'C', '1'};
 
 // A rejected promise with no handler yet, held until the next checkpoint.
 struct Rejection {
@@ -104,8 +99,9 @@ struct JSEngine {
     // Nesting of engine entry points (an eval from a native called by JS
     // nests); only the outermost arms the watchdog and cancels termination.
     int depth = 0;
-    // .jsc location (empty = beside each script) and the game root that
-    // keys it, as in js_engine.c.
+    // Code cache directory set by js_engine_set_cache_dir (empty = the
+    // default, js_codecache_default_dir), and the game root that script
+    // names are made relative to.
     std::string cache_dir;
     std::string cache_game_root;
 };
@@ -549,14 +545,18 @@ void end_entry(JSEngine *engine) {
 // Compiles and runs `source` (borrowed, `len` bytes of UTF-8) as a classic
 // script named `name`, line and column offsets 0, so V8's 1-based stack
 // positions match the file. `cache` (ownership taken, may be NULL) is a V8
-// code cache to consume; when `cache_out` is not NULL a fresh code cache of
-// the compiled script is stored there (caller deletes). The result goes to
-// `result_out` when not NULL. Errors are reported, except a watchdog
-// termination, which on_watchdog_interrupt already reported; returns false
-// on them. Call through run_source.
+// code cache to consume with kConsumeCodeCache; `*rejected` (when not NULL)
+// tells whether V8 refused it and compiled from source instead. When
+// `cache_out` is not NULL and no cache was accepted, a fresh code cache is
+// made after the script has run, so it includes the functions the first run
+// compiled lazily (caller deletes it; it stays NULL if the script failed).
+// The result goes to `result_out` when not NULL. Errors are reported, except
+// a watchdog termination, which on_watchdog_interrupt already reported;
+// returns false on them. Call through run_source.
 bool compile_and_run(JSEngine *engine, const char *source, size_t len, const char *name,
                      v8::ScriptCompiler::CachedData *cache,
-                     v8::ScriptCompiler::CachedData **cache_out, std::string *result_out) {
+                     v8::ScriptCompiler::CachedData **cache_out, std::string *result_out,
+                     bool *rejected) {
     v8::Isolate *isolate = engine->isolate;
     v8::Isolate::Scope isolate_scope(isolate);
     v8::HandleScope scope(isolate);
@@ -568,19 +568,22 @@ bool compile_and_run(JSEngine *engine, const char *source, size_t len, const cha
                                    origin, cache);
     v8::Local<v8::Script> script;
     v8::Local<v8::Value> result;
-    if (!v8::ScriptCompiler::Compile(context, &src,
-                                     cache ? v8::ScriptCompiler::kConsumeCodeCache
-                                           : v8::ScriptCompiler::kNoCompileOptions)
-             .ToLocal(&script)) {
+    bool compiled = v8::ScriptCompiler::Compile(context, &src,
+                                                cache ? v8::ScriptCompiler::kConsumeCodeCache
+                                                      : v8::ScriptCompiler::kNoCompileOptions)
+                        .ToLocal(&script);
+    bool refused = cache && src.GetCachedData()->rejected;
+    if (rejected) *rejected = refused;
+    if (!compiled) {
         if (!tc.HasTerminated()) report_exception(engine, context, tc);
         return false;
     }
-    if (cache_out)
-        *cache_out = v8::ScriptCompiler::CreateCodeCache(script->GetUnboundScript());
     if (!script->Run(context).ToLocal(&result)) {
         if (!tc.HasTerminated()) report_exception(engine, context, tc);
         return false;
     }
+    if (cache_out && (!cache || refused))
+        *cache_out = v8::ScriptCompiler::CreateCodeCache(script->GetUnboundScript());
     if (result_out) *result_out = to_utf8(isolate, result);
     return true;
 }
@@ -589,9 +592,11 @@ bool compile_and_run(JSEngine *engine, const char *source, size_t len, const cha
 // the watchdog covers it and a termination is cancelled afterwards.
 bool run_source(JSEngine *engine, const char *source, size_t len, const char *name,
                 v8::ScriptCompiler::CachedData *cache,
-                v8::ScriptCompiler::CachedData **cache_out, std::string *result_out) {
+                v8::ScriptCompiler::CachedData **cache_out, std::string *result_out,
+                bool *rejected = nullptr) {
     begin_entry(engine);
-    bool ok = compile_and_run(engine, source, len, name, cache, cache_out, result_out);
+    bool ok = compile_and_run(engine, source, len, name, cache, cache_out, result_out,
+                              rejected);
     end_entry(engine);
     return ok;
 }
@@ -607,14 +612,6 @@ bool read_file(const char *path, std::string *out) {
     bool ok = !std::ferror(f);
     std::fclose(f);
     return ok;
-}
-
-// Writes `data` to `path`, replacing it. Returns false on any I/O error.
-bool write_file(const std::string &path, const std::string &data) {
-    FILE *f = std::fopen(path.c_str(), "wb");
-    if (!f) return false;
-    bool ok = std::fwrite(data.data(), 1, data.size(), f) == data.size();
-    return std::fclose(f) == 0 && ok;
 }
 
 // Returns the name a script gets in stack traces: its path relative to the
@@ -639,94 +636,27 @@ std::string trimmed(const char *s) {
     return std::string(s, len);
 }
 
-// The cache key of `filepath`: relative to `root` when inside it, else the
-// whole path, with drive colons dropped and ".." segments turned into "__"
-// so the key cannot leave the cache dir. Same rule as js_engine.c, so both
-// modes put a script's .jsc at the same path.
-std::string cache_key(const std::string &root, const char *filepath) {
-    const char *rel = filepath;
-    size_t rlen = root.size();
-    if (rlen && std::strncmp(filepath, root.c_str(), rlen) == 0 && is_sep(filepath[rlen]))
-        rel = filepath + rlen;
-    while (is_sep(*rel)) rel++;
-    std::string key;
-    bool seg_start = true;
-    for (const char *p = rel; *p; p++) {
-        if (seg_start && p[0] == '.' && p[1] == '.' && (!p[2] || is_sep(p[2]))) {
-            key += "__";
-            p++;
-            seg_start = false;
-        } else if (is_sep(*p)) {
-            if (!seg_start) key += '/';
-            seg_start = true;
-        } else {
-            key += (*p == ':') ? '_' : *p;
-            seg_start = false;
-        }
-    }
-    return key;
+// The directory code caches go to: the one given to js_engine_set_cache_dir,
+// else js_codecache_default_dir; "" when neither is known (scripts then run
+// uncached, still never writing next to themselves).
+std::string codecache_dir(const JSEngine *engine) {
+    if (!engine->cache_dir.empty()) return engine->cache_dir;
+    char dir[4096];
+    return js_codecache_default_dir(dir, sizeof dir) ? std::string(dir) : std::string();
 }
 
-// Creates every missing parent directory of `path`, reporting failures on
-// stderr (the later write then fails and the script runs uncached).
-void make_parent_dirs(const std::string &path) {
-    for (size_t i = 1; i < path.size(); i++) {
-        if (!is_sep(path[i]) || is_sep(path[i - 1]) || path[i - 1] == ':') continue;
-        std::string dir = path.substr(0, i);
-        struct stat st;
-        if (stat(dir.c_str(), &st) == 0) continue;
-#ifdef _WIN32
-        int rc = _mkdir(dir.c_str());
-#else
-        int rc = mkdir(dir.c_str(), 0755);
-#endif
-        if (rc != 0) std::fprintf(stderr, "js_engine: cannot create cache dir %s\n", dir.c_str());
-    }
-}
-
-// The .jsc path of `filepath`: beside it by default, or under the cache dir
-// keyed by cache_key (parent directories are created).
-std::string cache_path(const JSEngine *engine, const char *filepath) {
-    if (engine->cache_dir.empty()) return std::string(filepath) + "c";
-    std::string path = engine->cache_dir + "/" +
-                       cache_key(engine->cache_game_root, filepath) + "c";
-    make_parent_dirs(path);
-    return path;
-}
-
-// Byte layout of a V8 .jsc: int64 source mtime, kJscMagic, uint64 source
-// length, the source, then V8's code cache. The source is kept because a V8
-// code cache is only usable with its own source text, and js_engine.h
-// promises that a cache hit (same mtime) runs what was cached.
-constexpr size_t kJscHeader = sizeof(int64_t) + sizeof kJscMagic + sizeof(uint64_t);
-
-// Splits `jsc` into its source and code cache when its header is valid and
-// records `mtime`. Returns false for a stale or foreign file.
-bool parse_jsc(const std::string &jsc, int64_t mtime, std::string *source,
-               std::string *code) {
-    if (jsc.size() < kJscHeader) return false;
-    int64_t stored;
-    uint64_t src_len;
-    std::memcpy(&stored, jsc.data(), sizeof stored);
-    std::memcpy(&src_len, jsc.data() + sizeof stored + sizeof kJscMagic, sizeof src_len);
-    if (stored != mtime || std::memcmp(jsc.data() + sizeof stored, kJscMagic, sizeof kJscMagic) != 0 ||
-        src_len > jsc.size() - kJscHeader)
-        return false;
-    source->assign(jsc, kJscHeader, src_len);
-    code->assign(jsc, kJscHeader + src_len, std::string::npos);
-    return true;
-}
-
-// Builds a .jsc file image; see kJscHeader for the layout.
-std::string build_jsc(int64_t mtime, const std::string &source,
-                      const v8::ScriptCompiler::CachedData *code) {
-    uint64_t src_len = source.size();
-    std::string out(reinterpret_cast<const char *>(&mtime), sizeof mtime);
-    out.append(kJscMagic, sizeof kJscMagic);
-    out.append(reinterpret_cast<const char *>(&src_len), sizeof src_len);
-    out += source;
-    out.append(reinterpret_cast<const char *>(code->data), static_cast<size_t>(code->length));
-    return out;
+// The code cache path of `source` under `dir`: keyed by its sha256, this
+// V8's version and CachedDataVersionTag (which hashes the V8 flags), so an
+// edited script, a V8 upgrade or new flags never meet an old cache. "" if
+// the path does not fit.
+std::string codecache_path(const std::string &dir, const std::string &source) {
+    char key[JS_CODECACHE_KEY_LEN + 1];
+    char path[4096];
+    if (!js_codecache_key(source.data(), source.size(), v8::V8::GetVersion(),
+                          v8::ScriptCompiler::CachedDataVersionTag(), key) ||
+        !js_codecache_path(dir.c_str(), key, path, sizeof path))
+        return std::string();
+    return std::string(path);
 }
 
 // Reports every rejection still unhandled after a checkpoint through the
@@ -817,8 +747,8 @@ char *js_engine_eval_string(JSEngine *engine, const char *script, const char *fi
 // See js_engine.h.
 void js_engine_free_string(char *str) { std::free(str); }
 
-// See js_engine.h. Uses the .jsc cache when a cache dir is set, so the game
-// folder is read-only, as in js_engine.c.
+// See js_engine.h. Uses the code cache when a cache dir is set, as
+// js_engine.c uses its .jsc cache then.
 bool js_engine_eval_file(JSEngine *engine, const char *filepath) {
     if (!engine || !filepath) return false;
     if (!engine->cache_dir.empty()) return js_engine_eval_file_cached(engine, filepath);
@@ -831,31 +761,41 @@ bool js_engine_eval_file(JSEngine *engine, const char *filepath) {
                       origin_name(engine, filepath).c_str(), nullptr, nullptr, nullptr);
 }
 
-// See js_engine.h. The cache is a V8 code cache stored with its source
-// (see kJscHeader); V8 checks the code cache itself and recompiles silently
-// when it rejects it (other V8 version or flags).
+// See js_engine.h. In v8 mode the cache is V8's code cache in the cache dir
+// (codecache_path), never a .jsc beside the script, and it is keyed by the
+// source text itself rather than its mtime. A file V8 rejects (another
+// build or flags, or a damaged file) is deleted and replaced by a fresh
+// cache. The file buffer is not owned by V8's CachedData (the Source in
+// compile_and_run deletes only the CachedData), so it is freed here.
 bool js_engine_eval_file_cached(JSEngine *engine, const char *filepath) {
     if (!engine || !filepath) return false;
-    struct stat st;
-    std::string jsc_path = cache_path(engine, filepath);
-    int64_t mtime = stat(filepath, &st) == 0 ? static_cast<int64_t>(st.st_mtime) : -1;
-    std::string jsc, source, code;
-    std::string name = origin_name(engine, filepath);
-    if (mtime >= 0 && read_file(jsc_path.c_str(), &jsc) && parse_jsc(jsc, mtime, &source, &code)) {
-        auto *cached = new v8::ScriptCompiler::CachedData(
-            reinterpret_cast<const uint8_t *>(code.data()), static_cast<int>(code.size()));
-        return run_source(engine, source.data(), source.size(), name.c_str(), cached,
-                          nullptr, nullptr);
-    }
+    std::string source;
     if (!read_file(filepath, &source)) {
         std::fprintf(stderr, "Failed to open file: %s\n", filepath);
         return false;
     }
+    std::string name = origin_name(engine, filepath);
+    std::string dir = codecache_dir(engine);
+    std::string path = dir.empty() ? dir : codecache_path(dir, source);
+    if (path.empty())
+        return run_source(engine, source.data(), source.size(), name.c_str(), nullptr,
+                          nullptr, nullptr);
+    uint8_t *data = nullptr;
+    size_t len = 0;
+    v8::ScriptCompiler::CachedData *cached = nullptr;
+    if (js_codecache_read(path.c_str(), &data, &len) && len <= INT_MAX)
+        cached = new v8::ScriptCompiler::CachedData(
+            data, static_cast<int>(len), v8::ScriptCompiler::CachedData::BufferNotOwned);
     v8::ScriptCompiler::CachedData *fresh = nullptr;
-    bool ok = run_source(engine, source.data(), source.size(), name.c_str(), nullptr,
-                         &fresh, nullptr);
-    if (fresh && mtime >= 0 && !write_file(jsc_path, build_jsc(mtime, source, fresh)))
-        std::fprintf(stderr, "js_engine: cannot write %s\n", jsc_path.c_str());
+    bool rejected = false;
+    bool ok = run_source(engine, source.data(), source.size(), name.c_str(), cached, &fresh,
+                         nullptr, &rejected);
+    js_codecache_free(data);
+    if (cached) js_codecache_note(rejected ? JS_CODECACHE_REJECTED : JS_CODECACHE_ACCEPTED);
+    if (rejected) js_codecache_discard(path.c_str());
+    if (fresh && js_codecache_write(path.c_str(), fresh->data,
+                                    static_cast<size_t>(fresh->length)))
+        js_codecache_note(JS_CODECACHE_PRODUCED);
     delete fresh;
     return ok;
 }

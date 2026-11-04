@@ -6,6 +6,7 @@ Modified 2026-11-01: document the V8 script watchdog.
 Modified 2026-11-01: document how the game loop calls into JS.
 Modified 2026-11-01: document the error handler's js_engine.h path.
 Modified 2026-11-01: document microtask checkpoints and nextTick order.
+Modified 2026-11-04: document the V8 code cache.
 How native C bindings talk to the JS engine through jsb.h, and the handle rules.
 -->
 # JS binding: the `jsb` seam
@@ -277,10 +278,8 @@ v8-mode library serves every caller that needs only `js_engine.h`, starting with
   `__error_handler_dispatchRejection` when the shim is loaded). Its count is the number
   of promise reaction jobs, taken from a promise hook; `queueMicrotask` callbacks are
   not counted. It returns -1 if a microtask threw uncaught.
-- **`.jsc` cache**: same paths and mtime rule as `js_engine.c`. The file holds the
-  source and V8's code cache, because a V8 code cache only works with its own source
-  and `js_engine.h` promises that a hit runs what was cached. M1-T012 replaces it with
-  the hashed cache under `$XDG_CACHE_HOME`.
+- **Code cache**: V8 code caches under `$XDG_CACHE_HOME/smzuggler-rt/v8cache/`, never
+  a `.jsc` beside the script; see "Code cache" below.
 - **Watchdog**: see "Watchdog" below.
 - **`js_engine_get_context`** is declared only without `SMZ_JS_ENGINE_V8`. In quickjs
   mode `js_engine_get_jsb()` returns NULL: the transitional backend creates its own
@@ -289,6 +288,30 @@ v8-mode library serves every caller that needs only `js_engine.h`, starting with
 - **Handles** (§15.8): every entry point opens its own `HandleScope`; the engine owns
   exactly two kinds of `Global` (its context and pending rejections) and Resets them in
   `js_engine_shutdown` before the isolate is disposed of.
+
+### Code cache
+Card M1-T012 (§4.1 item 4, §5.6). `js_engine_eval_file_cached`, and `js_engine_eval_file`
+once a cache dir is set, keep V8's compiled code in `<dir>/<sha256>.bin`.
+
+- **Directory**: the one given to `js_engine_set_cache_dir`, else
+  `js_codecache_default_dir()` (`$XDG_CACHE_HOME/smzuggler-rt/v8cache`, falling back to
+  `$HOME/.cache/...`; Linux only). With neither, scripts run uncached.
+- **Key**: `js_codecache_key` hashes the source, a NUL, `V8::GetVersion()`, a NUL and
+  `ScriptCompiler::CachedDataVersionTag()` (which already folds in the flag hash). The
+  key comes from the source text, not the mtime, so an edit always recompiles.
+- **Produce**: on a miss the script compiles normally, runs, and only then
+  `CreateCodeCache` is called, so functions compiled lazily during the first run are in
+  the cache. The file is written to a temporary name and renamed into place.
+- **Consume**: the file is passed as `CachedData` (`BufferNotOwned`; the engine frees
+  the buffer after the compile) with `kConsumeCodeCache`. If V8 sets `rejected`
+  (another build, damaged data) the file is deleted and a fresh cache is written.
+- **Observability**: `js_codecache_get_stats` counts produced, accepted and rejected
+  caches for the process; `tests/smz/test_codecache.c` reads them, since acceptance is
+  invisible from JS.
+- `src/engine/js_codecache.cc` has no V8 dependency (CMake target `smz_js_codecache`),
+  so the key, directory and file handling are tested in quickjs mode too.
+- **Handles**: no `Local` outlives `compile_and_run`'s `HandleScope`; the `CachedData`
+  belongs to the `ScriptCompiler::Source` and is deleted with it.
 
 ### Watchdog
 `js_engine_set_watchdog(engine, ms)` (from `--watchdog <ms>`) stops scripts that run

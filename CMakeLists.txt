@@ -10,6 +10,7 @@
 # Modified 2026-11-01: build smz_jsb on the transitional QuickJS backend in quickjs mode.
 # Modified 2026-11-01: build js_engine.h on V8 as smz_js_engine_v8 in v8 mode.
 # Modified 2026-11-01: add the script watchdog thread to smz_js_engine_v8.
+# Modified 2026-11-04: add the V8 code cache store smz_js_codecache.
 # Build orchestration; see docs/DECISIONS.md (DEC-M0-T001).
 
 cmake_minimum_required(VERSION 3.20)
@@ -340,11 +341,19 @@ target_include_directories(smz_jsb PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/jsb)
 # instead of js_engine.c for everything that uses only js_engine.h; the
 # runtime keeps js_engine.c until game_loop.c, error_handler.c and the
 # bindings stop calling QuickJS (M1-T009, M1-T011, M1-T016..T025).
+# smz_js_codecache, the on-disk store of its code caches (spec sections 4.1
+# item 4 and 5.6), has no V8 dependency and is built in both modes so its
+# tests run in either.
+add_library(smz_js_codecache STATIC src/engine/js_codecache.cc)
+target_include_directories(smz_js_codecache PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+if(NOT MSVC)
+    target_compile_options(smz_js_codecache PRIVATE -Wall -Wextra)
+endif()
 if(SMZ_JS_ENGINE STREQUAL "v8")
     add_library(smz_js_engine_v8 STATIC src/engine/js_engine_v8.cc
         src/engine/js_watchdog.cc)
     find_package(Threads REQUIRED)
-    target_link_libraries(smz_js_engine_v8 PUBLIC smz_jsb Threads::Threads)
+    target_link_libraries(smz_js_engine_v8 PUBLIC smz_jsb smz_js_codecache Threads::Threads)
     target_include_directories(smz_js_engine_v8 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_definitions(smz_js_engine_v8
         PUBLIC SMZ_JS_ENGINE_V8
