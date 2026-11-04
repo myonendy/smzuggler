@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-04: cover nextTick exception ordering and reporting.
  *
  * The order of macrotasks and microtasks the game loop produces (card
  * M1-T010, spec section 4.1; docs/js-binding.md, "Microtask checkpoints";
@@ -199,6 +200,40 @@ static void test_tick_outside_task(void)
     js_engine_shutdown(engine);
 }
 
+#ifdef SMZ_JS_ENGINE_V8
+/* Capture the expected tick failure on the main thread; userdata owns the count.
+   Borrowed console strings are inspected synchronously and never retained. */
+static void capture_tick_error(const char *level, const char *message, void *userdata)
+{
+    if (strcmp(level, "error") == 0 && strstr(message, "tick failure regression"))
+        ++*(int *)userdata;
+}
+
+/* A failed tick must report an error while remaining ticks retain priority over
+   promises. The caller owns the engine and loop throughout this main-thread test. */
+static void test_throwing_tick_order(void)
+{
+    JSEngine *engine;
+    GameLoop *loop = make_loop(&engine);
+    int errors = 0;
+    js_engine_set_console_callback(engine, capture_tick_error, &errors);
+    assert(js_engine_eval(engine,
+        "Promise.resolve().then(function () { log.push('promise'); });"
+        "process.nextTick(function () { log.push('throw');"
+        " throw new Error('tick failure regression'); });"
+        "process.nextTick(function () { log.push('tick'); });",
+        "throwing-tick.js"));
+    assert(js_engine_execute_pending_jobs(engine) == -1);
+    assert(errors == 1);
+    assert(js_is(engine, "log.join(',')", "throw,tick,promise"));
+    assert(js_engine_execute_pending_jobs(engine) >= 0);
+    assert(js_is(engine, "log.join(',')", "throw,tick,promise"));
+    js_engine_set_console_callback(engine, NULL, NULL);
+    game_loop_destroy(loop);
+    js_engine_shutdown(engine);
+}
+#endif
+
 /* Consumed overlay keys finish default actions and jobs before the next key.
    Real overlay listeners bypass document.dispatchEvent; main thread only. */
 static void test_overlay_event_order(void)
@@ -276,6 +311,9 @@ int main(void)
     test_video_event_order();
     fprintf(stderr, "test_tick_outside_task\n");
     test_tick_outside_task();
+#ifdef SMZ_JS_ENGINE_V8
+    test_throwing_tick_order();
+#endif
     fprintf(stderr, "microtasks: all passed\n");
     return 0;
 }

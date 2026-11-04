@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The smzuggler contributors
+// Modified 2026-11-04: explicit microtask checkpoints and exception-safe nextTick priority.
 //
 // The engine API of src/engine/js_engine.h implemented on V8 (spec section
 // 4.1, item 3). Built instead of js_engine.c when SMZ_JS_ENGINE=v8.
@@ -266,20 +267,25 @@ void on_uncaught(v8::Local<v8::Message> message, v8::Local<v8::Value> error) {
                                         isolate->GetCurrentContext()).FromMaybe(0)));
 }
 
-// Runs the engine-owned nextTick queue on the main thread. Locals stay in
-// the caller's scope; false means no ticks ran or an exception was thrown.
+// Exhausts the engine-owned nextTick queue on the main thread, retrying after
+// reported callback exceptions so remaining ticks still precede promises.
+// Each attempt owns its handles; returns whether any ticks ran. Termination
+// stops retries so the watchdog can return control to the host.
 bool drain_ticks(v8::Isolate *isolate, v8::Local<v8::Context> context) {
-    v8::TryCatch caught(isolate);
-    v8::Local<v8::Value> drain, result;
-    if (!context->Global()->Get(context, v8_str(isolate, "__smz_drainTicks")).ToLocal(&drain) ||
-        !drain->IsFunction()) return false;
-    if (!drain.As<v8::Function>()->Call(context, context->Global(), 0, nullptr)
-             .ToLocal(&result)) {
+    bool ran = false;
+    for (;;) {
+        v8::HandleScope scope(isolate);
+        v8::TryCatch caught(isolate);
+        v8::Local<v8::Value> drain, result;
+        if (!context->Global()->Get(context, v8_str(isolate, "__smz_drainTicks")).ToLocal(&drain) ||
+            !drain->IsFunction()) return ran;
+        if (drain.As<v8::Function>()->Call(context, context->Global(), 0, nullptr)
+                .ToLocal(&result)) return ran || result->BooleanValue(isolate);
         engine_of(isolate)->job_failed = true;
-        if (!caught.HasTerminated()) report_exception(engine_of(isolate), context, caught);
-        return false;
+        if (caught.HasTerminated()) return ran;
+        report_exception(engine_of(isolate), context, caught);
+        ran = true;
     }
-    return result->BooleanValue(isolate);
 }
 
 // Implements Node's checkpoint ordering: exhaust ticks, drain promises,

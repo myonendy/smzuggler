@@ -379,7 +379,9 @@ the loop do the same (DEC-M1-T010 has the exact order):
   are covered before the first frame. Each callback checkpoints in a finally block.
 - **nextTick first (V8).** The context owns a dedicated tick queue. Every native and
   engine-driven checkpoint exhausts ticks before draining promises, then repeats if
-  promises queued more ticks. The process shim keeps its other properties.
+  promises queued more ticks. A throwing tick is reported, then remaining ticks
+  drain before promises; watchdog termination stops the drain. The process shim
+  keeps its other properties.
 
 The exact orders and QuickJS phase-level differences are recorded in
 [DEC-M1-T010](decisions/DEC-M1-T010.md). `tests/smz/test_microtasks.c` runs the real

@@ -39,7 +39,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
-- Drain ticks and promises after each native video event before subsequent callbacks. (M1-T010)
+- Preserve nextTick priority after callback exceptions while reporting failures. (M1-T010)
 - Run a microtask checkpoint after every macrotask: after each input-phase dispatch, and
   in v8 mode after each timer and rAF callback through the new
   `__smz_microtaskCheckpoint()`; `process.nextTick` jobs now run before promise jobs
