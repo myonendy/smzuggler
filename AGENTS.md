@@ -125,6 +125,12 @@ A reviewer that finds any of these rejects the whole change.
   Never run it in the background and poll, and never list processes (`ps`, `pgrep`, `top`):
   their output is huge and is re-sent on every later turn. Read only the tail or the first
   error of a log, never whole test logs.
+- Run `forge check` at most once per fix: once when the work is done, and once after each
+  fix for a failure it reported. To check one thing while working, run only that build
+  target or test (`ctest -R <name>`), not the whole check.
+- Read files by line range (`rg -n -C 20 <symbol>`, or `head -n` piped to `tail -n`), never whole with `cat`,
+  unless the file is under 100 lines. The context pack already holds the spec and
+  decisions this card needs.
 - Stop when the acceptance criteria are met and `forge check` passes.
 
 ## 8. Commit messages (CONTRIBUTING.md, "Commit messages")
