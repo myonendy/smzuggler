@@ -70,11 +70,12 @@ No game files are in the repo. Tests and tools find the game through
 never at the Steam install. Fixture saves are read from
 `$XDG_DATA_HOME/smzuggler-rt/fixtures/` (§14.10) and never committed.
 
-## DEC-SETUP-008 — Transitional QuickJS backend for jsb during M1 (proposed)
+## DEC-SETUP-008 — Transitional QuickJS backend for jsb during M1
 §4.1 says the `jsb` seam has one implementation (V8). To port the 12 bindings one card at a
 time with every test green, M1 adds a transitional QuickJS backend (`src/jsb/jsb_quickjs.c`,
 card M1-T004) and an `SMZ_JS_ENGINE` build option; M1-T027 removes both. This needs the
 owner's approval (docs/SPEC_ISSUES.md SI-11). The alternative is a single big-bang port card.
+Owner approved 2026-11-04, with DEC-M1-T014-JSB-ADOPT (how the ports reach the engine's context).
 
 ## DEC-SETUP-009 — Where new tests live
 Upstream registers each test by hand in `tests/CMakeLists.txt`, and forge treats edits to

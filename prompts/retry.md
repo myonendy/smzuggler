@@ -6,4 +6,4 @@ the worktree (forge committed them). The gates failed with this report:
 
 Fix exactly what the report names, starting with the first failure. Don't re-explore the repo
 or re-read files you already have. Run `forge check`, then end with the final report
-(AGENTS.md section 7).
+(AGENTS.md section 9).

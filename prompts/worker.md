@@ -13,4 +13,4 @@ If there is feedback, the worktree already contains your previous attempt. Fix e
 the feedback names, starting with the first failure, and don't start over unless it tells you to.
 Before finishing, run `forge check` (every gate, quietly; it also fixes formatting). If
 `forge` is not on PATH, run the gate commands listed in the context pack. End with the final
-message format from AGENTS.md section 7.
+message format from AGENTS.md section 9.
