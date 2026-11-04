@@ -39,6 +39,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- The V8 engine now runs with `--stack-size=512` (KiB) on a runtime thread with a 2 MiB stack, so deep recursion throws `RangeError` instead of crashing. The MSVC `/STACK` link flag is now used only in QuickJS builds. (M1-T013)
 - jsb can adopt the engine's QuickJS context (`js_engine_get_jsb()` works in quickjs mode) and has value, coercion, array, error and function-length calls for binding ports. (M1-T007b)
 - Store V8 code caches by source, version and flags in the host cache directory. (M1-T012)
 - Preserve nextTick priority after callback exceptions while reporting failures. (M1-T010)
