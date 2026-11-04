@@ -1,4 +1,4 @@
-# AGENTS.md — rules for every coding agent (Codex, OpenCode vendors, reviewers)
+# AGENTS.md — rules for every coding agent (Codex, Claude, OpenCode vendors, reviewers)
 
 This file is canonical. `CLAUDE.md` imports it. Humans edit it; agents never do.
 
@@ -10,9 +10,12 @@ GPL-3.0 licence and headers are kept; new work is GPL-3.0-or-later.
 - You are one of several agents working **in parallel**, each in its own git worktree,
   on exactly one task card. The orchestrator commits, merges, and runs the gates. **Do not
   `git commit`, `git push`, switch branches, or rewrite history.** Never add a remote.
-- After you finish, objective gates run (policy, privacy, game names, build, tests). Then a
-  reviewer from a *different vendor* reads your diff against the card. Failures come back
-  to you verbatim.
+- After you finish, objective gates run (policy, privacy, commit subjects, game names,
+  build, tests). Every gate runs and all failures come back together in one report (a
+  failed build skips the rest). Then a reviewer from a *different vendor* reads your diff
+  and your final report against the card. Failures come back to you verbatim.
+- A retry after a gate failure usually continues your own earlier session: the card and
+  what you read are still there, so fix what the report names instead of re-exploring.
 - You have a hard budget (wall-clock time, attempts). Spend it on the task.
 
 ## 1. Scope
@@ -30,13 +33,24 @@ GPL-3.0 licence and headers are kept; new work is GPL-3.0-or-later.
   `docs/spec/` is background only.
 
 ## 2. Workflow (test-first)
-1. Read the card, its cited spec sections (in the context pack), `ARCHITECTURE.md`, and
-   the code you will touch. Read only what you need.
+1. Read the card and its **context pack** (in your prompt): it already holds the spec
+   sections the card cites, the decisions it names, the parts of `ARCHITECTURE.md` about
+   the modules it owns, and the gate commands. Then read only the code you will touch and
+   what it directly calls.
+   **Never open these files whole**; grep them or read a line range for anything the pack
+   lacks. Every line you read is re-sent on every later turn of your run:
+   - `docs/compat-surface.md` (2,000+ table rows): grep for the rows of the members you
+     touch, e.g. `grep -n 'nw.Window' docs/compat-surface.md`, and edit only those rows;
+   - `docs/spec/SPEC.md` and `docs/spec/V8_MZ_HOST_SPEC_v0.2.md`;
+   - `docs/DECISIONS.md`, `CHANGELOG.md`, `docs/js-binding.md`, `docs/UPSTREAM.md`.
+   `ARCHITECTURE.md` is fine to grep; read whole sections only when the excerpt points there.
 2. Write failing tests that encode the acceptance criteria.
-3. Implement until they pass. Run `tools/forge/build.sh` and `tools/forge/test.sh` yourself
-   before finishing. Builds are offline: dependencies come from the local cache; never
-   download anything and never change a dependency pin unless the card says so.
-4. Update the docs the card lists (section 5). Finish with the short report (section 9).
+3. Implement until they pass. Check with **`forge check`**: it runs every gate quietly in
+   your worktree, including uncommitted work, and never commits. Don't also run the gate
+   scripts one by one. If `forge` is not on PATH, run `tools/forge/build.sh` and
+   `tools/forge/test.sh`. Builds are offline: dependencies come from the local cache;
+   never download anything and never change a dependency pin unless the card says so.
+4. Update the docs the card lists (section 6). Finish with the short report (section 9).
 
 ## 3. No cheating. These are detected automatically and fail the task.
 - Deleting, weakening, skipping, or disabling tests (`SKIP`, `DISABLED_`, `#if 0`, removing
@@ -84,17 +98,29 @@ A reviewer that finds any of these rejects the whole change.
 ## 6. Documentation (gated, spec §15)
 - Every public function/type has a doc comment explaining **why** and any contract
   (units, ownership, ranges, thread). Do not restate *what* the code says.
-- Each card lists its docs in `docs`; they must change in the same diff (DOCS gate).
-- Module boundary changes update `ARCHITECTURE.md` in the same change.
-- Non-obvious decisions get a `docs/DECISIONS.md` entry named after your card
-  (`DEC-<card ID>`, then `DEC-<card ID>b`), never the next free number.
-- Add a line to `CHANGELOG.md` under "Unreleased".
+- Each card lists its docs in `docs`; they must change in the same diff (DOCS gate), with
+  two exceptions below: `CHANGELOG.md` and `docs/DECISIONS.md`.
+- Module boundary changes update `ARCHITECTURE.md` in the same change: edit the one
+  section involved, found with grep, not the whole file.
+- **Decisions:** only for choices a later agent could not recover from the code: a spec
+  rule, a file/save/protocol format, a pin, a deliberate deviation from the spec or from
+  upstream. Write a new file `docs/decisions/DEC-<card ID>.md` that starts with the spec §12
+  header (as for any new file) and `## DEC-<card ID> — <title>`, 10-20 lines: context,
+  decision, why, rejected alternative. Never append to `docs/DECISIONS.md` (older entries
+  stay there and keep their IDs). Most cards need no decision.
+- **Changelog:** don't edit `CHANGELOG.md`. Put one line in your final report under
+  `CHANGELOG:` saying what now exists (same style as the existing entries, without the
+  card ID); forge adds it under "Unreleased" with the card ID.
 
 ## 7. Token discipline
-- Don't re-read files, don't dump large files or logs (use grep and ranges), don't
-  explore unrelated code, don't refactor beyond the card.
+- Don't re-read files, don't dump large files or logs (use grep and ranges; section 2 lists
+  the big docs), don't explore unrelated code, don't refactor beyond the card.
+- Build output is long: on a failure read the first error, not the whole log.
 - When a command fails, read the error and fix the cause. Don't retry blindly.
-- Stop when the acceptance criteria are met and the gates pass locally.
+- Reuse before you write: grep for an existing helper (parsers, path helpers, test
+  fixtures) and call it. Don't copy one into your files; if two cards need it, say so under
+  `SPEC/INFRA ISSUES`.
+- Stop when the acceptance criteria are met and `forge check` passes.
 
 ## 8. Commit messages (CONTRIBUTING.md, "Commit messages")
 You do not commit (forge does), but every card ends with a commit subject you propose:
@@ -104,7 +130,9 @@ You do not commit (forge does), but every card ends with a commit subject you pr
 - the card ID goes in a trailer (`Card: M0-T003`), not in the subject;
 - add a body line saying why when it is not obvious.
 Check it with `python3 tools/commitmsg/check_subject.py --msg-file <file>` (in a temp file).
-forge does not yet use it as the commit subject; docs/FORGE.md, "Commit subjects".
+forge uses your `COMMIT SUBJECT:` line as the subject of the commit it makes and adds the
+`Card:` and `Forge-Attempt:` trailers itself (docs/FORGE.md, "Commit subjects"). An invalid
+subject is replaced by one made from the card title, so write a good one.
 
 ## 9. Final message format (keep it under 25 lines)
 ```
@@ -112,7 +140,9 @@ DONE: <one line>
 COMMIT SUBJECT: <subject per section 8>
 CHANGED: <files>
 TESTS: <what the new tests prove>
+CHANGELOG: <one line for CHANGELOG.md "Unreleased", or none>
 INTERPRETATIONS: <assumptions, or none>
 SPEC/INFRA ISSUES: <or none>
-LEFT OUT: <anything not done, or none>
+LEFT OUT: <anything not done, incl. dev-laptop runs a human must do, or none>
 ```
+forge copies `LEFT OUT` and `SPEC/INFRA ISSUES` into `docs/todo/<card ID>.md` for the owner.

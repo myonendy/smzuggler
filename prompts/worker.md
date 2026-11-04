@@ -11,5 +11,6 @@ Follow AGENTS.md exactly. The working directory is your own git worktree.
 
 If there is feedback, the worktree already contains your previous attempt. Fix exactly what
 the feedback names, starting with the first failure, and don't start over unless it tells you to.
-Before finishing, run the build and tests yourself. End with the final message format from
-AGENTS.md section 7.
+Before finishing, run `forge check` (every gate, quietly; it also fixes formatting). If
+`forge` is not on PATH, run the gate commands listed in the context pack. End with the final
+message format from AGENTS.md section 7.
