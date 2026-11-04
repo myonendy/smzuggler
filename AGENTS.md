@@ -131,6 +131,9 @@ A reviewer that finds any of these rejects the whole change.
 - Read files by line range (`rg -n -C 20 <symbol>`, or `head -n` piped to `tail -n`), never whole with `cat`,
   unless the file is under 100 lines. The context pack already holds the spec and
   decisions this card needs.
+- Never read forge's own code, `forge.toml` or `.forge/` (state, logs, other cards'
+  worktrees). The context pack lists the exact gate commands; on a merge conflict, read only
+  the conflicted files.
 - Stop when the acceptance criteria are met and `forge check` passes.
 
 ## 8. Commit messages (CONTRIBUTING.md, "Commit messages")
