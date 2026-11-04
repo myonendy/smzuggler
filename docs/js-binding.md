@@ -7,6 +7,7 @@ Modified 2026-11-01: document how the game loop calls into JS.
 Modified 2026-11-01: document the error handler's js_engine.h path.
 Modified 2026-11-01: document microtask checkpoints and nextTick order.
 Modified 2026-11-04: document the V8 code cache.
+Modified 2026-11-04: document the explicit runtime stack and recursion limit.
 How native C bindings talk to the JS engine through jsb.h, and the handle rules.
 -->
 # JS binding: the `jsb` seam
@@ -252,6 +253,17 @@ How jsb applies them:
   all before disposing of the isolate.
 * jsb is main-thread only. The one exception is a `jsb_free_fn`, which V8 may call from
   a GC helper thread (see "Buffers").
+
+## Runtime stack
+
+V8 engine initialization sets `--stack-size=512` (KiB) before the first
+isolate. The host reserves 2 MiB with SDL thread creation properties, leaving
+1536 KiB for native frames and exception reporting. Startup fails loudly if
+thread creation fails. All runtime services, including JS and graphics, live
+on that single runtime thread; the entry thread waits for shutdown. Embedders
+must provide at least the same stack and initialize the engine before creating
+other jsb runtimes. QuickJS retains its existing Windows linker reservation.
+`stack_size` checks repeated catchable recursion overflow and engine recovery.
 
 ## js_engine on V8
 `src/engine/js_engine_v8.cc` implements `src/engine/js_engine.h` on V8 (§4.1 item 3,

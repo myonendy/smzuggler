@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The smzuggler contributors
+// Modified 2026-11-04: bound JS recursion below the reserved native stack.
 // Modified 2026-11-04: explicit microtask checkpoints and exception-safe nextTick priority.
 //
 // The engine API of src/engine/js_engine.h implemented on V8 (spec section
@@ -694,6 +695,12 @@ extern "C" {
 // See js_engine.h. The V8 platform is started by jsb on first use and lives
 // until exit; ICU data comes from SMZ_V8_ICU_DATA_PATH (CMakeLists.txt).
 JSEngine *js_engine_init(void) {
+    // Process-wide flags must precede the first isolate, including cache keys.
+    static bool flags_set = false;
+    if (!flags_set) {
+        if (!jsb_set_flags("--stack-size=512")) return nullptr;
+        flags_set = true;
+    }
     JSEngine *engine = new JSEngine();
     engine->rt = jsb_runtime_create("smzuggler", SMZ_V8_ICU_DATA_PATH);
     if (!engine->rt || !jsb_runtime_setup(engine->rt, adopt_runtime, engine)) {

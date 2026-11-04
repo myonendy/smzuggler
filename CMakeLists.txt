@@ -11,6 +11,7 @@
 # Modified 2026-11-01: build js_engine.h on V8 as smz_js_engine_v8 in v8 mode.
 # Modified 2026-11-01: add the script watchdog thread to smz_js_engine_v8.
 # Modified 2026-11-04: add the V8 code cache store smz_js_codecache.
+# Modified 2026-11-04: reserve the V8 runtime stack and bound JS recursion.
 # Build orchestration; see docs/DECISIONS.md (DEC-M0-T001).
 
 cmake_minimum_required(VERSION 3.20)
@@ -107,6 +108,7 @@ if(NOT SMZ_JS_ENGINE MATCHES "^(quickjs|v8)$")
     message(FATAL_ERROR "SMZ_JS_ENGINE must be quickjs or v8, not '${SMZ_JS_ENGINE}'")
 endif()
 if(SMZ_JS_ENGINE STREQUAL "v8")
+    add_compile_definitions(SMZ_RUNTIME_STACK_BYTES=2097152)
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/V8.cmake)
     smz_import_v8()
 endif()
@@ -131,11 +133,13 @@ endif()
 if(MSVC)
     # Source files are UTF-8; silence noisy narrowing/deprecation warnings.
     add_compile_options(/wd4244 /wd4267 /wd4996 /utf-8)
+    if(SMZ_JS_ENGINE STREQUAL "quickjs")
     # QuickJS throws a catchable "stack overflow" only when the OS stack is
     # larger than its own limit (JS_STACK_SIZE in js_engine.c). The MSVC
     # default of 1 MB is smaller, so deep recursion in game scripts would
     # crash the process instead. Applies to every executable, tests included.
     add_link_options(/STACK:16777216)
+    endif()
 endif()
 
 # Game default resolution
@@ -356,7 +360,7 @@ if(SMZ_JS_ENGINE STREQUAL "v8")
     target_link_libraries(smz_js_engine_v8 PUBLIC smz_jsb smz_js_codecache Threads::Threads)
     target_include_directories(smz_js_engine_v8 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_definitions(smz_js_engine_v8
-        PUBLIC SMZ_JS_ENGINE_V8
+        PUBLIC SMZ_JS_ENGINE_V8 SMZ_RUNTIME_STACK_BYTES=2097152
         PRIVATE SMZ_V8_ICU_DATA_PATH="${SMZ_V8_ICU_DATA}")
 endif()
 
