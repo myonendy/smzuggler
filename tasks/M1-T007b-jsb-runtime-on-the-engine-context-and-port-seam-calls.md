@@ -4,10 +4,10 @@ title = "jsb runtime on the engine's QuickJS context, plus the seam calls bindin
 milestone = 1
 deps = ["M1-T004", "M1-T005", "M1-T006", "M1-T007"]
 agent = "any"
-owns = ["src/jsb/jsb.h", "src/jsb/jsb_adopt.h", "src/jsb/jsb_quickjs.c", "src/jsb/jsb_v8.cc", "src/jsb/README.md", "src/engine/js_engine.c", "src/engine/js_engine.h", "CMakeLists.txt", "tests/smz/test_jsb_adopt.c", "tests/smz/jsb_adopt.cmake", "tests/smz/test_jsb_values.c", "tests/smz/jsb_values.cmake"]
+owns = ["src/jsb/jsb.h", "src/jsb/jsb_adopt.h", "src/jsb/jsb_quickjs.c", "src/jsb/jsb_v8.cc", "src/jsb/README.md", "src/engine/js_engine.c", "src/engine/js_engine.h", "CMakeLists.txt", "tests/smz/test_jsb_adopt.c", "tests/smz/jsb_adopt.cmake", "tests/smz/test_jsb_values.c", "tests/smz/jsb_values.cmake", "tests/smz/test_js_engine_v8.c"]
 docs = ["docs/js-binding.md", "CHANGELOG.md"]
 tests_required = true
-may_edit_tests = false
+may_edit_tests = true  # OWNER 2026-11-04: only for the get_jsb assertion in tests/smz/test_js_engine_v8.c
 +++
 ## Goal
 Give the binding ports (M1-T014..T025) what DEC-M1-T014-JSB-ADOPT says they lack, without porting any binding:
@@ -26,6 +26,9 @@ Give the binding ports (M1-T014..T025) what DEC-M1-T014-JSB-ADOPT says they lack
 - [ ] `docs/js-binding.md` documents adoption (replacing "has no way to adopt the engine's"), the new calls and their removal card (M1-T027 for adoption).
 - [ ] Every new or changed file has the §12 header and every new or changed function has a §15.1 doc comment; handle-lifetime rules follow §15.8.
 - [ ] Commit subject describes the change per CONTRIBUTING.md (proposed in the final message's `COMMIT SUBJECT:` line; `tools/commitmsg/check_subject.py` accepts it).
+- [ ] The only change to an existing test is in `tests/smz/test_js_engine_v8.c`, `test_get_jsb_quickjs`: its NULL assertion becomes non-NULL, with its note, comment and the file's `Modified` header line updated. Every other line of that file and every other existing test file is unchanged (`git diff main --stat -- tests` lists only that file plus the new test files). Reviewers fail any other edit to an existing test.
 
 ## Notes
 Spec §4.1; DEC-M1-T014-JSB-ADOPT, DEC-SETUP-008 / SI-11, DEC-SETUP-009. Shares `CMakeLists.txt` with M1-T012 and M1-T013, so forge never runs it alongside them.
+
+Owner ruling 2026-11-04: `test_js_engine_v8.c` asserted the pre-adoption behaviour (`js_engine_get_jsb()` is NULL in QuickJS mode) that this card's goal changes, so this card owns that one assertion. `may_edit_tests` is card-wide in forge, so the acceptance criterion above is what limits it.
