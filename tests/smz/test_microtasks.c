@@ -230,12 +230,50 @@ static void test_overlay_event_order(void)
     js_engine_shutdown(engine);
 }
 
+/* Native video endings drain jobs after all synchronous listeners, before the
+   next video or rAF callback. Fake player state feeds the real DOM dispatcher. */
+static void test_video_event_order(void)
+{
+    JSEngine *engine;
+    GameLoop *loop = make_loop(&engine);
+    assert(js_engine_eval(engine,
+        "var handle = 0, finished = false;"
+        "var __native_video = {"
+        " open: function () { return ++handle; },"
+        " getState: function () { return {time:1, duration:1, width:1, height:1, ended:finished}; },"
+        " setVisible: function () {}, setVolume: function () {}, setLoop: function () {},"
+        " play: function () {} };"
+        "function videoTask(id) {"
+        " var v = document.createElement('video'); v.src = 'fixture.mp4'; v.play();"
+        " v.addEventListener('ended', function () {"
+        "  log.push(id);"
+        "  Promise.resolve().then(function () { log.push(id + 'p'); });"
+        "  process.nextTick(function () { log.push(id + 'n'); });"
+        " });"
+        " v.addEventListener('ended', function () { log.push(id + 's'); });"
+        "}"
+        "videoTask('v1'); videoTask('v2'); finished = true;"
+        "requestAnimationFrame(function () { log.push('raf'); });",
+        "video-order.js"));
+    assert(game_loop_step(loop));
+#ifdef SMZ_JS_ENGINE_V8
+    assert(js_is(engine, "log.join(',')", "v2,v2s,v2n,v2p,v1,v1s,v1n,v1p,raf"));
+#else
+    assert(js_is(engine, "log.join(',')", "v2,v2s,v1,v1s,raf,v2n,v1n,v2p,v1p"));
+#endif
+    assert(game_loop_step(loop));
+    assert(js_is(engine, "String(log.length)", "9"));
+    game_loop_destroy(loop);
+    js_engine_shutdown(engine);
+}
+
 /* Run main-thread ordering regressions; assertions terminate on failure. */
 int main(void)
 {
     fprintf(stderr, "test_frame_order\n");
     test_frame_order();
     test_overlay_event_order();
+    test_video_event_order();
     fprintf(stderr, "test_tick_outside_task\n");
     test_tick_outside_task();
     fprintf(stderr, "microtasks: all passed\n");

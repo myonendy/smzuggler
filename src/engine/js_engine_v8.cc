@@ -359,7 +359,7 @@ const char kTickBootstrap[] = R"JS(
     scheduler('setInterval');
     scheduler('requestAnimationFrame');
  })(globalThis);
-/** Preserve synchronous listeners while separating native input, resize and gamepad events. */
+/** Preserve synchronous listeners while separating native input, resize, gamepad and video events. */
 (function (g) {
     /** Deliver each polled event completely, including overlay default actions.
      * Main-thread-only; restore the borrowed poll function even on exceptions.
@@ -403,7 +403,7 @@ const char kTickBootstrap[] = R"JS(
                     function intercept(target) {
                         if (!target || typeof target.dispatchEvent !== 'function') return;
                         var dispatch = target.dispatchEvent;
-                        restores.push([target, dispatch]);
+                        restores.push([target, dispatch, Object.prototype.hasOwnProperty.call(target, 'dispatchEvent')]);
                         /** Checkpoint after all listeners and nested dispatch complete. */
                         target.dispatchEvent = function () {
                             depth++;
@@ -413,10 +413,14 @@ const char kTickBootstrap[] = R"JS(
                     }
                     intercept(g);
                     intercept(g.document);
+                    if (name === '__dom_updateVideos' && g.HTMLVideoElement)
+                        intercept(g.HTMLVideoElement.prototype);
                     try { return fn.apply(this, arguments); }
                     finally {
-                        for (var i = restores.length - 1; i >= 0; i--)
-                            restores[i][0].dispatchEvent = restores[i][1];
+                        for (var i = restores.length - 1; i >= 0; i--) {
+                            if (restores[i][2]) restores[i][0].dispatchEvent = restores[i][1];
+                            else delete restores[i][0].dispatchEvent;
+                        }
                     }
                 };
             }
@@ -424,6 +428,7 @@ const char kTickBootstrap[] = R"JS(
     }
     nativePhase('__dom_flushInputEvents');
     nativePhase('__dom_updateGamepads');
+    nativePhase('__dom_updateVideos');
     nativePhase('__dom_setWindowSize');
 })(globalThis);
 )JS";

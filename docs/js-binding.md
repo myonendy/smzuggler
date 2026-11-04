@@ -369,7 +369,11 @@ the loop do the same (DEC-M1-T010 has the exact order):
   invocation checkpoints after complete delivery, including consumed overlay events,
   bubbling and default actions. The borrowed poll function is restored on errors.
   Resize and gamepad phases temporarily wrap document/window dispatch with shared
-  nesting depth. Each phase also retains its engine-driven checkpoint.
+  nesting depth. The video update phase also wraps video-element dispatch, so each
+  native-backed `ended` event finishes all synchronous listeners before draining
+  ticks and promises, ahead of the next video event or rAF callback. Temporary
+  wrappers restore inherited dispatch methods as well as own methods on errors.
+  Each phase also retains its engine-driven checkpoint.
 - **After each timer and rAF callback (V8).** Scheduler accessors installed at context
   creation wrap callbacks as the DOM shim installs its schedulers. Startup registrations
   are covered before the first frame. Each callback checkpoints in a finally block.

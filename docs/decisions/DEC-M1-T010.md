@@ -1,8 +1,6 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 <!-- Copyright (C) 2026 The smzuggler contributors -->
-
 ## DEC-M1-T010 — explicit checkpoints and nextTick priority
-
 Spec §4.1 requires per-task checkpoints; V8 owns nextTick from context creation.
 At a checkpoint it exhausts ticks, drains promises, then repeats if promises queued ticks.
 Scheduler accessors cover startup registrations; input batches are polled once and
@@ -15,6 +13,8 @@ QuickJS retains phase-level jobs: `a,b,ap,bp,t1,t2,iv,n1,n1b,p1,p2,ivp,p1b,r1,r2
 Its existing promise-backed nextTick does not prioritize ticks queued during script load.
 Rejected: wrapping scheduler registration on the first frame, which misses startup work.
 Rejected: checkpointing an entire input phase, which batches unrelated native events.
-
 Overlay Backspace order (initial `abc`), V8: `key:abc,input:ab,tick:ab,promise:ab,key:ab,input:a,tick:a,promise:a`.
 QuickJS runs `key:abc,input:ab,key:ab,input:a,tick:a,tick:a,promise:a,promise:a`.
+Native video endings run in reverse active-video order before rAF: V8 logs
+`v2,v2s,v2n,v2p,v1,v1s,v1n,v1p,raf`; `s` is the second synchronous listener.
+QuickJS logs `v2,v2s,v1,v1s,raf,v2n,v1n,v2p,v1p` at its phase checkpoint.
