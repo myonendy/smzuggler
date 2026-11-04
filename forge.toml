@@ -6,6 +6,11 @@ name = "smzuggler"
 main_branch = "main"
 spec = "docs/spec/SPEC.md"        # v0.5.1, protected; see docs/spec/README.md
 strict_milestones = true          # never start milestone N+1 before N is fully merged
+commit_style = "descriptive"      # forge commits use the worker's COMMIT SUBJECT + Card/Forge-Attempt trailers (docs/FORGE.md)
+generated_header = """<!--
+SPDX-License-Identifier: GPL-3.0-or-later
+Copyright (C) 2026 The smzuggler contributors
+-->"""                            # put on files forge creates (docs/todo/<ID>.md), so the headers gate passes
 
 [agents]
 # Claude is review-only in this project (owner, 2026-10-30): never a worker, implementer,
@@ -28,6 +33,8 @@ max_budget_usd = 4.0               # per run; only meaningful for API billing
 timeout_min = 40
 extra_args = []
 allow_overage = false              # never run Claude on paid overage (owner). Do not change.
+resume_retries = true              # a gate-fix retry continues the worker's own session (forge default for claude)
+# review_model = "sonnet"          # optional: cheaper model for reviews; fix_model for gate-fix retries
 
 [agents.codex]
 bin = "codex"
@@ -35,6 +42,8 @@ model = ""
 timeout_min = 40                   # codex exec has no max-turns flag; wall clock is the cap
 extra_args = []
 network_access = false             # builds are offline (FetchContent disconnected, local deps cache)
+# resume_retries = true            # opt-in: gate-fix retries resume the Codex session (argv checked on
+                                   # codex-cli 0.166.0, a logged-in resume not yet tried; forge reruns fresh if it fails)
 
 # OpenCode Go vendors, same tables as the other projects on this plan (shared plan, shared ledger). Only oc-deepseek is in
 # the pools above; oc-glm and oc-kimi are defined so cards may pin them and `forge limits` shows
@@ -92,6 +101,8 @@ enabled = true
 always_spec = []                   # cards cite their own §refs; §16 privacy is in AGENTS.md
 decision_index = false
 max_chars = 24000                  # OWNER: above the 16000 default; spec sections are long
+architecture_always = ["directory map", "threads and ownership"]   # ARCHITECTURE.md sections every card gets whole
+architecture_max_chars = 5000      # the rest of ARCHITECTURE.md: only blocks naming the card's modules
 
 [gates]
 # policy (built in) -> privacy (§16; forge commits skip git hooks) -> commit_subjects

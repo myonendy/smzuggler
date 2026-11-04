@@ -42,14 +42,7 @@
       }
      },
      "agent": {
-      "type": "string",
-      "enum": [
-       "any",
-       "claude",
-       "codex",
-       "glm",
-       "grok"
-      ]
+      "type": "string"
      },
      "owns": {
       "type": "array",

@@ -30,25 +30,37 @@ smzuggler's work is split into small cards that AgentForge runs (`forge.toml` at
 | `test` | ctest plus the Python tool tests, with game paths unset (`tools/forge/test.sh`) |
 
 ## Commit subjects
-AgentForge writes its own commit subjects and has no option to change them:
-`<ID>: attempt N by <vendor>`, `<ID>: uncommitted changes picked up by regate|resume`,
-`<ID>: partial work by <vendor> (stopped by usage limit)`, plus `Merge branch 'main' into
-forge/<ID>` when it syncs a task branch. Main is fast-forwarded to the task branch, so
-these land on main as they are. `regate` also reads the vendor back from the
-`attempt N by <vendor>` subject. The `commit_subjects` gate therefore counts those exact
-forms and reports them instead of failing; every other commit (humans, setup, checkpoints)
-is checked in full, and the commit-msg hook checks every local commit.
+forge runs with `[project] commit_style = "descriptive"`. Each attempt commit's subject is
+the worker's `COMMIT SUBJECT:` report line (AGENTS.md §8, §9) when it is one line of at most
+72 characters without a card-ID or `forge:` prefix; otherwise forge makes one from the card
+title ("Add ..." unless the title starts with a verb). The card and attempt go in trailers:
 
-To get descriptive subjects for card work, forge itself needs a change (not made here;
-forge is shared with other projects):
-1. `gitops.commit_all` takes the subject from the worker's final `COMMIT SUBJECT:` line
-   (AGENTS.md §9), falling back to the card title rewritten as an action, and adds the
-   trailers `Card: <ID>` and `Forge-Attempt: N by <vendor>`.
-2. `gitops.branch_author` reads the `Forge-Attempt:` trailer instead of the subject.
-3. `task._merge` squashes the task branch into one commit with that subject and the
-   `Card:` trailer (or merges `--no-ff` with it) instead of `--ff-only`, and `sync_main`
-   passes a message such as `Merge main into the <slug> task branch`.
-After that, run the gate with `--strict` (edit `tools/forge/commit_subjects.sh`).
+```
+Add removeAllListeners and once to nw.Window shim
+
+Card: M0-T003
+Forge-Attempt: 2 by codex
+```
+
+Other forge commits: partial work after a usage limit (`Forge-Partial:` trailer), work
+picked up by `regate`/resume (`Forge-Pickup:`), formatter fixes (`Apply the project
+formatter`, `Forge-Fix:`), and syncs with main (`Merge main into the <card> task branch`,
+skipped by the gate as a merge). `regate` reads the vendor from the `Forge-Attempt:` trailer.
+Main is still fast-forwarded to the task branch, so a card lands as its attempt commits.
+
+The `commit_subjects` gate still counts the old machine forms (`<ID>: attempt N by
+<vendor>` and siblings) instead of failing them, because task branches started before
+this change carry them. Once those branches have merged, switch the gate to `--strict` in
+`tools/forge/commit_subjects.sh` so a machine subject fails like any other bad subject.
+
+## Token use
+Agents get each card's spec sections, named decisions, the `ARCHITECTURE.md` parts for the
+modules it owns (`[context] architecture_always` sections whole) and the gate commands in
+their prompt, and AGENTS.md §2 forbids opening the big docs whole. forge writes the
+`CHANGELOG.md` line from the report's `CHANGELOG:` field; new decisions are small files in
+`docs/decisions/`; human to-dos from reports land in `docs/todo/<ID>.md`. A retry after a
+gate failure stays with the same vendor and, for Claude, resumes its session. `forge usage`
+shows token use per role, vendor and card from `.forge/logs`.
 
 ## Human checkpoints
 Agents cannot change gates or `forge.toml`. A human does these when the card merges:
@@ -77,7 +89,9 @@ copying `build/_deps/<name>-src`. Each worktree builds in its own `build/`.
 
 ## Commands
 ```
-forge status          # cards, states, budget
+forge status          # cards, states, budget, human to-dos in docs/todo/
+forge usage           # token use per role, vendor and card
+forge check           # (inside a worktree) every gate on the uncommitted work
 forge doctor          # config and environment check
 forge gates --base upstream-main   # run all gates on the current tree
 ```

@@ -31,7 +31,9 @@
       "Bash(git status*)",
       "Bash(git diff*)",
       "Bash(git log*)",
-      "Bash(git show*)"
+      "Bash(git show*)",
+      "Bash(forge check*)",
+      "Bash(forge usage*)"
     ],
     "deny": [
       "Bash(git commit*)",
