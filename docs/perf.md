@@ -89,14 +89,18 @@ to the working directory.
 
 Open the file with the DevTools **Performance** panel's *Load profile*
 button. It is the standard JSON object with `nodes`, `samples` and
-`timeDeltas`; every node names its function and source. Script URLs are
-relative to the game root (`js/main.js`, `data/...`), as NW.js shows them,
-so a profile can be shared without revealing the host directory layout.
+`timeDeltas`; every node names its function and source. The `--game`
+directory is resolved to an absolute path first, then stripped, so script
+URLs are relative to the game root (`js/main.js`, `data/...`) even when
+`--game` was relative. This is how NW.js shows them, and it means a profile
+can be shared without revealing the host directory layout.
 
 The sampling interval is 100 µs. This records JavaScript only: native frames
 (Canvas2D, texture upload, GPU submit, GC) still need the `perf` recording
 above, so use both when a frame is split between JS and native work. Profiles
-are runtime output, never commit one from a game run.
+are runtime output, never commit one from a game run. `tools/share/make_bundle.py`
+collects `.cpuprofile` files under `profiles/` and scrubs them like any other
+text artefact, so a shared run bundle carries the profile without host paths.
 
 ## Bucket rules
 

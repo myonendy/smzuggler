@@ -17,7 +17,8 @@
 //   jsb_runtime_setup, which also gives the one live isolate scope; nothing
 //   here stores a Local, jsb_val or jsb_ctx (spec section 15.8).
 // - jsb_runtime and every string argument are borrowed; the handle copies
-//   the path and game root it needs.
+//   the path and resolves the game root it needs, so a relative --game still
+//   yields game-relative URLs.
 // - The profile is written before the engine is shut down, through
 //   js_codecache_write, which creates parent directories and replaces the
 //   file atomically so a crash never leaves a half-written profile.
@@ -31,6 +32,7 @@
 #include <v8.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <string>
@@ -101,6 +103,28 @@ std::string trim_root(const std::string &path) {
     size_t len = path.size();
     while (len > 1 && (path[len - 1] == '/' || path[len - 1] == '\\')) len--;
     return path.substr(0, len);
+}
+
+// Returns `path` as an absolute, separator-normalised root for URL
+// comparison. Why: --game may be relative or carry "..", while V8 records
+// absolute file URLs, so without resolution the prefix check silently fails
+// and an absolute host path would survive in a shared profile. realpath also
+// resolves symlinks, matching the path V8 actually loaded. Falls back to the
+// trimmed input when the directory cannot be resolved (for example it does
+// not exist yet), so callers should pass an absolute path in that case.
+std::string canonical_root(const std::string &path) {
+    std::string trimmed = trim_root(path);
+    if (trimmed.empty()) return trimmed;
+#ifdef _WIN32
+    char *resolved = _fullpath(NULL, trimmed.c_str(), 0);
+#else
+    char *resolved = realpath(trimmed.c_str(), NULL);
+#endif
+    std::string out = resolved ? std::string(resolved) : trimmed;
+    std::free(resolved);
+    for (char &c : out)
+        if (c == '\\') c = '/';
+    return trim_root(out);
 }
 
 // Returns the already JSON-escaped `url` without the escaped game root when
@@ -205,7 +229,7 @@ struct js_profiler *js_profiler_start(struct jsb_runtime *rt, const char *path,
     }
     js_profiler *profiler = new js_profiler();
     profiler->path = path;
-    if (game_root) profiler->game_root = trim_root(game_root);
+    if (game_root) profiler->game_root = canonical_root(game_root);
     if (!jsb_runtime_setup(rt, start_recording, profiler) || !profiler->cpu) {
         std::fprintf(stderr, "js_profiler: cannot start V8's CPU profiler\n");
         if (profiler->cpu) profiler->cpu->Dispose();

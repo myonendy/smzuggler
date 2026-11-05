@@ -53,11 +53,13 @@ bool js_profiler_default_path(const char *state_dir, char *out, size_t out_size)
 /* Starts V8's CpuProfiler on `rt`'s isolate and records every JS sample
  * until js_profiler_stop. `path` (borrowed, copied) is where the Chrome
  * DevTools `.cpuprofile` is written on stop; missing parent directories are
- * created. `game_root` (borrowed, copied, may be NULL) is stripped from
- * script URLs so the profile names game files as `js/main.js`, not as an
- * absolute host path. Returns NULL, after a message on stderr, when the
- * runtime, path or isolate is unusable or a profile is already running.
- * Main thread; the runtime must outlive the returned handle. */
+ * created. `game_root` (borrowed, copied, may be NULL) is resolved with
+ * realpath/_fullpath and stripped from script URLs so the profile names game
+ * files as `js/main.js`, not as an absolute host path; if the directory
+ * cannot be resolved, pass an absolute path. Returns NULL, after a message
+ * on stderr, when the runtime, path or isolate is unusable or a profile is
+ * already running. Main thread; the runtime must outlive the returned
+ * handle. */
 js_profiler *js_profiler_start(struct jsb_runtime *rt, const char *path,
                                const char *game_root);
 

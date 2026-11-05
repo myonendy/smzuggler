@@ -250,15 +250,17 @@ def is_screenshot(path: Path) -> bool:
 def is_collectible(path: Path) -> bool:
     """True for the run artefacts this packager is allowed to ship.
 
-    Logs, perf-report-* JSON/Markdown, frame-time CSV/JSONL and screenshots
-    (when opted in) are the set in the M0-T023 card. Other files are ignored.
+    Logs, perf-report-* JSON/Markdown, frame-time CSV/JSONL, Chrome DevTools
+    `.cpuprofile` files written by `--cpu-prof` and screenshots (when opted
+    in) are the set in the M0-T023 and M1-T028 cards. Text artefacts are
+    scrubbed before packing; other files are ignored.
     """
     name, suffix = path.name, path.suffix.lower()
     if suffix == '.log':
         return True
     if name.startswith('perf-report-') and suffix in {'.json', '.md'}:
         return True
-    if suffix in {'.csv', '.jsonl'}:
+    if suffix in {'.csv', '.jsonl', '.cpuprofile'}:
         return True
     return is_screenshot(path)
 
@@ -283,6 +285,8 @@ def file_kind(zip_name: str) -> str:
         return 'performance summary'
     if base.endswith('.csv') or base.endswith('.jsonl'):
         return 'frame times'
+    if base.endswith('.cpuprofile'):
+        return 'CPU profile'
     if base.endswith(SHOT_SUFFIXES):
         return 'screenshot'
     return 'run file'

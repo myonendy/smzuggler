@@ -340,6 +340,36 @@ static int process_exit_status(JSEngine *js)
     return code;
 }
 
+/** Starts the optional V8 CPU profile requested by `--cpu-prof`.
+ *
+ * Why: path selection and start-up logging are one decision, so keeping them
+ * out of runtime_main leaves the entry point readable. `path` is borrowed
+ * from argv and may be NULL or empty, in which case the profile goes under
+ * `<state_dir>/profiles`; `state_dir` and `game_dir` are borrowed and may be
+ * NULL. Returns the caller-owned handle to pass to js_profiler_stop, or NULL
+ * after logging when no path can be chosen or V8 refuses to start. Main
+ * thread, before the first script is evaluated. */
+static js_profiler *start_cpu_profile(jsb_runtime *jsb, const char *path,
+                                      const char *state_dir, const char *game_dir)
+{
+    char default_path[1024];
+    const char *out = path;
+    if (!out || !out[0]) {
+        if (!js_profiler_default_path(state_dir, default_path, sizeof default_path)) {
+            error_handler_log(LOG_ERROR,
+                              "--cpu-prof needs a state directory; pass --cpu-prof=FILE");
+            return NULL;
+        }
+        out = default_path;
+    }
+    js_profiler *profiler = js_profiler_start(jsb, out, game_dir);
+    if (profiler)
+        error_handler_log(LOG_INFO, "CPU profile will be written to %s", out);
+    else
+        error_handler_log(LOG_ERROR, "Could not start the V8 CPU profiler");
+    return profiler;
+}
+
 /** Start the runtime on the main thread using borrowed CLI arguments; return
  * an exit status on startup failure or after releasing runtime resources. */
 static int runtime_main(int argc, char *argv[])
@@ -601,26 +631,9 @@ static int runtime_main(int argc, char *argv[])
     /* V8 samples only scripts once the profiler runs, so it starts before
        the first shim or game script is evaluated and stops before V8's
        isolate is destroyed. */
-    js_profiler *profiler = NULL;
-    if (cpu_prof_requested) {
-        char profile_path[1024];
-        const char *profile_out = cpu_prof_path;
-        if (!profile_out || !profile_out[0]) {
-            if (js_profiler_default_path(state_dir, profile_path, sizeof profile_path)) {
-                profile_out = profile_path;
-            } else {
-                error_handler_log(LOG_ERROR,
-                                  "--cpu-prof needs a state directory; pass --cpu-prof=FILE");
-            }
-        }
-        if (profile_out) {
-            profiler = js_profiler_start(jsb, profile_out, game_dir);
-            if (profiler)
-                error_handler_log(LOG_INFO, "CPU profile will be written to %s", profile_out);
-            else
-                error_handler_log(LOG_ERROR, "Could not start the V8 CPU profiler");
-        }
-    }
+    js_profiler *profiler = cpu_prof_requested
+                                ? start_cpu_profile(jsb, cpu_prof_path, state_dir, game_dir)
+                                : NULL;
 
     bind_io_define(jsb);
 

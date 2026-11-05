@@ -213,6 +213,7 @@ static void test_profile(void)
         "var keep = 0;\n"
         "for (var j = 0; j < 600; j++) keep += cpu_prof_marker(20000);\n";
     char root[TEST_PATH_MAX];
+    char game_arg[TEST_PATH_MAX];
     char js_dir[TEST_PATH_MAX];
     char script_path[TEST_PATH_MAX];
     char profile_path[TEST_PATH_MAX];
@@ -225,6 +226,9 @@ static void test_profile(void)
     snprintf(js_dir, sizeof js_dir, "%s/js", root);
     snprintf(script_path, sizeof script_path, "%s/main.js", js_dir);
     snprintf(profile_path, sizeof profile_path, "%s/profiles/run.cpuprofile", root);
+    /* A non-canonical --game ("js/..") must still strip to the same root;
+       without realpath the prefix check would miss and leave a host path. */
+    snprintf(game_arg, sizeof game_arg, "%s/js/..", root);
     test_rm_rf(root);
     note("scratch game directory exists");
     assert(test_mkdir_p(js_dir));
@@ -234,7 +238,7 @@ static void test_profile(void)
     note("V8 engine starts");
     assert(engine != NULL);
     note("profiler starts on the engine's isolate");
-    profiler = js_profiler_start(js_engine_get_jsb(engine), profile_path, root);
+    profiler = js_profiler_start(js_engine_get_jsb(engine), profile_path, game_arg);
     assert(profiler != NULL);
     note("hot script evaluates");
     assert(js_engine_eval_file(engine, script_path));
