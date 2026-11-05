@@ -126,6 +126,13 @@ binding error names/messages. It uses the adopted engine in quickjs mode and
 `smz_js_engine_v8` in v8 mode. Engine-generated Symbol conversion messages retain
 each engine's spelling. No JS handle or borrowed buffer survives a native call.
 
+When running integration tests from concurrent worktrees, give each run a private,
+existing `TMPDIR` (for example, `TMPDIR=$(mktemp -d) forge check`). The unchanged
+`title_screen` test creates and removes `rmmz_integration_test` under that root;
+runs sharing the root can delete each other's scripts midway through a test.
+This isolation preserves every assertion and avoids fixture races during I/O
+binding validation.
+
 The retained I/O parity test records these pre-port expectations:
 
 | Check | Expected value |
