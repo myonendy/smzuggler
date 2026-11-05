@@ -14,15 +14,28 @@ else()
     )
 endif()
 
-# Window, input and the graphics context platform_init() brings up. Built
-# against the selected backend: platform_sdl3.c creates a GL context for the
+# Window, input and the graphics context platform_init() brings up. The test
+# follows the selected backend: platform_sdl3.c creates a GL context for the
 # gl backend and a GPU device for the gpu one, and macOS caps OpenGL at 4.1,
 # so a GL build of this test could never pass there.
+#
+# On Linux the gate host has no Vulkan device, so a GPU build of this test
+# could never create a window; the OpenGL path works on the software renderer.
+# The runtime keeps its selected backend; only this window/context check uses
+# GL there.
+if(UNIX AND NOT APPLE)
+    set(RMMZ_TEST_PLATFORM_SOURCES ${CMAKE_SOURCE_DIR}/src/rendering/gl_loader.c)
+    set(RMMZ_TEST_PLATFORM_GL TRUE)
+else()
+    set(RMMZ_TEST_PLATFORM_SOURCES ${RMMZ_TEST_PLATFORM_RENDER_SOURCES})
+    set(RMMZ_TEST_PLATFORM_GL FALSE)
+endif()
+
 add_executable(test_platform
     test_platform.c
     ${CMAKE_SOURCE_DIR}/src/platform/platform_sdl3.c
     ${CMAKE_SOURCE_DIR}/src/input/input_manager.c
-    ${RMMZ_TEST_PLATFORM_RENDER_SOURCES}
+    ${RMMZ_TEST_PLATFORM_SOURCES}
 )
 
 target_include_directories(test_platform PRIVATE
@@ -35,7 +48,7 @@ target_link_libraries(test_platform PRIVATE
     ${RMMZ_SYS_LIBS}
 )
 
-if(RMMZ_RENDER_BACKEND STREQUAL "gpu")
+if(RMMZ_RENDER_BACKEND STREQUAL "gpu" AND NOT RMMZ_TEST_PLATFORM_GL)
     target_compile_definitions(test_platform PRIVATE RMMZ_RENDER_GPU)
     if(RMMZ_RUNTIME_SHADERS)
         target_compile_definitions(test_platform PRIVATE RMMZ_RUNTIME_SHADERS)

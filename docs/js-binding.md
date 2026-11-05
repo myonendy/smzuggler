@@ -57,9 +57,12 @@ single `.bin` cache written in an isolated host directory instead of adjacent
 bytecode. The two engine test registrations share a CTest resource lock because
 both now use the same V8 cache fixtures. CTest selects SDL's dummy audio driver:
 the real SDL mixer still advances playback without a host audio-server connection.
-The platform and surface inventory test sources stay unchanged. The GPU platform
-test requires a usable display and graphics driver; offscreen SDL cannot provide
-a Vulkan window, and a sandbox that blocks display sockets cannot run Xvfb.
+The platform and surface inventory test sources stay unchanged. On Linux the
+platform check builds its window/context path against OpenGL, because the gate
+host has no Vulkan device and the runtime keeps its selected GPU backend; the
+software renderer supplies the context. The new `js_engine_v8_jsb` test keeps the
+adoption coverage the removed QuickJS test provided, now through
+`js_engine_get_jsb()` on V8.
 
 ## Seam calls for binding ports (M1-T007b)
 

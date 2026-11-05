@@ -95,7 +95,24 @@ if(RMMZ_RENDER_BACKEND STREQUAL "gpu")
     endif()
 endif()
 
-# V8 is the sole engine; require the pinned offline install before dependencies.
+# V8 is the sole engine. A legacy SMZ_JS_ENGINE argument is only a migration
+# diagnostic: v8 is accepted when SMZ_V8_DIR is also given, anything else is
+# rejected. Normal builds omit the selector entirely.
+if(DEFINED SMZ_JS_ENGINE)
+    if(NOT SMZ_JS_ENGINE STREQUAL "v8")
+        message(FATAL_ERROR
+            "SMZ_JS_ENGINE must be omitted or v8, not '${SMZ_JS_ENGINE}'.")
+    endif()
+    if(NOT SMZ_V8_DIR)
+        message(FATAL_ERROR
+            "SMZ_JS_ENGINE=v8 needs SMZ_V8_DIR, the V8 install prefix. "
+            "Build it with tools/v8/build_v8.sh and pass "
+            "-DSMZ_V8_DIR=$SMZ_DEPS_DIR/v8/13.6.233.8 (docs/build-v8.md).")
+    endif()
+endif()
+
+# Require the pinned offline install before dependencies. Without the legacy
+# selector, use the standard dependency cache so the forge build stays offline.
 set(_smz_v8_default "$ENV{SMZ_V8_DIR}")
 if(NOT _smz_v8_default)
     if(DEFINED ENV{SMZ_DEPS_DIR})
