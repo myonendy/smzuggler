@@ -35,34 +35,15 @@ Status: core API (M1-T003), zero-copy buffers (M1-T005) and persistent callbacks
 (M1-T006). The library target is `smz_jsb`; `jsb.h` itself is plain C11 and includes no C++ or V8 header (checked by
 `tests/smz/test_jsb_header.c` on V8).
 
-V8 is the sole engine (M1-T027). CMake imports the pinned prebuilt monolith;
-there is no engine selector or alternate seam implementation. The former
-backend and adoption bridge have been removed, ending DEC-SETUP-003.
+V8 is the sole engine (M1-T027); the former backend and adoption bridge
+have been removed, ending DEC-SETUP-003. CMake imports the prebuilt monolith
+from the `SMZ_V8_DIR` CMake setting, then `$SMZ_V8_DIR`, then
+`$SMZ_DEPS_DIR/v8/<pin>` (using `SMZ_V8_VERSION_PIN` in `cmake/V8.cmake`),
+with the standard offline dependency cache as the fallback; the surface inventory
+observer follows the host-owned `process` accessor and leaves other getters
+uncalled to avoid browser/device side effects.
 
-The prefix comes from `SMZ_V8_DIR`, then `$SMZ_V8_DIR` or
-`$SMZ_DEPS_DIR/v8/13.6.233.8`; the standard offline dependency cache is the
-fallback when those environment variables are unset. No dependency is downloaded.
-The host-owned `process` accessor is followed by the surface inventory observer;
-other getters remain uncalled to avoid browser/device side effects.
-
-M1-T027 removes the QuickJS-only `test_jsb_adopt.c` and
-`test_jsb_transitional.c`, their registration fragments, and
-`jsb_core_transitional.cmake`. Shared test sources retain every V8 and neutral
-check: input/I/O drop alternate Symbol messages, error-handler drops engine
-skips, engine tests drop the adoption-only case, and microtasks drop phase-only
-orders/skips. Registration fragments now link V8 exclusively; `jsb_enum` and
-`jsb_values` retain their V8 targets and drop duplicate transitional targets.
-Storage replaces only the Promise-based tick order, and performance checks the
-single `.bin` cache written in an isolated host directory instead of adjacent
-bytecode. The two engine test registrations share a CTest resource lock because
-both now use the same V8 cache fixtures. CTest selects SDL's dummy audio driver:
-the real SDL mixer still advances playback without a host audio-server connection.
-The platform and surface inventory test sources stay unchanged. On Linux the
-platform check builds its window/context path against OpenGL, because the gate
-host has no Vulkan device and the runtime keeps its selected GPU backend; the
-software renderer supplies the context. The new `js_engine_v8_jsb` test keeps the
-adoption coverage the removed QuickJS test provided, now through
-`js_engine_get_jsb()` on V8.
+The platform test follows `RMMZ_RENDER_BACKEND` unchanged.
 
 ## Seam calls for binding ports (M1-T007b)
 
@@ -373,7 +354,7 @@ DEC-M1-T011). It holds no JS value: it reaches JS only through
 | Call | Behaviour |
 | --- | --- |
 | `error_handler_report_js_error(engine, message, stack, fatal)` | Logs `JS Exception: <message>` and `Stack trace:` (scrubbed), runs the shim's `__error_handler_dispatch(message, error)`, then a dialog if `fatal`. `engine` NULL skips dispatch. |
-| `error_handler_on_jsb_error(message, stack, user)` | A `jsb_error_fn`: `jsb_set_error_handler(rt, error_handler_on_jsb_error, NULL)` sends jsb callback exceptions to this log instead of stderr. Declared without `jsb.h`, so it builds in V8. Whoever owns the runtime installs it; `js_engine_v8.cc` does not yet (not this card's file). |
+| `error_handler_on_jsb_error(message, stack, user)` | A `jsb_error_fn`: `jsb_set_error_handler(rt, error_handler_on_jsb_error, NULL)` sends jsb callback exceptions to this log instead of stderr. Declared without `jsb.h`, so error_handler has no seam dependency. Whoever owns the runtime installs it; `js_engine_v8.cc` does not yet (not this card's file). |
 | `error_handler_attempt_auto_save(engine)` | Runs the shim's `__error_handler_autoSave`; true if it returned non-zero. |
 
 * **Text in, script out.** Message and stack (each cut at 4096 bytes) are escaped into a
