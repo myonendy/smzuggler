@@ -58,7 +58,7 @@ class CpuProfileBundleTests(unittest.TestCase):
                 'id': 1,
                 'callFrame': {
                     'functionName': 'game_hot_path',
-                    'url': 'file:///home/fakeaccount/game/js/main.js',
+                    'url': (Path(self.env['HOME']) / 'game/js/main.js').as_uri(),
                 },
             }],
             'samples': [1],
