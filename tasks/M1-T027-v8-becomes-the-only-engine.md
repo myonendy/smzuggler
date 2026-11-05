@@ -2,7 +2,7 @@
 id = "M1-T027"
 title = "V8 becomes the only engine"
 milestone = 1
-deps = ["M1-T026", "M1-T026b", "M1-T008", "M1-T010", "M1-T012", "M1-T013"]
+deps = ["M1-T026", "M1-T026b", "M1-T026c", "M1-T008", "M1-T010", "M1-T012", "M1-T013"]
 agent = "any"
 owns = ["src/jsb/**", "src/engine/**", "CMakeLists.txt", "third_party/CMakeLists.txt", "ARCHITECTURE.md"]
 docs = ["ARCHITECTURE.md", "docs/js-binding.md", "CHANGELOG.md"]
