@@ -42,6 +42,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Add `--cpu-prof[=FILE]`, which records V8's CPU samples and writes a game-relative Chrome DevTools `.cpuprofile` on exit. (M1-T028)
 - Remove the former engine and build exclusively on V8. (M1-T027)
 - Make V8 jsb functions non-constructable, assert V8's `.bin` code-cache layout and report a throwing nextTick once. (M1-T026c)
 - Share the ArrayBuffer brand check in jsb and define native functions non-enumerably. (M1-T026b)

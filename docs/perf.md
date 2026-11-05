@@ -2,6 +2,7 @@
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
 Modified 2026-11-01: document the Map 92 report tool and owner-run recipe.
+Modified 2026-11-05: document the runtime's --cpu-prof recording.
 How to record a CPU profile (tools/perf/attribute.py), turn a Map 92 run into
 the M0 report (tools/perf/map92_report.py), and measure the shipped binary
 (tools/perf/binsize.py). Repository tooling, not part of the runtime.
@@ -66,6 +67,36 @@ second table lists the 20 heaviest innermost frames with their self bucket.
 All DSOs become basenames and every absolute path or `file://` URL inside a
 symbol becomes its basename before it is written. Still run the privacy
 `--paths` scan before sharing a report, and never commit one from a game run.
+
+## CPU profiles from the runtime (`--cpu-prof`)
+
+V8's own sampler answers the other half of the JS question: which game or
+shim function a frame spends its time in, without `perf`, JIT symbol maps or
+root. `--cpu-prof` starts the profiler before the first shim or game script
+runs and writes a Chrome DevTools `.cpuprofile` when the runtime exits.
+
+```sh
+./build/smzuggler-rt --game <game-dir> --cpu-prof
+./build/smzuggler-rt --game <game-dir> --cpu-prof=run/my-run.cpuprofile
+```
+
+Without `=FILE` the file is
+`$XDG_STATE_HOME/smzuggler-rt/profiles/cpu-<pid>-<unix time>.cpuprofile`
+(`$HOME/.local/state/smzuggler-rt/profiles/` when `XDG_STATE_HOME` is unset),
+or under the `--data-dir` directory when one is passed; parent directories
+are created. An explicit path is used as given. A relative path is relative
+to the working directory.
+
+Open the file with the DevTools **Performance** panel's *Load profile*
+button. It is the standard JSON object with `nodes`, `samples` and
+`timeDeltas`; every node names its function and source. Script URLs are
+relative to the game root (`js/main.js`, `data/...`), as NW.js shows them,
+so a profile can be shared without revealing the host directory layout.
+
+The sampling interval is 100 µs. This records JavaScript only: native frames
+(Canvas2D, texture upload, GPU submit, GC) still need the `perf` recording
+above, so use both when a frame is split between JS and native work. Profiles
+are runtime output, never commit one from a game run.
 
 ## Bucket rules
 

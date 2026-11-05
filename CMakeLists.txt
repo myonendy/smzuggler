@@ -11,6 +11,7 @@
 # Modified 2026-11-01: add the script watchdog thread to smz_js_engine_v8.
 # Modified 2026-11-04: add the V8 code cache store smz_js_codecache.
 # Modified 2026-11-04: size V8 recursion for the process main thread.
+# Modified 2026-11-05: add the optional V8 CPU profiler (--cpu-prof).
 # Build orchestration; see docs/DECISIONS.md (DEC-M0-T001).
 
 cmake_minimum_required(VERSION 3.20)
@@ -279,6 +280,7 @@ target_link_libraries(outsider PRIVATE
     SDL3::SDL3
     ${RMMZ_GL_LIB}
     smz_js_engine_v8
+    smz_js_profiler
     soloud
     ${RMMZ_SYS_LIBS}
 )
@@ -350,6 +352,14 @@ target_include_directories(smz_js_engine_v8 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/s
 target_compile_definitions(smz_js_engine_v8
     PUBLIC SMZ_JS_ENGINE_V8
     PRIVATE SMZ_V8_ICU_DATA_PATH="${SMZ_V8_ICU_DATA}")
+
+# --cpu-prof records V8's own samples and writes a DevTools .cpuprofile.
+add_library(smz_js_profiler STATIC src/engine/js_profiler.cc)
+target_link_libraries(smz_js_profiler PUBLIC smz::v8 smz_jsb smz_js_codecache)
+target_include_directories(smz_js_profiler PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+if(NOT MSVC)
+    target_compile_options(smz_js_profiler PRIVATE -Wall -Wextra)
+endif()
 
 # Tests
 if(RMMZ_BUILD_TESTS)

@@ -9,6 +9,7 @@
  * Modified 2026-11-01: default logs, .jsc cache and config to host data dirs.
  *
  * Modified 2026-11-04: keep runtime services on the process main thread.
+ * Modified 2026-11-05: start an optional V8 CPU profile from --cpu-prof.
  *
  * Runtime entry point; owns startup and shutdown on the main thread.
  * See docs/DECISIONS.md (DEC-M0-T001) for identity ownership.
@@ -127,6 +128,7 @@ bool rmmz_resolve_log_dir(int argc, char **argv, const char *game_dir,
 #endif
 #include "smzuggler/dump_surface.h"
 #include "engine/js_engine.h"
+#include "engine/js_profiler.h"
 #include "engine/game_loop.h"
 #include "engine/script_loader.h"
 #include "bindings/bind_io.h"
@@ -362,6 +364,8 @@ static int runtime_main(int argc, char *argv[])
     const char *dump_path = NULL;
     bool share_requested = false;
     const char *share_path = NULL;
+    bool cpu_prof_requested = false;
+    const char *cpu_prof_path = NULL;
 #ifdef SMZUGGLER_NAME
     SmzHostDirs host_dirs = {0};
 #else
@@ -411,6 +415,13 @@ static int runtime_main(int argc, char *argv[])
             /* Automation: take eval/screenshot commands from stdin (see
                game_loop_enable_control and tools/visual_eval.py). */
             control_mode = true;
+        } else if (strcmp(argv[i], "--cpu-prof") == 0) {
+            /* Record a V8 CPU profile; the default path is under the state
+               dir (see js_profiler_default_path). */
+            cpu_prof_requested = true;
+        } else if (strncmp(argv[i], "--cpu-prof=", 11) == 0) {
+            cpu_prof_requested = true;
+            cpu_prof_path = argv[i] + 11;
         } else if (strcmp(argv[i], "--no-audio") == 0) {
             no_audio = 1;
         } else if (strcmp(argv[i], "--data-dir") == 0 ||
@@ -492,6 +503,14 @@ static int runtime_main(int argc, char *argv[])
         snprintf(console_log_buf, sizeof(console_log_buf), "%s/console.log", log_dir_buf);
         console_log_path = console_log_buf;
     }
+#endif
+
+    /* Directory for a default --cpu-prof file: next to the logs, which are
+       already the host state directory (or an explicit --data-dir). */
+#ifdef SMZUGGLER_NAME
+    const char *state_dir = host_dirs.log_dir;
+#else
+    const char *state_dir = log_dir_buf[0] ? log_dir_buf : NULL;
 #endif
 
     /* GUI-subsystem builds start without stdout/stderr; attach to the parent
@@ -578,6 +597,30 @@ static int runtime_main(int argc, char *argv[])
     }
 
     jsb_runtime *jsb = js_engine_get_jsb(js);
+
+    /* V8 samples only scripts once the profiler runs, so it starts before
+       the first shim or game script is evaluated and stops before V8's
+       isolate is destroyed. */
+    js_profiler *profiler = NULL;
+    if (cpu_prof_requested) {
+        char profile_path[1024];
+        const char *profile_out = cpu_prof_path;
+        if (!profile_out || !profile_out[0]) {
+            if (js_profiler_default_path(state_dir, profile_path, sizeof profile_path)) {
+                profile_out = profile_path;
+            } else {
+                error_handler_log(LOG_ERROR,
+                                  "--cpu-prof needs a state directory; pass --cpu-prof=FILE");
+            }
+        }
+        if (profile_out) {
+            profiler = js_profiler_start(jsb, profile_out, game_dir);
+            if (profiler)
+                error_handler_log(LOG_INFO, "CPU profile will be written to %s", profile_out);
+            else
+                error_handler_log(LOG_ERROR, "Could not start the V8 CPU profiler");
+        }
+    }
 
     bind_io_define(jsb);
 
@@ -668,6 +711,7 @@ static int runtime_main(int argc, char *argv[])
         }
         bind_filters_shutdown();
         filters_shutdown();
+        js_profiler_stop(profiler);
         js_engine_shutdown(js);
         platform_shutdown(platform);
         error_handler_shutdown();
@@ -712,6 +756,7 @@ static int runtime_main(int argc, char *argv[])
     bind_filters_shutdown();
     filters_shutdown();
     int exit_status = process_exit_status(js);
+    js_profiler_stop(profiler);
     js_engine_shutdown(js);
     platform_shutdown(platform);
     error_handler_log(LOG_INFO, "Shutdown complete");
