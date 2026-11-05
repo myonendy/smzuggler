@@ -33,7 +33,7 @@
 /* Resolve JS argument `index` to an absolute path under the game root.
  *
  * Why: loadImage takes game-relative URLs; file_io keeps them inside the
- * game folder. The argument is coerced with ToString, as JS_ToCString did.
+ * game folder. The argument is coerced with ToString, as the original binding did.
  * Returns the converted string (caller frees with jsb_free_str) and fills
  * `out` (`out_size` bytes), or NULL with a pending exception: the
  * conversion's own, or a TypeError when the path escapes the root. */
@@ -74,9 +74,9 @@ static jsb_val *make_image_result(jsb_ctx *ctx, ImageHandle handle)
 
 /* Returns whether argument `index` is a plain ArrayBuffer, not a view.
  *
- * Why: upstream read buffers with JS_GetArrayBuffer, which takes only an
+ * Why: upstream read buffers directly, accepting only an
  * ArrayBuffer, while jsb_arg_bytes also takes TypedArrays and DataViews.
- * Call it only after jsb_arg_bytes succeeded on `index`: of those three,
+ * Among those three,
  * only views have a `byteOffset` (an inherited getter). Fails, with the
  * exception pending, only if a getter threw. */
 static bool arg_is_array_buffer(jsb_ctx *ctx, int index, bool *out)
@@ -97,8 +97,8 @@ static bool arg_array_buffer(jsb_ctx *ctx, int index,
                              uint8_t **buf, size_t *size)
 {
     bool is_ab = false;
-    if (!jsb_arg_bytes(ctx, index, buf, size) ||
-        !arg_is_array_buffer(ctx, index, &is_ab) || !is_ab) {
+    if (!arg_is_array_buffer(ctx, index, &is_ab) || !is_ab ||
+        !jsb_arg_bytes(ctx, index, buf, size)) {
         jsb_clear_exception(ctx);
         return false;
     }
@@ -274,22 +274,26 @@ static void js_clear_cache(jsb_ctx *ctx)
 
 /* Reads decodeApng's argument: an ArrayBuffer or a TypedArray view.
  *
- * Why: upstream took JS_GetArrayBuffer, then JS_GetTypedArrayBuffer, so a
+ * Why: upstream tried an ArrayBuffer, then a TypedArray, so a
  * DataView was refused; jsb_arg_bytes accepts it, so it is refused here
  * (a DataView has `byteOffset` but no `BYTES_PER_ELEMENT`). Returns false
  * with no exception pending for anything else. Bytes are borrowed. */
 static bool apng_arg_bytes(jsb_ctx *ctx, uint8_t **buf, size_t *size)
 {
     bool is_ab = false;
-    if (!jsb_arg_bytes(ctx, 0, buf, size) ||
-        !arg_is_array_buffer(ctx, 0, &is_ab)) {
+    if (!arg_is_array_buffer(ctx, 0, &is_ab)) {
         jsb_clear_exception(ctx);
         return false;
     }
-    if (is_ab) return true;
-    /* Accept a typed array view as well. */
-    jsb_val *bpe = jsb_get_prop(ctx, jsb_arg_val(ctx, 0), "BYTES_PER_ELEMENT");
-    if (!bpe || jsb_val_type(ctx, bpe) == JSB_TYPE_UNDEFINED) {
+    if (!is_ab) {
+        jsb_val *bpe = jsb_get_prop(ctx, jsb_arg_val(ctx, 0), "BYTES_PER_ELEMENT");
+        if (!bpe || jsb_val_type(ctx, bpe) == JSB_TYPE_UNDEFINED) {
+            jsb_clear_exception(ctx);
+            return false;
+        }
+    }
+    /* Read bytes last: property getters can detach the backing buffer. */
+    if (!jsb_arg_bytes(ctx, 0, buf, size)) {
         jsb_clear_exception(ctx);
         return false;
     }
@@ -377,6 +381,8 @@ static const char image_hide_fns_js[] =
     "  });\n"
     "})(__native_image);\n";
 
+/* Define the shim bridge on the borrowed runtime, on the main thread.
+ * No handles survive setup; errors return false and are printed to stderr. */
 bool bind_image_define(jsb_runtime *rt)
 {
     if (!rt) {
@@ -395,6 +401,7 @@ bool bind_image_define(jsb_runtime *rt)
 }
 
 #ifdef SMZ_JSB_ADOPT
+/* Keep old engine callers working until M1-T026; ctx is borrowed. */
 void bind_image_register(struct JSContext *ctx)
 {
     bind_image_define(jsb_runtime_of(ctx));
