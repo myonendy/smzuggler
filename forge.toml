@@ -15,7 +15,7 @@ Copyright (C) 2026 The smzuggler contributors
 [agents]
 # Claude is review-only in this project (owner, 2026-10-30): never a worker, implementer,
 # fallback worker, planner or auditor. Same shape as the earlier project used for review-only Claude.
-workers = ["codex"]  # OWNER 2026-11-04: Codex does the work; Claude writes only when Codex is cooling down
+workers = ["codex", "or-deepseek"]  # OWNER 2026-11-04: Codex and DeepSeek (OpenRouter) do the work; Claude writes only when both are cooling down
 fallback_workers = ["claude"]  # OWNER 2026-11-04: Claude mostly reviews; grok removed 2026-11-01
 reviewer = "cross"                 # never the author; prefers another model family and CLI
 self_review_fallback = true        # author reviews only when every other reviewer is cooling
@@ -82,6 +82,20 @@ monthly_usd = 80.0
 timeout_min = 40
 hide = ["~/.config/smzuggler-rt", "~/Documents/GrokBot/smuggler-saves"]
 
+# DeepSeek V4.1 Flash (1017 snapshot) through OpenRouter at API prices (owner, 2026-11-04).
+# Owner cap: $25 per 30 days, enforced by [pools.openrouter] below.
+[agents.or-deepseek]
+harness = "opencode"
+pool = "openrouter"
+model = "openrouter/deepseek/deepseek-v4.1-flash-1017"
+family = "deepseek"
+timeout_min = 40
+hide = ["~/.config/smzuggler-rt", "~/Documents/GrokBot/smuggler-saves"]
+
+[pools.openrouter]
+usd_30d = 25.0                     # OWNER 2026-11-04: $25 a month
+plan_limit_re = "requires more credits|insufficient credits|key limit"
+
 # Plan-wide OpenCode Go cap. Keep identical in every project that uses the pool.
 [pools.opencode-go]
 usd_5h = 2.25
@@ -91,7 +105,7 @@ usd_30d = 0
 [budget]
 max_attempts = 4                   # worker attempts per task (gate + review loops)
 max_total_usd = 150.0              # OWNER: estimated Claude spend cap, raised 50 -> 100 -> 150 (2026-11-01, 2026-11-04)
-max_agent_runs = 400               # OWNER: raised 200 -> 250 -> 300 -> 350 -> 400 (2026-11-01, 2026-11-04; an earlier project used 800)
+max_agent_runs = 500               # OWNER: raised 200 -> 250 -> 300 -> 350 -> 400 -> 500 (2026-11-01, 2026-11-04; an earlier project used 800)
 limit_cooldown_min = 60
 max_gate_output_lines = 60
 max_review_diff_chars = 60000
