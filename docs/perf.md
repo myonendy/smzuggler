@@ -98,10 +98,9 @@ can be shared without revealing the host directory layout.
 The sampling interval is 100 µs. This records JavaScript only: native frames
 (Canvas2D, texture upload, GPU submit, GC) still need the `perf` recording
 above, so use both when a frame is split between JS and native work. Profiles
-are runtime output, never commit one from a game run. The share packager
-currently omits `.cpuprofile` files: adding them to its allowlist requires
-a scope correction for M1-T028. Keep the profile separately when collecting
-a run bundle until that change is authorized by the scope gate.
+are runtime output, never commit one from a game run. `tools/share/make_bundle.py`
+collects `.cpuprofile` files under `profiles/` and scrubs them like any other
+text artefact, so a shared run bundle carries the profile without host paths.
 
 ## Bucket rules
 
