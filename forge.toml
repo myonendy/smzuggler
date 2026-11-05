@@ -6,6 +6,7 @@ name = "smzuggler"
 main_branch = "main"
 spec = "docs/spec/SPEC.md"        # v0.5.1, protected; see docs/spec/README.md
 strict_milestones = true          # never start milestone N+1 before N is fully merged
+forge_changelog = false          # agents add their own CHANGELOG.md line (AGENTS.md section 6; owner, 2026-11-05)
 commit_style = "descriptive"      # forge commits use the worker's COMMIT SUBJECT + Card/Forge-Attempt trailers (docs/FORGE.md)
 generated_header = """<!--
 SPDX-License-Identifier: GPL-3.0-or-later
