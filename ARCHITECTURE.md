@@ -1,6 +1,7 @@
 <!--
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
+Modified 2026-11-05: describe V8 as the only runtime engine.
 Modified 2026-11-01: document the fork evaluator entry point and scenarios.
 Architecture guide for contributors replacing browser and NW.js services.
 Keep current Outsider behavior distinct from planned smzuggler behavior;
@@ -13,7 +14,7 @@ smzuggler is an independent, open-source RPG Maker MZ runtime based on Outsider
 by General Arcade. It runs locally installed game JavaScript against native
 platform, graphics and media services instead of a browser/NW.js wrapper; it
 ships no game content and is not affiliated with the game or engine authors.
-The inherited runtime currently uses QuickJS, SDL3, native rendering and SoLoud.
+The runtime uses V8, SDL3, native rendering and SoLoud.
 smzuggler is moving to V8 and a WebGL2-oriented compatibility stack; that target
 is a plan, not a description of completed migration work. See the
 [specification](docs/spec/SPEC.md) for the target API requirements.
@@ -23,7 +24,7 @@ is a plan, not a description of completed migration work. See the
 ```mermaid
 flowchart LR
     P[Platform: SDL3] --> L[Game loop]
-    L --> J[QuickJS today / V8 from M1]
+    L --> J[V8]
     J --> S[Browser and Node shims]
     S --> N[Native rendering / Canvas2D / audio / video]
     N --> D[GPU and audio device]
@@ -42,8 +43,8 @@ provenance does not imply every file in it is unchanged upstream code.
 One runtime process owns one game session. The main thread creates the SDL
 window, graphics context and JS engine, evaluates scripts, polls events and
 presents frames. JS values and native graphics resources stay on that thread;
-callbacks into JavaScript must return there. `src/engine/js_engine.c` owns the
-QuickJS runtime/context and pending-job execution. `src/main.c:main` coordinates
+callbacks into JavaScript must return there. `src/engine/js_engine_v8.cc` owns the
+V8 isolate/context and explicit microtask checkpoints. `src/main.c:main` coordinates
 service lifetimes and tears down graphics resources before the platform context.
 
 SoLoud's mixer thread consumes audio independently. The streaming PCM ring in
@@ -59,8 +60,8 @@ queues them under a mutex; the main loop consumes them and performs evaluation
 or screenshots. It never evaluates JS on the reader thread. Shutdown detaches
 that potentially blocked reader and deliberately leaves its queue alive until
 process exit. This is inherited debug behavior, not a general worker model.
-V8 platform workers and isolate lifetime rules belong to the M1 migration;
-QuickJS handles must not escape into that future seam.
+V8 platform workers never enter the isolate. Only the main thread owns JS
+handles, following [the binding lifetime rules](docs/js-binding.md#handle-rules).
 
 ## Startup to the first frame
 
@@ -70,7 +71,7 @@ QuickJS handles must not escape into that future seam.
    packaged game directory beside the executable, with Android-specific setup.
 2. `src/platform/platform_sdl3.c:platform_init` creates the platform/window/context.
    Main adjusts default sizing for desktop scale, then
-   `src/engine/js_engine.c:js_engine_init` creates QuickJS.
+   `src/engine/js_engine_v8.cc:js_engine_init` creates V8.
 3. Main registers IO, images, Canvas2D, fonts, renderer, filters, tilemap, audio,
    input, platform, effects and video bindings. Native services are initialized
    before their dependent scripts; IO receives the selected game root.
@@ -123,7 +124,7 @@ after normal script startup and before the loop runs.
 1. Cache JS callbacks on first use, dispatch queued control commands, arm the
    script watchdog, poll SDL events, propagate resize/input and update gamepads.
 2. Flush timers.
-3. Drain QuickJS pending jobs (promise/microtask work).
+3. Run V8 microtask checkpoints (promise/microtask work).
 4. Flush rAF callbacks with elapsed milliseconds. Game update and native drawing
    occur through these callbacks. Drain jobs again, then advance/draw video using
    elapsed seconds since the previous frame start.
@@ -146,20 +147,17 @@ phase. Changing that ordering is runtime work beyond this architecture guide.
 
 ## JavaScript ↔ native seam
 
-Today `src/engine/js_engine.h` exposes QuickJS types and evaluation/job APIs;
-`src/bindings/` directly uses QuickJS to register native objects and functions.
-Shims translate browser, NW.js and Node-facing calls into these native services.
-For example, `src/shims/storage_shim.js` supplies process/require/filesystem
-compatibility over `src/bindings/bind_io.c`, while
-`src/shims/canvas2d_shim.js` uses `src/bindings/bind_canvas2d.c`.
-Treat JS handles according to QuickJS ownership rules and release temporary
-values on the owning main thread; native service ownership remains with main
-and the corresponding service rather than the shim.
+`src/engine/js_engine.h` exposes opaque engine evaluation and checkpoint APIs.
+`src/bindings/` uses the C seam `src/jsb/jsb.h`, implemented solely by
+`src/jsb/jsb_v8.cc`, to register native objects and functions. Shims translate
+browser, NW.js and Node calls into native services. The engine owns the jsb
+runtime; native services remain owned by main and their service modules.
 
-From M1, the planned jsb abstraction will isolate the V8-specific implementation
-from C services and binding consumers. It does not exist in this checkout.
-Add API semantics in the relevant shim/service pair, with compatibility tests;
-do not spread new engine-specific handle assumptions into unrelated services.
+All JS runs on the main thread. Call-scoped handles never escape; retained
+callbacks have one owner and release their V8 Globals before isolate disposal.
+See [JS binding](docs/js-binding.md) for lifetime, cache and checkpoint contracts.
+Code caches live in the host cache directory, keyed by source, V8 version and
+flags; evaluating a game script never writes beside it.
 
 ## Game, save and runtime directories
 
@@ -206,7 +204,7 @@ changes together.
 | --- | --- |
 | `src/` | Runtime entry point and service composition; upstream with fork identity changes. |
 | `src/audio/` | SoLoud mixing, decoding and PCM streaming; upstream. |
-| `src/bindings/` | QuickJS registrations bridging shims to native services; upstream. |
+| `src/bindings/` | C jsb registrations bridging shims to native services; upstream. |
 | `src/effects/` | Native effects backend integration; upstream. |
 | `src/engine/` | Script engine, loader, frame loop and errors; upstream with fork log privacy. |
 | `src/input/` | Native keyboard, mouse and controller state; upstream. |

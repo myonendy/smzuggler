@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The smzuggler contributors
+// Modified 2026-11-05: remove former engine migration contracts.
 //
 // The script watchdog's timer thread; the contract is in js_watchdog.h.
 //
 // Why: V8 can only stop a runaway script from another thread (spec section
 // 4.1, item 3), so the engine needs a thread that sleeps until the current
-// deadline and calls back once. It replaces QuickJS's polled interrupt
+// deadline and calls back once. It replaces the former polled interrupt
 // handler. See docs/js-binding.md, "Watchdog".
 //
 // Rules:

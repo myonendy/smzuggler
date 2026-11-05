@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-05: remove former engine migration contracts.
  * Modified 2026-11-04: value, coercion, array, error and length calls the
  * binding ports need (card M1-T007b).
  * Modified 2026-11-05: share the ArrayBuffer brand check and define native
@@ -7,11 +8,11 @@
  *
  * jsb: the small C seam through which native bindings talk to the JS engine.
  *
- * Why: Outsider's bindings (src/bindings/) are C written against QuickJS.
+ * Why: The bindings (src/bindings/) are C and need opaque engine handles.
  * spec section 4.1 moves them to V8 by near-mechanical rewriting onto this
  * header, so upstream fixes to those bindings still re-apply with small
  * diffs. It is not an engine abstraction: its one real implementation is
- * src/jsb/jsb_v8.cc (the QuickJS backend of DEC-SETUP-008 is transitional).
+ * src/jsb/jsb_v8.cc.
  * See docs/js-binding.md for the full API guide.
  *
  * Rules a reader must not break (spec section 15.8, docs/js-binding.md):
@@ -73,15 +74,14 @@ typedef void (*jsb_free_fn)(void *data, size_t len, void *user);
  * Why: tests force garbage collection through `gc()`, and V8 freezes its
  * flags once it starts, so they must be set before it does. `flags` is
  * borrowed. Returns false, after printing why, when an engine has already
- * started (the flags would be ignored or crash V8). The transitional QuickJS
- * backend honours "--expose-gc" and ignores flags that only tune V8.
+ * started (the flags would be ignored or crash V8).
  * Main thread only. */
 bool jsb_set_flags(const char *flags);
 
 /* Creates an engine instance with one global context.
  *
  * Why: bindings need a live engine to be defined in and tested against;
- * js_engine.c will create its runtime through this once it moves to V8.
+ * js_engine_v8.cc creates its runtime through this entry point.
  * `argv0` is the program path and `icu_data_path` the path of icudtl.dat
  * (both borrowed, not kept). The first call initialises the engine for the
  * whole process, which is never undone. Returns NULL and prints the reason
@@ -489,7 +489,7 @@ void jsb_throw_error(jsb_ctx *ctx, const char *fmt, ...);
 /* Throws an InternalError (JS_ThrowInternalError; JS_ThrowOutOfMemory is
  * jsb_throw_internal(ctx, "out of memory")); otherwise as jsb_throw_type.
  * V8 has no InternalError, so there it is an Error whose own `name` is
- * "InternalError": String(e) and e.name match QuickJS, e instanceof Error
+ * "InternalError": String(e) and e.name preserve the binding contract, e instanceof Error
  * holds on both. */
 void jsb_throw_internal(jsb_ctx *ctx, const char *fmt, ...);
 

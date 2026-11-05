@@ -1,9 +1,9 @@
 /*
  * Copyright (c) 2026 General Arcade (Pte. Ltd.)
  * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-05: remove the former pending-exception adapter.
  * Modified 2026-11-01: add error_handler_report_js_error and
- *   error_handler_on_jsb_error; report_js_exception becomes a QuickJS-only
- *   inline (card M1-T011).
+ *   error_handler_on_jsb_error; all reporting uses engine-neutral strings.
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
  */
 
@@ -60,41 +60,7 @@ void error_handler_show_error_dialog(const char *title, const char *message);
 void error_handler_report_js_error(void *engine, const char *message,
                                    const char *stack, bool fatal);
 
-#ifndef SMZ_JS_ENGINE_V8
-#include "engine/js_engine.h"
-#include <quickjs.h>
 
-/* Take QuickJS's pending exception and report it as
-   error_handler_report_js_error does. engine is a borrowed JSEngine* (NULL
-   does nothing). The exception is consumed, also when it cannot be converted
-   to a string. Main thread.
-   Why it is an inline here: V8 has no pending exception, so no engine-neutral
-   code calls this; only the QuickJS-era tests (tests/test_error_handler.c)
-   do. Keeping it out of error_handler.c keeps that file free of QuickJS
-   (DEC-M1-T011). QuickJS mode only (not declared when SMZ_JS_ENGINE_V8 is
-   defined); removed with QuickJS by M1-T027. */
-static inline void error_handler_report_js_exception(void *engine, bool fatal)
-{
-    JSContext *ctx = engine ? js_engine_get_context((JSEngine *)engine) : NULL;
-    if (!ctx) return;
-
-    JSValue exc = JS_GetException(ctx);
-    const char *msg = JS_ToCString(ctx, exc);
-    const char *stack = NULL;
-    if (JS_IsError(ctx, exc)) {
-        JSValue stack_val = JS_GetPropertyStr(ctx, exc, "stack");
-        if (!JS_IsUndefined(stack_val)) stack = JS_ToCString(ctx, stack_val);
-        JS_FreeValue(ctx, stack_val);
-    }
-    JS_FreeValue(ctx, exc);
-    /* A failed conversion throws again; drop that so dispatch can run. */
-    JS_FreeValue(ctx, JS_GetException(ctx));
-
-    error_handler_report_js_error(engine, msg, stack, fatal);
-    if (msg) JS_FreeCString(ctx, msg);
-    if (stack) JS_FreeCString(ctx, stack);
-}
-#endif
 
 /* A jsb_error_fn (src/jsb/jsb.h) for jsb_set_error_handler(rt,
    error_handler_on_jsb_error, NULL): exceptions thrown by jsb callbacks

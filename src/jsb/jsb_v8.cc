@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The smzuggler contributors
+// Modified 2026-11-05: remove former engine migration contracts.
 // Modified 2026-11-04: the seam calls of card M1-T007b; native calls run
 // inside a TryCatch so jsb_clear_exception can drop an error.
 // Modified 2026-11-05: share the ArrayBuffer brand check and define native
@@ -514,7 +515,7 @@ bool jsb_set_fn(jsb_ctx *ctx, jsb_val *obj, const char *name, jsb_fn fn) {
 
 // See jsb.h: jsb_set_fn_n. V8 takes the `length` when making the function.
 // kThrow makes the function non-constructable, so unlike a plain V8 function
-// it has no `prototype`, `arguments` or `caller` own properties; QuickJS's
+// it has no `prototype`, `arguments` or `caller` own properties; the inherited binding's
 // JS_CFUNC_DEF functions have only `length` and `name` too. `name` is set
 // below and `length` is the `length` argument.
 bool jsb_set_fn_n(jsb_ctx *ctx, jsb_val *obj, const char *name, jsb_fn fn,
@@ -873,7 +874,7 @@ jsb_val *jsb_new_str(jsb_ctx *ctx, const char *utf8_text) {
 }
 
 // See jsb.h: jsb_new_str_len. A string over V8's length limit is a
-// RangeError, like QuickJS's.
+// RangeError, like the inherited binding's.
 jsb_val *jsb_new_str_len(jsb_ctx *ctx, const char *utf8_text, size_t len) {
     if (!utf8_text && len > 0) {
         jsb_throw_type(ctx, "jsb_new_str_len: NULL string");

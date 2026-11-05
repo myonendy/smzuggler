@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-05: remove former-engine-only branches; retain V8 checks.
  * Modified 2026-11-04: default-mode get_jsb is now the adopted runtime
  * (card M1-T007b), so its assertion expects non-NULL.
  *
@@ -20,9 +21,7 @@
 #include "engine/js_engine.h"
 #include "test_paths.h"
 
-#ifdef SMZ_JS_ENGINE_V8
 #include "jsb.h"
-#endif
 
 #include <assert.h>
 #include <stdbool.h>
@@ -104,7 +103,6 @@ static void test_stack_names_file_and_line(void)
     test_rm_rf(dir);
 }
 
-#ifdef SMZ_JS_ENGINE_V8
 /* With a game root known, v8 mode names scripts by their game-relative
    path, as NW.js does, so the root never shows in a trace. */
 static void test_stack_is_game_relative(void)
@@ -162,30 +160,13 @@ static void test_get_jsb_shares_globals(void)
     assert(js_engine_get_jsb(NULL) == NULL);
     js_engine_shutdown(engine);
 }
-#else
-/* default mode adopts the engine's context into a jsb runtime (js_engine.h). */
-static void test_get_jsb_default_mode(void)
-{
-    JSEngine *engine = js_engine_init();
-    note("engine starts");
-    assert(engine != NULL);
-    note("default-mode get_jsb is not NULL and get_context remains");
-    assert(js_engine_get_jsb(engine) != NULL);
-    assert(js_engine_get_context(engine) != NULL);
-    js_engine_shutdown(engine);
-}
-#endif
 
 int main(void)
 {
     printf("=== js_engine stack and jsb tests ===\n");
     test_stack_names_file_and_line();
-#ifdef SMZ_JS_ENGINE_V8
     test_stack_is_game_relative();
     test_get_jsb_shares_globals();
-#else
-    test_get_jsb_default_mode();
-#endif
     printf("OK\n");
     return 0;
 }

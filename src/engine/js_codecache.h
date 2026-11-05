@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-05: remove former engine migration contracts.
  *
  * The on-disk store of V8 code caches (spec sections 4.1 item 4 and 5.6).
  *
- * Why: Outsider kept a QuickJS `.jsc` next to each script, which writes into
- * the game folder. In v8 mode a script's compiled code is kept instead as
+ * Why: A script's compiled code must stay outside the game folder. It is kept as
  * `<dir>/<sha256>.bin` under `$XDG_CACHE_HOME/smzuggler-rt/v8cache/`, so the
  * game folder can be read-only. It stands in for Chromium's code cache, which
  * NW.js keeps in its profile directory, never beside the page. The key hashes

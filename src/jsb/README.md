@@ -1,15 +1,16 @@
 <!--
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
+Modified 2026-11-05: document the sole V8 runtime.
 Module overview of src/jsb, the C binding seam (spec section 15.1).
 -->
 # src/jsb: the C binding seam
 
 **Purpose.** `jsb.h` is the plain-C API that native bindings use to talk to the JS engine
-(spec §4.1), so Outsider's QuickJS bindings port to V8 by near-mechanical rewriting.
+(spec §4.1), so C bindings can expose native services to V8.
 
 **Entry points.** `jsb.h` (the API); `jsb_v8.cc` (its V8 backend, the CMake target
-`smz_jsb`, built only with `SMZ_JS_ENGINE=v8`).
+`smz_jsb`).
 
 **Data flow.** The host makes a `jsb_runtime`, defines `__native_*` modules in
 `jsb_runtime_setup`, and runs scripts. JS calls into a `jsb_fn` through one trampoline that

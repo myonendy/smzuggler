@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2026 General Arcade (Pte. Ltd.)
  * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-05: remove former engine migration contracts.
  * Modified 2026-10-30: filter diagnostic home paths before output.
  * Modified 2026-11-01: window.onerror dispatch and auto-save go through
  *   js_engine.h; jsb callback errors are logged here (card M1-T011).
@@ -11,8 +12,6 @@
  * JS is reached only through js_engine.h (and called back by jsb through
  * error_handler_on_jsb_error), never by holding JS values,
  * so no engine handle outlives a call (handle rules: docs/js-binding.md, §15.8).
- * Fetching QuickJS's pending exception, which only the QuickJS-era tests need,
- * is a quickjs-mode inline in error_handler.h and goes with QuickJS in M1-T027.
  */
 
 #include "engine/error_handler.h"
@@ -148,7 +147,7 @@ void error_handler_show_error_dialog(const char *title, const char *message)
 /* ---- JS errors ---------------------------------------------------------- */
 
 /* Longest message or stack, in bytes, passed on to JS or a dialog; longer text
-   is cut, as the QuickJS-era handler cut its stack copy. */
+   is cut to bound diagnostic allocations. */
 #define ERROR_TEXT_MAX 4096
 
 /* Calls window.onerror (through the DOM shim's __error_handler_dispatch) with
@@ -233,7 +232,7 @@ static void dispatch_to_window(JSEngine *engine, const char *message, const char
 }
 
 /** Logs a JS error's message and, when present, its stack at LOG_ERROR.
- * Why: one format for every way an error reaches C (QuickJS pending
+ * Why: one format for every way an error reaches C (engine-reported
  * exception, jsb callback, string report). Borrows both strings; a NULL or
  * empty stack is not logged. Main thread.
  */

@@ -1,6 +1,7 @@
 <!--
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
+Modified 2026-11-05: make V8 the sole engine and retire the adoption bridge.
 Modified 2026-11-04: document the Canvas2D binding port and baseline.
 Modified 2026-11-01: add persistent callbacks.
 Modified 2026-11-01: document the V8 script watchdog.
@@ -31,52 +32,38 @@ bindings move to V8 by near-mechanical rewriting (spec §4.1). It is **not** an 
 abstraction: its one real implementation is `src/jsb/jsb_v8.cc`.
 
 Status: core API (M1-T003), zero-copy buffers (M1-T005) and persistent callbacks
-(M1-T006). The library target is `smz_jsb` in both engine
-modes; `jsb.h` itself is plain C11 and includes no C++ or V8 header (checked by
-`tests/smz/test_jsb_header.c` in both engine modes).
+(M1-T006). The library target is `smz_jsb`; `jsb.h` itself is plain C11 and includes no C++ or V8 header (checked by
+`tests/smz/test_jsb_header.c` on V8).
 
-## Transitional QuickJS backend (removed by M1-T027)
+V8 is the sole engine (M1-T027). CMake imports the pinned prebuilt monolith;
+there is no engine selector or alternate seam implementation. The former
+backend and adoption bridge have been removed, ending DEC-SETUP-003.
 
-`src/jsb/jsb_quickjs.c` implements `jsb.h` on QuickJS-ng, and `smz_jsb` is built from it
-when `SMZ_JS_ENGINE=quickjs` (the default). It exists only so bindings can be ported to
-`jsb` one at a time while the game still runs on QuickJS and both engine modes stay green
-(docs/SPEC_ISSUES.md SI-11, DEC-SETUP-008). **Card M1-T027 deletes it** together with
-QuickJS. Rules while it lives:
+The prefix comes from `SMZ_V8_DIR`, then `$SMZ_V8_DIR` or
+`$SMZ_DEPS_DIR/v8/13.6.233.8`; the standard offline dependency cache is the
+fallback when those environment variables are unset. No dependency is downloaded.
+The host-owned `process` accessor is followed by the surface inventory observer;
+other getters remain uncalled to avoid browser/device side effects.
 
-- It must behave exactly like `jsb_v8.cc`: the unchanged `tests/smz/test_jsb_core.c` runs
-  against it as ctest `jsb_core` in quickjs mode (`tests/smz/jsb_core_transitional.cmake`).
-  Any new jsb call lands in both backends in the same change.
-- It adds no API of its own; nothing outside `src/jsb/` may include `quickjs.h` through it.
-- `jsb_runtime_create` ignores `argv0` and `icu_data_path` (QuickJS has no ICU).
-- Handles: each `jsb_val` owns one QuickJS reference, kept in fixed chunks owned by the
-  call's `jsb_ctx` and freed when the call returns, so the "valid only during the call"
-  rule below holds exactly as with V8 `Local`s. A native function is registered through a
-  per-runtime table indexed by the QuickJS function's 16-bit magic, so a runtime holds at
-  most 32,767 distinct `jsb_fn`s.
-- Known difference: a string argument holding a lone UTF-16 surrogate is read out in
-  QuickJS's encoding of it, where V8 writes U+FFFD.
-
-## Adoption (transitional, removed by M1-T027)
-
-The game runs on `js_engine.c` (QuickJS) in both modes until M1-T027, so binding ports
-need a jsb runtime on *its* context (DEC-M1-T014-JSB-ADOPT). The private header
-`src/jsb/jsb_adopt.h` declares `jsb_runtime_adopt(JSContext *)`, which wraps a context
-without owning it (`js_engine_init` calls it; `js_engine_get_jsb()` returns it), and
-`jsb_runtime_of(JSContext *)`, which finds that runtime. The port cards' transitional
-`bind_<x>_register` wrappers used it until M1-T026 removed them.
-jsb keeps its runtime in the QuickJS **runtime** opaque; the context opaque stays
-`js_engine.c`'s. `jsb_runtime_destroy` on an adopted runtime frees only jsb's own
-references and must run before the context is freed (`js_engine_shutdown` does).
-
-`smz_jsb_quickjs` is built in both modes and linked by `outsider` and by every test
-target that builds `js_engine.c` (the root `CMakeLists.txt` scans the `tests` targets).
-Its PUBLIC `SMZ_JSB_ADOPT` guards every use of `jsb_adopt.h` outside `src/jsb/`. In
-quickjs mode `smz_jsb` is an alias of it; in v8 mode `smz_jsb` is the V8 backend
-(via `smz_js_engine_v8`, which never sees `SMZ_JSB_ADOPT`). No target links both.
+M1-T027 removes the QuickJS-only `test_jsb_adopt.c` and
+`test_jsb_transitional.c`, their registration fragments, and
+`jsb_core_transitional.cmake`. Shared test sources retain every V8 and neutral
+check: input/I/O drop alternate Symbol messages, error-handler drops engine
+skips, engine tests drop the adoption-only case, and microtasks drop phase-only
+orders/skips. Registration fragments now link V8 exclusively; `jsb_enum` and
+`jsb_values` retain their V8 targets and drop duplicate transitional targets.
+Storage replaces only the Promise-based tick order, and performance checks the
+single `.bin` cache written in an isolated host directory instead of adjacent
+bytecode. The two engine test registrations share a CTest resource lock because
+both now use the same V8 cache fixtures. CTest selects SDL's dummy audio driver:
+the real SDL mixer still advances playback without a host audio-server connection.
+The platform and surface inventory test sources stay unchanged. The GPU platform
+test requires a usable display and graphics driver; offscreen SDL cannot provide
+a Vulkan window, and a sandbox that blocks display sockets cannot run Xvfb.
 
 ## Seam calls for binding ports (M1-T007b)
 
-In `jsb.h` on both backends (test `jsb_values`); they stay after M1-T027. Coercing reads
+In `jsb.h` on V8 (test `jsb_values`); they stay after M1-T027. Coercing reads
 apply the ECMAScript conversions (valueOf runs; a Symbol is a TypeError).
 `jsb_clear_exception` never drops a watchdog termination; on V8 each native call runs
 in a `TryCatch` that it resets. On V8 `jsb_throw_internal` makes an `Error` whose own
@@ -114,7 +101,7 @@ in a `TryCatch` that it resets. On V8 `jsb_throw_internal` makes an `Error` whos
 Each port defines its module in `bind_<x>_define(jsb_runtime *rt, ...)`. M1-T026 removed
 the transitional `bind_<x>_register(struct JSContext *, ...)` wrappers; every caller now
 passes `js_engine_get_jsb()`. A `tests/smz/test_bind_<x>_jsb.c` test pins the JS API to
-the pre-port binary's in both engine modes.
+the pre-port binary's API while running on V8.
 
 | Binding | Module and functions (`length`) | jsb calls used | Buffers | Callbacks |
 | --- | --- | --- | --- | --- |
@@ -141,9 +128,8 @@ no setup script either.
 The `bind_io_jsb` ctest checks all twelve names and arities above, string and
 ArrayBuffer round trips (including embedded NULs and empty buffers), directory
 arrays, boolean filesystem results, undefined write results, coercion, and exact
-binding error names/messages. It uses the adopted engine in quickjs mode and
-`smz_js_engine_v8` in v8 mode. Engine-generated Symbol conversion messages retain
-each engine's spelling. No JS handle or borrowed buffer survives a native call.
+binding error names/messages through `smz_js_engine_v8`. Engine-generated Symbol
+conversion messages use V8's spelling. No JS handle or borrowed buffer survives a native call.
 
 The retained I/O parity test records these pre-port expectations:
 
@@ -207,7 +193,7 @@ remain polled by the shim, so this port needs no persistent callbacks.
 Before the port, `bind_audio_jsb` was run against `bind_audio_register` on the
 original QuickJS binary. It passed the following expectations; the final test
 uses `bind_audio_define(js_engine_get_jsb(engine))`, selecting the real V8 engine
-when configured with `SMZ_JS_ENGINE=v8`.
+on the V8 engine.
 
 | Pre-port check | Captured expected value |
 | --- | --- |
@@ -235,7 +221,7 @@ the new parity test supplies that coverage.
 ### Host side
 | Call | Purpose |
 | --- | --- |
-| `jsb_set_flags(flags)` | Engine flags such as `--expose-gc`, process-wide. Only before the first runtime (V8 freezes its flags); false afterwards. The QuickJS backend honours `--expose-gc` and ignores V8-only flags. |
+| `jsb_set_flags(flags)` | Engine flags such as `--expose-gc`, process-wide. Only before the first runtime (V8 freezes its flags); false afterwards. |
 | `jsb_runtime_create(argv0, icu_data_path)` | One isolate and one context. The first call starts V8 for the process. NULL on failure, reason on stderr. |
 | `jsb_runtime_destroy(rt)` | Frees the runtime. |
 | `jsb_runtime_setup(rt, fn, user)` | Runs `fn(ctx, user)` in a fresh handle scope, for defining modules. |
@@ -311,8 +297,7 @@ Pixel, audio and file data cross the seam without copies (DEC-M1-T005).
   behind a small wrapper) is reported with `jsb_adjust_external_memory`: add the size when
   it is made and subtract the same amount when it is freed, on the main thread. On V8 this
   calls `Isolate::AdjustAmountOfExternalAllocatedMemory`. A change that would make the
-  total negative is refused with -1 and a message on stderr. The QuickJS backend keeps
-  the same total but has no GC hook to give it to.
+  total negative is refused with -1 and a message on stderr.
 
 ```c
 static void free_pixels(void *data, size_t len, void *user) { (void)len; (void)user; free(data); }
@@ -360,7 +345,7 @@ it and run it later from the host (DEC-M1-T006).
   handle. Microtask checkpoints stay with the host's loop (§4.1, item 3).
 * **GC.** The handle is a strong `Global`: the function cannot be collected while it
   lives. After `jsb_callback_free` it is garbage as soon as JS holds no other reference
-  (QuickJS frees it at once by reference counting; V8 at a later GC).
+  (released at a later V8 GC).
 * Main thread only. Never call `jsb_callback_free` from a `jsb_free_fn`.
 
 ```c
@@ -379,15 +364,14 @@ jsb_callback_call(g_onended, 1, &id, NULL);  /* JSB_ERR_THREW was reported alrea
 ## Error handler
 `src/engine/error_handler.c` turns JS errors that reach C into a log line, a
 window.onerror / `'error'` event and, when fatal, a dialog (§4.1 item 5, card M1-T011,
-DEC-M1-T011). It holds no JS value and has no QuickJS calls: it reaches JS only through
-`js_engine.h`, so it needs no handle rules of its own and works on both engines.
+DEC-M1-T011). It holds no JS value: it reaches JS only through
+`js_engine.h`, so it needs no handle rules of its own.
 
 | Call | Behaviour |
 | --- | --- |
 | `error_handler_report_js_error(engine, message, stack, fatal)` | Logs `JS Exception: <message>` and `Stack trace:` (scrubbed), runs the shim's `__error_handler_dispatch(message, error)`, then a dialog if `fatal`. `engine` NULL skips dispatch. |
-| `error_handler_on_jsb_error(message, stack, user)` | A `jsb_error_fn`: `jsb_set_error_handler(rt, error_handler_on_jsb_error, NULL)` sends jsb callback exceptions to this log instead of stderr. Declared without `jsb.h`, so it builds in both modes. Whoever owns the runtime installs it; `js_engine_v8.cc` does not yet (not this card's file). |
+| `error_handler_on_jsb_error(message, stack, user)` | A `jsb_error_fn`: `jsb_set_error_handler(rt, error_handler_on_jsb_error, NULL)` sends jsb callback exceptions to this log instead of stderr. Declared without `jsb.h`, so it builds in V8. Whoever owns the runtime installs it; `js_engine_v8.cc` does not yet (not this card's file). |
 | `error_handler_attempt_auto_save(engine)` | Runs the shim's `__error_handler_autoSave`; true if it returned non-zero. |
-| `error_handler_report_js_exception(engine, fatal)` | quickjs mode only, an inline in `error_handler.h` that takes QuickJS's pending exception and reports it as above; no caller remains after M1-T026 ported the tests. Removed by M1-T027. |
 
 * **Text in, script out.** Message and stack (each cut at 4096 bytes) are escaped into a
   short script run with `js_engine_eval`; quotes, backslashes and control characters
@@ -400,20 +384,19 @@ DEC-M1-T011). It holds no JS value and has no QuickJS calls: it reaches JS only 
   run JS on its runtime (see "Persistent callbacks").
 * Main thread, outside any JS call.
 
-`tests/smz/test_error_handler_jsb.c` (ctest `error_handler_jsb`, both modes) checks the
+`tests/smz/test_error_handler_jsb.c` (ctest `error_handler_jsb`, V8) checks the
 log lines, exact delivery of quotes, backslashes, newlines and UTF-8 to window.onerror,
 that a message cannot break out of its literal, missing and throwing dispatchers, every
-auto-save outcome, and in v8 mode that a throwing jsb callback is logged with its stack.
+auto-save outcome, and that a throwing jsb callback is logged with its stack.
 The older `tests/test_error_handler.c` now reports through the engine-neutral
-`error_handler_report_js_error`, so it runs on QuickJS in both modes without
-touching a QuickJS value.
+`error_handler_report_js_error` on V8 without exposing engine handles.
 
 ## Ported bindings
 Each port keeps its JS API byte-for-byte (names, order, `length`, results, errors) and
 adds `bind_<x>_define(jsb_runtime *rt, ...)`; M1-T026 removed the old
 `bind_<x>_register(struct JSContext *, ...)` wrappers, and callers pass
 `js_engine_get_jsb()` (DEC-M1-T014-JSB-ADOPT). Each has a
-`tests/smz/test_bind_<x>_jsb.c` ctest run in both modes.
+`tests/smz/test_bind_<x>_jsb.c` ctest run in V8.
 
 | Binding | Globals | Functions (`length`) | jsb calls used | Buffers | Callbacks |
 | --- | --- | --- | --- | --- | --- |
@@ -431,7 +414,7 @@ adds `bind_<x>_define(jsb_runtime *rt, ...)`; M1-T026 removed the old
   deletes them through the renderer. All handles are call-scoped and the binding runs
   on the main thread. The `bind_image_jsb` test covers shape, arities, explicit errors,
   headless PNG and APNG results, cache operations and copied pixel storage on the
-  selected engine. The transitional register wrapper uses the adopted runtime.
+  V8 engine.
   Pre-port QuickJS measurements are the literal expectations in
   `tests/smz/test_bind_image_jsb.c`: lengths `1,1,2,1,1,1,0,0`; image fields
   `width,height,handle,glTexture`; info fields `width,height,glTexture`; pixel
@@ -547,16 +530,13 @@ base. It passes `--stack-size` in KiB, subtracting 25% of available space or
 selected value is printed at startup. An unavailable or too-small stack fails
 initialization loudly. JS, SDL and the event loop stay on the process main thread;
 no runtime thread is created. Embedders must initialize the engine on that thread
-before creating other jsb runtimes. QuickJS retains its Windows linker reservation.
+before creating other jsb runtimes.
 `stack_size` checks repeated catchable recursion overflow and engine recovery.
 
 ## js_engine on V8
 `src/engine/js_engine_v8.cc` implements `src/engine/js_engine.h` on V8 (§4.1 item 3,
-card M1-T007). In v8 mode CMake builds it as `smz_js_engine_v8`, which defines
-`SMZ_JS_ENGINE_V8` for its users. The runtime executable still links `js_engine.c` in
-both modes because the engine itself moves to V8 only in M1-T027; its callers reach it
-through `js_engine.h` and the jsb seam, never through `js_engine_get_context`.
-The v8-mode library serves every caller that needs only `js_engine.h`, starting with tests.
+card M1-T007). CMake builds `smz_js_engine_v8` for the runtime and every engine
+consumer. Callers use `js_engine.h` and `jsb.h`; no raw engine context is exposed.
 
 - **Isolate and context** come from `jsb_runtime_create`; the engine picks them up inside
   `jsb_runtime_setup`, so `js_engine_get_jsb()` returns a runtime whose modules land in
@@ -568,7 +548,7 @@ The v8-mode library serves every caller that needs only `js_engine.h`, starting 
   to the game root when the root is known (`js_engine_set_cache_dir`), else by the path
   given. A SyntaxError's `stack` has no frame in V8, so the reported stack gets
   `    at name:line:col` from the exception message.
-- **Errors** are reported as in QuickJS mode: the exception's `String()` form, then its
+- **Errors** are reported as engine-neutral strings: the exception's `String()` form, then its
   `stack`, both at level `error` through the console callback (or stderr).
 - **Microtasks**: `MicrotasksPolicy::kExplicit`; `js_engine_execute_pending_jobs` runs one
   checkpoint, then reports rejections still unhandled (through
@@ -578,9 +558,6 @@ The v8-mode library serves every caller that needs only `js_engine.h`, starting 
 - **Code cache**: V8 code caches under `$XDG_CACHE_HOME/smzuggler-rt/v8cache/`, never
   a `.jsc` beside the script; see "Code cache" below.
 - **Watchdog**: see "Watchdog" below.
-- **`js_engine_get_context`** is declared only without `SMZ_JS_ENGINE_V8`. In quickjs
-  mode `js_engine_get_jsb()` returns the engine's own `JSContext` adopted by the
-  transitional backend (see "Adoption" above), so jsb modules share the game's globals.
 - **Handles** (§15.8): every entry point opens its own `HandleScope`; the engine owns
   exactly two kinds of `Global` (its context and pending rejections) and Resets them in
   `js_engine_shutdown` before the isolate is disposed of.
@@ -609,7 +586,7 @@ expects a source edit to take effect even when the mtime is preserved.
   caches for the process; `tests/smz/test_codecache.c` reads them, since acceptance is
   invisible from JS.
 - `src/engine/js_codecache.cc` has no V8 dependency (CMake target `smz_js_codecache`),
-  so the key, directory and file handling are tested in quickjs mode too.
+  so key, directory and file handling are independent of V8 handles.
 - **Handles**: no `Local` outlives `compile_and_run`'s `HandleScope`; the `CachedData`
   belongs to the `ScriptCompiler::Source` and is deleted with it.
 
@@ -617,7 +594,7 @@ expects a source edit to take effect even when the mtime is preserved.
 `js_engine_set_watchdog(engine, ms)` (from `--watchdog <ms>`) stops scripts that run
 longer than `ms` since the last arm (§4.1 item 3, card M1-T008, DEC-M1-T008). The
 outermost eval entry point and each microtask checkpoint arm it, and the game loop arms
-it once per frame, as in QuickJS mode.
+it once per frame.
 
 - **Thread**: `src/engine/js_watchdog.cc` is a timer thread that knows nothing of V8.
   It exists only while the limit is non-zero: 0 (the default) stops and joins it, a new
@@ -638,15 +615,15 @@ it once per frame, as in QuickJS mode.
 - **Limits**: a script blocked inside a native call is stopped only once it returns to
   JS, because V8 checks interrupts only while it runs JS.
 
-`tests/smz/test_js_watchdog.c` (ctest `js_watchdog`, v8 mode) checks that `while(true){}`
+`tests/smz/test_js_watchdog.c` (ctest `js_watchdog`) checks that `while(true){}`
 under 200 ms stops within 400 ms naming `spin.js:2`, that a `catch` cannot swallow it,
 that the next eval succeeds, that re-arming per eval and idle time do not fire, that a
 looping promise job is stopped too, and that no thread exists while the limit is off.
 
-`tests/smz/test_js_engine_v8.c` (ctest `js_engine_stack`, both modes) checks that a
-throw in `foo.js` line 3 reports `foo.js:3` from a file, a string and a SyntaxError; in
-v8 mode also the game-relative name and that `js_engine_get_jsb()` sees the engine's
-globals. In v8 mode the unchanged `tests/test_js_engine.c` also runs on V8 as ctest
+`tests/smz/test_js_engine_v8.c` (ctest `js_engine_stack`, V8) checks that a
+throw in `foo.js` line 3 reports `foo.js:3` from a file, a string and a SyntaxError;
+also the game-relative name and that `js_engine_get_jsb()` sees the engine's
+globals. The unchanged `tests/test_js_engine.c` also runs on V8 as ctest
 `js_engine_on_v8` (`tests/smz/js_engine_v8.cmake`).
 
 ## Game loop
@@ -676,9 +653,9 @@ timing (DEC-M1-T009).
 - **Control mode.** `__native_control_send` is a JS function that queues reply lines; the
   loop prints them after each `eval` command, at the end of each frame (so replies sent
   by promise jobs appear in the frame they settle) and at shutdown.
-- **Cost.** Each frame evaluates five short scripts. QuickJS compiles each one (a few
-  microseconds); V8 reuses its compilation cache except for the rAF call, whose
-  timestamp changes the source. In v8 mode each eval also re-arms the watchdog, so its
+- **Cost.** Each frame evaluates five short scripts. V8 reuses its compilation cache
+  except for the rAF call, whose timestamp changes the source. Each eval also
+  re-arms the watchdog, so its
   limit applies per phase rather than per frame.
 
 ### Microtask checkpoints
@@ -706,12 +683,12 @@ the loop do the same (DEC-M1-T010 has the exact order):
   drain before promises; watchdog termination stops the drain. The process shim
   keeps its other properties.
 
-The exact orders and QuickJS phase-level differences are recorded in
+The exact task and microtask orders are recorded in
 [DEC-M1-T010](decisions/DEC-M1-T010.md). `tests/smz/test_microtasks.c` runs the real
 loop and DOM input dispatcher, registering startup timers and rAF callbacks before
 any frame. It also checks promises queued before ticks and ticks queued by promises.
 
-`tests/smz/test_game_loop_js.c` (ctest `game_loop_js`, both engine modes) runs the real
+`tests/smz/test_game_loop_js.c` (ctest `game_loop_js`, V8) runs the real
 `game_loop.c` with the platform, renderer, audio, video and log calls stubbed. It checks
 the phase order and arguments, both job drains, a growing Number timestamp, the
 first-frame snapshot, exception logging and dispatch, the `__nw_hostClose` outcomes,
@@ -719,18 +696,18 @@ exit-probe values, errors and escaping, and control-mode replies (synchronous, p
 unknown command) through a stdin pipe.
 
 ## Tests
-`tests/smz/test_jsb_core.c` (ctest `jsb_core`, both engine modes) defines a module from C, calls
+`tests/smz/test_jsb_core.c` (ctest `jsb_core`, V8) defines a module from C, calls
 every getter, return and throw from JS, and checks values, wrong-type and
 missing-argument TypeErrors, the string-size RangeError and module failure.
 
-`tests/smz/test_jsb_buffers.c` (ctest `jsb_buffers`, both engine modes) checks
+`tests/smz/test_jsb_buffers.c` (ctest `jsb_buffers`, V8) checks
 `jsb_arg_bytes` on ArrayBuffers, TypedArrays and DataViews with byte offsets, the
 TypeError for non-buffers and detached buffers, C writes seen by JS and JS writes seen by
 C through an external buffer, that its free function runs exactly once after `gc()`
 (from `jsb_set_flags("--expose-gc")`) and once more at destroy for a buffer still alive,
 and the `jsb_adjust_external_memory` totals.
 
-`tests/smz/test_jsb_callbacks.c` (ctest `jsb_callbacks`, both engine modes) keeps a
+`tests/smz/test_jsb_callbacks.c` (ctest `jsb_callbacks`, V8) keeps a
 function in a native call and calls it from C after that scope ended, checks every
 argument and result type and string truncation, that exceptions (Errors and thrown
 primitives, from the host and from inside a native call) reach the error handler with
@@ -742,8 +719,8 @@ own handle.
 
 ### M1-T020 video parity report
 
-`bind_video_define(js_engine_get_jsb(engine))` defines the module on the selected
-engine's context: QuickJS in quickjs mode and `smz_js_engine_v8` in v8 mode.
+`bind_video_define(js_engine_get_jsb(engine))` defines the module on the
+engine's V8 context through `smz_js_engine_v8`.
 All values are call-scoped, the coerced path is freed after `video_open`, and
 video events remain polled by the DOM shim; no persistent callback is needed.
 The methods come from `jsb_set_fn_n`, so they are non-enumerable. Missing required
@@ -781,18 +758,9 @@ binaries ran `--dump-surface`. The complete pre/post inventories compare equal:
 by DEC-M0-T009b, native video rows and function lengths are excluded from that
 inventory; the ctest supplies those assertions.
 
-With `SDL_AUDIODRIVER=dummy`, the native video ctest passes in quickjs mode.
-The complete quickjs suite passes except the pre-existing `platform` test,
-which cannot create an SDL_GPU device in this environment (no Vulkan or D3D12
-backend); that failure is unrelated to this binding. V8 configuration remains
-outstanding because `SMZ_V8_DIR` is unset and the pinned V8 install is not in
-the dependency cache on this machine. The policy gate requires a direct
-`CHANGELOG.md` edit for this card even though AGENTS.md section 6 says forge
-writes that line from the final report; the edit is kept so the gate passes.
 ### Canvas2D port baseline (M1-T021)
 
-`bind_canvas2d_define` defines the module on the supplied engine runtime. The
-transitional register wrapper adopts the existing engine context. All calls run
+`bind_canvas2d_define` defines the module on the supplied engine runtime. All calls run
 on the main thread; no jsb handle or borrowed buffer survives a native call.
 The ArrayBuffer-only check is the shared `jsb_arg_is_array_buffer` brand test:
 a TypedArray, DataView, plain or spoofed object is rejected, and the binding
@@ -801,8 +769,7 @@ before buffer validation, so user code cannot detach an already borrowed pointer
 `jsb_set_fn_n` makes all 27 methods non-enumerable.
 
 The new `bind_canvas2d_jsb` ctest uses real CPU Canvas2D services without a graphics
-device and calls `bind_canvas2d_define(js_engine_get_jsb(engine))`: the adopted
-QuickJS engine in quickjs mode, `smz_js_engine_v8` in v8 mode. Its literal expected
+device and calls `bind_canvas2d_define(js_engine_get_jsb(engine))` on V8. Its literal expected
 errors and values are the pre-port binary baseline, including every missing-arg
 TypeError; see `tests/smz/test_bind_canvas2d_jsb.c` for the full byte strings.
 
@@ -843,16 +810,13 @@ Path resolution and path string conversion exceptions are cleared and return 0;
 scale conversion errors still propagate. Paths are allocated by jsb and freed
 before backend loading; no JS handles or callbacks survive a call.
 
-The new test calls `bind_effekseer_define(js_engine_get_jsb(engine))` on both
-seam backends (the adopted QuickJS runtime in quickjs mode, the V8 backend in v8
-mode) and pins the capture above without opening a device.
+The new test calls `bind_effekseer_define(js_engine_get_jsb(engine))` on V8 and pins the capture above without opening a device.
 The `--dump-surface` effekseer row is unchanged (empty diff); native method arities
 are absent from that inventory, so the test above supplies the parity evidence.
 
 ### Filters parity capture (M1-T024)
 
-`bind_filters_define` defines `__native_filters` on the supplied runtime: the
-adopted QuickJS engine in quickjs mode and the V8 backend in v8 mode. All
+`bind_filters_define` defines `__native_filters` on the supplied V8 runtime. All
 handles are call-scoped; the mat4 bytes are borrowed only during the call, and
 no callback is kept.
 

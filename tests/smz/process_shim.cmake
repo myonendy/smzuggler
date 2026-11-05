@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 The smzuggler contributors
+# Modified 2026-11-05: use the sole V8 engine for surface inventory.
 # Game-free process/require shim test; see docs/shims.md. No device bindings.
 add_executable(test_process_shim ${CMAKE_CURRENT_LIST_DIR}/test_process_shim.c
-    ${PROJECT_SOURCE_DIR}/src/engine/js_engine.c
     ${PROJECT_SOURCE_DIR}/src/io/file_io.c
     ${PROJECT_SOURCE_DIR}/src/bindings/bind_io.c)
 target_include_directories(test_process_shim PRIVATE
     ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/tests)
-target_link_libraries(test_process_shim PRIVATE qjs)
+target_link_libraries(test_process_shim PRIVATE smz_js_engine_v8)
 if(MSVC)
     target_compile_options(test_process_shim PRIVATE /UNDEBUG)
 else()

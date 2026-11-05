@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-05: remove former-engine-only branches; retain V8 checks.
  *
  * Checks that __native_input, ported to jsb by card M1-T015, keeps its JS
  * API byte-for-byte: property names, each function's typeof and length,
@@ -167,11 +168,7 @@ static void check_errors(JSEngine *engine)
            "throw new RangeError('from valueOf')}})}"
            "catch(e){e.name+': '+e.message}",
            "RangeError: from valueOf");
-#ifdef SMZ_JS_ENGINE_V8
     const char *symbol_error = "TypeError: Cannot convert a Symbol value to a number";
-#else
-    const char *symbol_error = "TypeError: cannot convert symbol to number";
-#endif
     expect(engine,
            "try{__native_input.getGamepad(Symbol())}"
            "catch(e){e.name+': '+e.message}",

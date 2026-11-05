@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 The smzuggler contributors
-# Headless image binding contract checks; docs/js-binding.md. The selected
-# engine owns the runtime, so v8 mode exercises the actual V8 binding.
+# Modified 2026-11-05: register V8 coverage without the removed engine.
+# Runtime binding checks; see docs/js-binding.md.
 add_executable(test_bind_image_jsb
     ${CMAKE_CURRENT_LIST_DIR}/test_bind_image_jsb.c
     ${PROJECT_SOURCE_DIR}/src/bindings/bind_image.c
@@ -10,13 +10,8 @@ add_executable(test_bind_image_jsb
     ${PROJECT_SOURCE_DIR}/src/rendering/sprite_batch.c
     ${PROJECT_SOURCE_DIR}/src/rendering/apng.c
     ${PROJECT_SOURCE_DIR}/src/io/file_io.c)
-if(SMZ_JS_ENGINE STREQUAL "v8")
-    target_link_libraries(test_bind_image_jsb PRIVATE smz_js_engine_v8)
-    set_target_properties(test_bind_image_jsb PROPERTIES LINKER_LANGUAGE CXX)
-else()
-    target_sources(test_bind_image_jsb PRIVATE ${PROJECT_SOURCE_DIR}/src/engine/js_engine.c)
-    target_link_libraries(test_bind_image_jsb PRIVATE smz_jsb)
-endif()
+target_link_libraries(test_bind_image_jsb PRIVATE smz_js_engine_v8)
+set_target_properties(test_bind_image_jsb PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(test_bind_image_jsb PRIVATE
     ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/third_party/stb)
 set_target_properties(test_bind_image_jsb PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)

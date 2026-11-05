@@ -1,9 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
    Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-05: remove former engine migration contracts.
 
    The script watchdog's timer thread (spec section 4.1, item 3).
 
-   Why: on QuickJS the watchdog was an interrupt handler QuickJS polled while
+   Why: the former watchdog was an interrupt handler polled while
    JS ran. V8 has no such poll; a script stuck in `while(true){}` can only be
    stopped from another thread, as Chromium's "page unresponsive" check and
    Node's `vm` timeout do. This file is that thread: it knows nothing about

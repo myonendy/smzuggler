@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-05: remove former-engine-only branches; retain V8 checks.
  * Modified 2026-11-04: cover nextTick exception ordering and reporting.
  *
  * The order of macrotasks and microtasks the game loop produces (card
@@ -116,13 +117,6 @@ static const char *const kScenarioJs =
 static const char kChromeOrder[] =
     "a,ap,b,bp,t1,n1,n1b,p1,p1b,t2,p2,iv,ivp,r1,rn1,rp1,r2";
 
-/* The order the default mode produces: js_engine.c has no checkpoint callable
-   from JS, so the timers and the rAF callbacks of a frame each share one
-   checkpoint after their phase (DEC-M1-T010 lists the differences). Ticks
-   still run before promise jobs, and each phase's jobs before the next. */
-static const char kQuickJsOrder[] =
-    "a,b,ap,bp,t1,t2,iv,n1,n1b,p1,p2,ivp,p1b,r1,r2,rn1,rp1";
-
 /* True when `expr` evaluates to the string `expected`. */
 static bool js_is(JSEngine *engine, const char *expr, const char *expected)
 {
@@ -160,13 +154,8 @@ static void test_frame_order(void)
     assert(js_engine_eval(engine, kScenarioJs, "scenario.js"));
     assert(js_is(engine, "log.join(',')", ""));
     assert(game_loop_step(loop));
-#ifdef SMZ_JS_ENGINE_V8
     fprintf(stderr, "  check: v8 mode follows Chrome/NW.js order\n");
     assert(js_is(engine, "log.join(',')", kChromeOrder));
-#else
-    fprintf(stderr, "  check: default mode follows its phase-level order\n");
-    assert(js_is(engine, "log.join(',')", kQuickJsOrder));
-#endif
     fprintf(stderr, "  check: nothing is left for the next frame\n");
     assert(game_loop_step(loop));
     assert(js_is(engine, "String(log.length)", "17"));
@@ -187,11 +176,7 @@ static void test_tick_outside_task(void)
         "Promise.resolve().then(function () { process.nextTick(function () { log.push('pn'); }); });\n",
         "load.js"));
     assert(js_engine_execute_pending_jobs(engine) >= 0);
-#ifdef SMZ_JS_ENGINE_V8
     assert(js_is(engine, "log.join(',')", "n12,p,pn"));
-#else
-    assert(js_is(engine, "log.join(',')", "p,n12,pn"));
-#endif
     assert(js_is(engine,
         "(function () { try { process.nextTick(1); return 'no'; }"
         " catch (e) { return e instanceof TypeError ? 'TypeError' : 'other'; } })()",
@@ -200,7 +185,6 @@ static void test_tick_outside_task(void)
     js_engine_shutdown(engine);
 }
 
-#ifdef SMZ_JS_ENGINE_V8
 /* Capture the expected tick failure on the main thread; userdata owns the count.
    Borrowed console strings are inspected synchronously and never retained. */
 static void capture_tick_error(const char *level, const char *message, void *userdata)
@@ -232,7 +216,6 @@ static void test_throwing_tick_order(void)
     game_loop_destroy(loop);
     js_engine_shutdown(engine);
 }
-#endif
 
 /* Consumed overlay keys finish default actions and jobs before the next key.
    Real overlay listeners bypass document.dispatchEvent; main thread only. */
@@ -254,13 +237,8 @@ static void test_overlay_event_order(void)
         "events = [{type:'keydown', key:'Backspace'}, {type:'keydown', key:'Backspace'}];",
         "overlay-order.js"));
     assert(game_loop_step(loop));
-#ifdef SMZ_JS_ENGINE_V8
     assert(js_is(engine, "log.join(',')",
         "key:abc,input:ab,tick:ab,promise:ab,key:ab,input:a,tick:a,promise:a"));
-#else
-    assert(js_is(engine, "log.join(',')",
-        "key:abc,input:ab,key:ab,input:a,tick:a,tick:a,promise:a,promise:a"));
-#endif
     game_loop_destroy(loop);
     js_engine_shutdown(engine);
 }
@@ -291,11 +269,7 @@ static void test_video_event_order(void)
         "requestAnimationFrame(function () { log.push('raf'); });",
         "video-order.js"));
     assert(game_loop_step(loop));
-#ifdef SMZ_JS_ENGINE_V8
     assert(js_is(engine, "log.join(',')", "v2,v2s,v2n,v2p,v1,v1s,v1n,v1p,raf"));
-#else
-    assert(js_is(engine, "log.join(',')", "v2,v2s,v1,v1s,raf,v2n,v1n,v2p,v1p"));
-#endif
     assert(game_loop_step(loop));
     assert(js_is(engine, "String(log.length)", "9"));
     game_loop_destroy(loop);
@@ -311,9 +285,7 @@ int main(void)
     test_video_event_order();
     fprintf(stderr, "test_tick_outside_task\n");
     test_tick_outside_task();
-#ifdef SMZ_JS_ENGINE_V8
     test_throwing_tick_order();
-#endif
     fprintf(stderr, "microtasks: all passed\n");
     return 0;
 }

@@ -2,7 +2,8 @@
  * Copyright (C) 2026 The smzuggler contributors
  * Enumerates shim additions without browser devices or game startup.
  * See docs/shims.md. The calling thread owns the isolated engine; descriptors
- * are inspected without invoking getters or any native device bindings.
+ * are inspected without device bindings; only the host process accessor is read.
+ * Modified 2026-11-05: follow the engine-owned process namespace on V8.
  */
 #include "smzuggler/dump_surface.h"
 #include "engine/js_engine.h"
@@ -14,7 +15,8 @@
 
 /* Keep the observer in a closure so its state cannot pollute the inventory.
  * Snapshot data descriptors as references, allowing replaced members to be
- * attributed to the last shim that installs them. Accessors are never called.
+ * attributed to the last shim that installs them. Only the engine-owned global
+ * process accessor is called: it returns a closure value without device I/O.
  * The global alias and ancestor checks prevent window/document cycles.
  * Spec §15.4 counts only API members (DEC-M0-T009b): a function's intrinsic
  * `length`, `name` and `prototype` get no row (the prototype's members still
@@ -37,7 +39,8 @@ static const char observer[] =
     "const d=Object.getOwnPropertyDescriptor(obj,key);"
     "const label=typeof key==='symbol'?'['+String(key)+']':key;"
     "const path=prefix?prefix+'.'+label:label;"
-    "const v=d.value, kind=('value' in d)?typeof v:'accessor';"
+    "const v=('value' in d)?d.value:(!prefix&&key==='process'?root.process:undefined);"
+    "const kind=('value' in d)?typeof v:'accessor';"
     "const skip=typeof obj==='function'&&intrinsic.includes(key);"
     "if(!skip)out.set(path,{kind:kind,value:v,get:d.get,set:d.set});"
     "if(v && (typeof v==='object'||typeof v==='function') && v!==root && !ancestors.includes(v)"

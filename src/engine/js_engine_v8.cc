@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The smzuggler contributors
+// Modified 2026-11-05: remove former engine migration contracts.
 // Modified 2026-11-04: bound JS recursion below the available main thread stack.
 // Modified 2026-11-04: explicit microtask checkpoints and exception-safe nextTick priority.
 // Modified 2026-11-05: report a throwing tick once, without repeating the
 // Error message in the stack line (card M1-T026c).
 //
 // The engine API of src/engine/js_engine.h implemented on V8 (spec section
-// 4.1, item 3). Built instead of js_engine.c when SMZ_JS_ENGINE=v8.
+// 4.1, item 3). This is the runtime's sole engine implementation.
 //
 // Why: script_loader.c and main.c talk to the JS engine only through
-// js_engine.h, so the move from QuickJS to V8 swaps this file in and leaves
+// js_engine.h, so using V8 leaves
 // them alone. It stands in for the parts of NW.js's Chromium that run page
 // scripts: one isolate and one context (the page's window), classic-script
 // evaluation with a ScriptOrigin naming the file so stack traces read
@@ -86,7 +87,7 @@ struct JSEngine {
     v8::Global<v8::Context> context;
     JSConsoleCallback console_cb = nullptr;
     void *console_userdata = nullptr;
-    // Unhandled rejections, reported after each checkpoint as QuickJS mode
+    // Unhandled rejections, reported after each checkpoint as the runtime
     // does (when a browser fires `unhandledrejection`).
     std::vector<Rejection> rejections;
     // Promise reaction jobs run so far, counted by the promise hook.
@@ -142,7 +143,7 @@ std::string to_utf8(v8::Isolate *isolate, v8::Local<v8::Value> value) {
 }
 
 // Sends one line of output to the console callback, or to stdout/stderr
-// with QuickJS mode's prefixes. `level` is "log", "warn" or "error".
+// with the runtime's prefixes. `level` is "log", "warn" or "error".
 void emit(JSEngine *engine, const char *level, const std::string &text) {
     if (engine->console_cb) {
         engine->console_cb(level, text.c_str(), engine->console_userdata);
@@ -158,7 +159,7 @@ void emit(JSEngine *engine, const char *level, const std::string &text) {
 // Joins console arguments with spaces, as Chromium's console does for
 // non-format arguments. Implements console.log/warn/error (compat
 // "console", https://console.spec.whatwg.org/#logging); `%` format
-// specifiers are not expanded, as in QuickJS mode.
+// specifiers are not expanded, as in the inherited console.
 void console_emit(const v8::FunctionCallbackInfo<v8::Value> &info,
                   const char *level) {
     v8::HandleScope scope(info.GetIsolate());
@@ -207,7 +208,7 @@ bool install_console(JSEngine *engine, v8::Local<v8::Context> context) {
 
 // Removes the leading `String(exc)` line from a V8 stack when the stack starts
 // with the same text. Why: report_exception emits String(exc) first, as
-// js_engine.c does, and V8's stack repeats it on its first line; QuickJS's
+// the inherited engine did, and V8's stack repeats it on its first line; the old
 // stack holds frames only. Without this, one throw reaches an error listener
 // twice with the message (the throwing-nextTick test counts such lines).
 std::string stack_without_message(const std::string &stack,
@@ -219,7 +220,7 @@ std::string stack_without_message(const std::string &stack,
     return stack.substr(message.size() + 1);
 }
 
-// Reports a caught exception the way js_engine.c does: its String() form,
+// Reports a caught exception through the runtime contract: its String() form,
 // then its `stack`. V8's stack repeats the message on its first line, which
 // is stripped; the frame lines are then emitted as they are. A stack with no
 // frame at all (V8's SyntaxError stack is the message alone) gets the
@@ -694,7 +695,7 @@ std::string codecache_path(const std::string &dir, const std::string &source) {
 // Reports every rejection still unhandled after a checkpoint through the
 // shim's __error_handler_dispatchRejection (so the game's
 // `unhandledrejection` listener fires), or as a console error when the shim
-// is not loaded. Same behaviour as js_engine.c.
+// is not loaded. Preserves the loader contract.
 void flush_rejections(JSEngine *engine, v8::Local<v8::Context> context) {
     std::vector<Rejection> list;
     list.swap(engine->rejections);  // dispatching may reject further promises
@@ -829,7 +830,7 @@ char *js_engine_eval_string(JSEngine *engine, const char *script, const char *fi
 void js_engine_free_string(char *str) { std::free(str); }
 
 // See js_engine.h. Uses the code cache when a cache dir is set, as
-// js_engine.c uses its .jsc cache then.
+// Cached evaluation always uses the host code cache.
 bool js_engine_eval_file(JSEngine *engine, const char *filepath) {
     if (!engine || !filepath) return false;
     if (!engine->cache_dir.empty()) return js_engine_eval_file_cached(engine, filepath);
@@ -843,7 +844,7 @@ bool js_engine_eval_file(JSEngine *engine, const char *filepath) {
 }
 
 // See js_engine.h. In v8 mode the cache is V8's code cache in the cache dir
-// (codecache_path), never a .jsc beside the script, and it is keyed by the
+// (codecache_path), never beside the script, and it is keyed by the
 // source text itself rather than its mtime. A file V8 rejects (another
 // build or flags, or a damaged file) is deleted and replaced by a fresh
 // cache. The file buffer is not owned by V8's CachedData (the Source in
@@ -892,7 +893,7 @@ bool js_engine_set_cache_dir(JSEngine *engine, const char *cache_dir, const char
     return true;
 }
 
-// See js_engine.h. Same rule as js_engine.c.
+// See js_engine.h. Preserves the host directory contract.
 bool js_engine_default_cache_dir(const char *app, char *out, size_t out_size) {
     if (!app || !app[0] || !out || out_size == 0) return false;
     out[0] = '\0';

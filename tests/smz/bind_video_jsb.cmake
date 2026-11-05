@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 The smzuggler contributors
-# Exercise the video bridge on the selected engine (DEC-SETUP-009).
-# Links the real video engine, but opens no device and retains no JS handles.
+# Modified 2026-11-05: register V8 coverage without the removed engine.
+# Runtime binding checks; see docs/js-binding.md.
 set(video_jsb_sources
     ${CMAKE_CURRENT_LIST_DIR}/test_bind_video_jsb.c
     ${PROJECT_SOURCE_DIR}/src/bindings/bind_video.c
@@ -11,14 +11,8 @@ set(video_jsb_sources
     ${PROJECT_SOURCE_DIR}/src/rendering/renderer.c
     ${PROJECT_SOURCE_DIR}/src/rendering/gl_loader.c
     ${PROJECT_SOURCE_DIR}/src/io/file_io.c)
-if(SMZ_JS_ENGINE STREQUAL "v8")
-    add_executable(test_bind_video_jsb ${video_jsb_sources})
-    target_link_libraries(test_bind_video_jsb PRIVATE smz_js_engine_v8)
-else()
-    add_executable(test_bind_video_jsb ${video_jsb_sources}
-        ${PROJECT_SOURCE_DIR}/src/engine/js_engine.c)
-    target_link_libraries(test_bind_video_jsb PRIVATE smz_jsb)
-endif()
+add_executable(test_bind_video_jsb ${video_jsb_sources})
+target_link_libraries(test_bind_video_jsb PRIVATE smz_js_engine_v8)
 target_include_directories(test_bind_video_jsb PRIVATE ${PROJECT_SOURCE_DIR}/src
     ${PROJECT_SOURCE_DIR}/third_party/pl_mpeg)
 target_link_libraries(test_bind_video_jsb PRIVATE soloud SDL3::SDL3 OpenGL::GL ${RMMZ_SYS_LIBS})

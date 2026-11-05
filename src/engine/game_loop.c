@@ -2,8 +2,9 @@
  * Copyright (c) 2026 General Arcade (Pte. Ltd.)
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
  * Copyright (C) 2026 The smzuggler contributors
- * Modified 2026-11-01: call into JS only through js_engine.h, with no QuickJS
- * calls, so the loop runs unchanged on both engines (card M1-T009).
+ * Modified 2026-11-05: remove former engine migration contracts.
+ * Modified 2026-11-01: call into JS only through js_engine.h, with no engine-specific
+ * calls, so the loop uses the opaque engine API (card M1-T009).
  * Modified 2026-11-01: a microtask checkpoint after every macrotask, with
  * process.nextTick jobs ahead of promise jobs (card M1-T010).
  * Modified 2026-11-04: move V8 callback and tick integration to context startup.
@@ -108,14 +109,13 @@ static void control_shutdown(GameLoop *loop);
      't' / 'f'  it ran and returned a truthy / falsy value
      'x'  it threw: message, then U+0001 and the stack if it had one. The
           helper has already passed it to __error_handler_dispatch
-          (window.onerror) as error_handler_report_js_exception does
+          (window.onerror) as error_handler_report_js_error does
      'v'  a value follows (probe result, drained control replies)
      'e'  the probe threw: its message follows
    Keeping the functions in JS keeps the loop free of engine handles, so the
-   same code runs on QuickJS and on V8 (docs/js-binding.md, "Game loop").
+   loop uses V8 through js_engine.h (docs/js-binding.md, "Game loop").
 
-   V8 owns nextTick priority and checkpoints; QuickJS retains its phase-level
-   tick queue. See docs/decisions/DEC-M1-T010.md for ordering. */
+   V8 owns nextTick priority and checkpoints. See docs/decisions/DEC-M1-T010.md for ordering. */
 static const char kLoopJs[] =
     "(function (g) {\n"
     "  'use strict';\n"
@@ -124,25 +124,6 @@ static const char kLoopJs[] =
     "               '__dom_updateGamepads', '__dom_flushTimers',\n"
     "               '__dom_flushAnimationFrames'];\n"
     "  var phases = {}, controlEval, outbox = [];\n"
-    "  var ticks = [], tickJob = false;\n"
-    "  /** Main-thread QuickJS fallback: exhaust owned callbacks before phase jobs. */\n"
-    "  function drainTicks() {\n"
-    "    tickJob = false;\n"
-    "    while (ticks.length) {\n"
-    "      var t = ticks.shift();\n"
-    "      try { t.fn.apply(undefined, t.args); } catch (e) {\n"
-    "        /** Re-throw tick errors as tasks so later ticks still run. */\n"
-    "        g.setTimeout(function () { throw e; }, 0);\n"
-    "      }\n"
-    "    }\n"
-    "  }\n"
-    "  /** Queue Node callbacks in QuickJS; V8 supplies its own queue at startup. */\n"
-    "  function nextTick(fn) {\n"
-    "    if (typeof fn !== 'function') throw new TypeError('nextTick callback must be a function');\n"
-    "    ticks.push({fn: fn, args: Array.prototype.slice.call(arguments, 1)});\n"
-    "    if (!tickJob) { tickJob = true; Promise.resolve().then(drainTicks); }\n"
-    "  }\n"
-    "  if (!g.__smz_microtaskCheckpoint && g.process) g.process.nextTick = nextTick;\n"
     "  function report(e) {\n"
     "    var msg = 'Unknown error', stack = null;\n"
     "    try { msg = String(e); } catch (ignored) {}\n"
@@ -166,7 +147,7 @@ static const char kLoopJs[] =
     "      return 't';\n"
     "    },\n"
     "    phase: function (a) {\n"
-    "      try { return invoke(phases[a[0]], g, a.slice(1)); } finally { drainTicks(); }\n"
+    "      return invoke(phases[a[0]], g, a.slice(1));\n"
     "    },\n"
     "    call: function (a) { return invoke(g[a[0]], g, a.slice(1)); },\n"
     "    controlInit: function () {\n"
@@ -256,7 +237,7 @@ static void sb_js_string(StrBuf *sb, const char *text)
 /* Installs kLoopJs once per loop. Why: the helper must exist before the
    first call, and the shims it reads may load after game_loop_create.
    Returns whether it is usable; a failure is logged once and the loop then
-   runs without JS, as it did when QuickJS had no context. Main thread. */
+   runs without JS when no engine is supplied. Main thread. */
 static bool ensure_js(GameLoop *loop)
 {
     if (loop->js_ready || loop->js_failed) return loop->js_ready;

@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
    Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-05: remove former-engine-only branches; retain V8 checks.
 
    Tests the engine-neutral JS error paths of error_handler.c (card M1-T011,
    spec section 4.1 item 5): error_handler_report_js_error, the window.onerror
@@ -16,9 +17,7 @@
 
 #include "engine/error_handler.h"
 #include "engine/js_engine.h"
-#ifdef SMZ_JS_ENGINE_V8
 #include "jsb.h"
-#endif
 
 #include <assert.h>
 #include <stdio.h>
@@ -155,7 +154,6 @@ static void test_auto_save(JSEngine *engine)
     expect_js(engine, "1 + 1", "2");
 }
 
-#ifdef SMZ_JS_ENGINE_V8
 /* The callback kept by __t_eh.keep, owned by this test. */
 static jsb_callback g_cb;
 
@@ -194,7 +192,6 @@ static void test_attach_jsb(JSEngine *engine)
     assert(strstr(g_log, "cb.js:1"));
     assert(jsb_callback_free(&g_cb));
 }
-#endif
 
 int main(void)
 {
@@ -208,9 +205,7 @@ int main(void)
     test_dispatch(engine);
     test_dispatch_failures(engine);
     test_auto_save(engine);
-#ifdef SMZ_JS_ENGINE_V8
     test_attach_jsb(engine);
-#endif
     js_engine_shutdown(engine);
     error_handler_shutdown();
     printf("error_handler_jsb: all checks passed\n");

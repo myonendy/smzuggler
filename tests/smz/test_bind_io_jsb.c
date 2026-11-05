@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-05: remove former-engine-only branches; retain V8 checks.
  *
  * Checks that __native_io, ported to jsb by card M1-T016, keeps its JS API
  * byte-for-byte: property names, each function's typeof and length, result
@@ -164,11 +165,7 @@ static void check_errors(JSEngine *engine)
     expect(engine, "[io.existsSync('save/v.bin'),err(function(){"
            "io.readFileSync({toString:function(){throw new RangeError('ts')}})})]"
            ".join()", "false,RangeError: ts");
-#ifdef SMZ_JS_ENGINE_V8
     const char *symbol_error = "TypeError: Cannot convert a Symbol value to a string";
-#else
-    const char *symbol_error = "TypeError: cannot convert symbol to string";
-#endif
     expect(engine, "err(function(){io.existsSync(Symbol())})", symbol_error);
     expect(engine, "var e;try{io.readFileSync('nope.txt')}catch(x){e=x}"
            "[e instanceof Error,String(e).indexOf('InternalError: ')].join()",

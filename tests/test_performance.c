@@ -1,5 +1,7 @@
 /*
  * Copyright (c) 2026 General Arcade (Pte. Ltd.)
+ * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-05: check host V8 code caches instead of adjacent bytecode.
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
  */
 
@@ -373,8 +375,26 @@ TEST(test_audio_peak_voice_tracking)
     audio_engine_shutdown();
 }
 
+/* Return an owned stream for the sole V8 cache in this test's isolated directory.
+ * Main thread; SDL owns the temporary listing, released here. NULL signals a
+ * missing or ambiguous cache. Replaces QuickJS's adjacent .jsc existence check. */
+static FILE *open_code_cache(const char *directory)
+{
+    int count = 0;
+    char **names = SDL_GlobDirectory(directory, "*.bin", 0, &count);
+    FILE *file = NULL;
+    if (names && count == 1) {
+        char path[TEST_PATH_MAX];
+        int n = snprintf(path, sizeof path, "%s/%s", directory, names[0]);
+        if (n > 0 && (size_t)n < sizeof path) file = fopen(path, "rb");
+    }
+    SDL_free(names);
+    return file;
+}
+
 /* JS engine bytecode caching tests */
 
+/* Check that one successful main-thread compilation writes a host code cache. */
 TEST(test_bytecode_caching_basic)
 {
     JSEngine *engine = js_engine_init();
@@ -386,7 +406,9 @@ TEST(test_bytecode_caching_basic)
     fputs(test_js, f);
     fclose(f);
 
-    remove(test_tmp_path("test_bc.jsc"));
+    test_rm_rf(test_tmp_path("test_bc_cache"));
+
+    js_engine_set_cache_dir(engine, test_tmp_path("test_bc_cache"), NULL);
 
     /* First eval — should compile and cache */
     bool ok = js_engine_eval_file_cached(engine, test_tmp_path("test_bc.js"));
@@ -398,16 +420,17 @@ TEST(test_bytecode_caching_basic)
     js_engine_free_string(result);
 
     /* Verify cache file was created */
-    f = fopen(test_tmp_path("test_bc.jsc"), "rb");
+    f = open_code_cache(test_tmp_path("test_bc_cache"));
     ASSERT(f != NULL);
     fclose(f);
 
     js_engine_shutdown(engine);
 
     remove(test_tmp_path("test_bc.js"));
-    remove(test_tmp_path("test_bc.jsc"));
+    test_rm_rf(test_tmp_path("test_bc_cache"));
 }
 
+/* Check that a fresh engine evaluates correctly with the existing host cache. */
 TEST(test_bytecode_caching_loads_from_cache)
 {
     const char *test_js = "var _bc_cached_val = 123;";
@@ -415,23 +438,25 @@ TEST(test_bytecode_caching_loads_from_cache)
     ASSERT(f != NULL);
     fputs(test_js, f);
     fclose(f);
-    remove(test_tmp_path("test_bc2.jsc"));
+    test_rm_rf(test_tmp_path("test_bc2_cache"));
 
     /* First pass: compile and cache */
     JSEngine *engine1 = js_engine_init();
     ASSERT(engine1 != NULL);
+    js_engine_set_cache_dir(engine1, test_tmp_path("test_bc2_cache"), NULL);
     bool ok = js_engine_eval_file_cached(engine1, test_tmp_path("test_bc2.js"));
     ASSERT(ok);
     js_engine_shutdown(engine1);
 
     /* Verify cache exists */
-    f = fopen(test_tmp_path("test_bc2.jsc"), "rb");
+    f = open_code_cache(test_tmp_path("test_bc2_cache"));
     ASSERT(f != NULL);
     fclose(f);
 
     /* Second pass: should load from cache */
     JSEngine *engine2 = js_engine_init();
     ASSERT(engine2 != NULL);
+    js_engine_set_cache_dir(engine2, test_tmp_path("test_bc2_cache"), NULL);
     ok = js_engine_eval_file_cached(engine2, test_tmp_path("test_bc2.js"));
     ASSERT(ok);
 
@@ -443,9 +468,10 @@ TEST(test_bytecode_caching_loads_from_cache)
     js_engine_shutdown(engine2);
 
     remove(test_tmp_path("test_bc2.js"));
-    remove(test_tmp_path("test_bc2.jsc"));
+    test_rm_rf(test_tmp_path("test_bc2_cache"));
 }
 
+/* Check that a changed script takes effect instead of executing stale code. */
 TEST(test_bytecode_caching_invalidates_on_change)
 {
     const char *test_js_v1 = "var _bc_version = 1;";
@@ -453,7 +479,6 @@ TEST(test_bytecode_caching_invalidates_on_change)
     ASSERT(f != NULL);
     fputs(test_js_v1, f);
     fclose(f);
-    remove(test_tmp_path("test_bc3.jsc"));
 
     /* First pass: compile and cache */
     JSEngine *engine1 = js_engine_init();
@@ -490,7 +515,6 @@ TEST(test_bytecode_caching_invalidates_on_change)
     js_engine_shutdown(engine2);
 
     remove(test_tmp_path("test_bc3.js"));
-    remove(test_tmp_path("test_bc3.jsc"));
 }
 
 /* JS eval benchmark */
@@ -520,6 +544,7 @@ TEST(test_benchmark_js_eval)
     js_engine_shutdown(engine);
 }
 
+/* Compare repeated source and cached evaluation on main-thread engines. */
 TEST(test_benchmark_bytecode_vs_source)
 {
     JSEngine *engine = js_engine_init();
@@ -536,7 +561,6 @@ TEST(test_benchmark_bytecode_vs_source)
     ASSERT(f != NULL);
     fputs(test_js, f);
     fclose(f);
-    remove(test_tmp_path("test_bench.jsc"));
 
     /* Benchmark source eval */
     clock_t start = clock();
@@ -570,7 +594,6 @@ TEST(test_benchmark_bytecode_vs_source)
     js_engine_shutdown(engine);
 
     remove(test_tmp_path("test_bench.js"));
-    remove(test_tmp_path("test_bench.jsc"));
 }
 
 /* Game loop stats tests */

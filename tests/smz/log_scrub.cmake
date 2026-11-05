@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 The smzuggler contributors
+# Modified 2026-11-05: use the sole V8 engine for surface inventory.
 # Exercise the logger boundary with the same dependencies as error_handler.
 # See docs/DECISIONS.md (DEC-M0-T004) and docs/privacy.md; fixtures are temporary and contain no game material.
 # These fixtures use POSIX temporary directories and descriptor redirection.
@@ -7,11 +8,10 @@
 if(NOT WIN32)
 add_executable(test_log_scrub ${CMAKE_CURRENT_LIST_DIR}/test_log_scrub.c
     ${PROJECT_SOURCE_DIR}/src/engine/error_handler.c
-    ${PROJECT_SOURCE_DIR}/src/engine/js_engine.c
     ${PROJECT_SOURCE_DIR}/src/io/file_io.c
     ${PROJECT_SOURCE_DIR}/src/bindings/bind_io.c)
 target_include_directories(test_log_scrub PRIVATE ${PROJECT_SOURCE_DIR}/src)
-target_link_libraries(test_log_scrub PRIVATE qjs SDL3::SDL3)
+target_link_libraries(test_log_scrub PRIVATE smz_js_engine_v8 SDL3::SDL3)
 add_test(NAME log_scrub COMMAND test_log_scrub)
 add_executable(test_log_scrub_boundaries
     ${CMAKE_CURRENT_LIST_DIR}/test_log_scrub_boundaries.c

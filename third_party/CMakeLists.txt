@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 The smzuggler contributors
+# Modified 2026-11-05: remove the former JavaScript engine dependency.
+# Offline native dependencies shared by the V8 runtime; see ARCHITECTURE.md.
 include(FetchContent)
 
 # SDL3 — window, input, audio device and the GPU rendering backend.
@@ -21,16 +25,6 @@ set(SDL_INSTALL OFF CACHE BOOL "" FORCE)
 # a fatal configure error, so a Linux box without libxtst-dev could not build.
 set(SDL_X11_XTEST OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(SDL3)
-
-# QuickJS-NG
-FetchContent_Declare(
-    quickjs
-    GIT_REPOSITORY https://github.com/quickjs-ng/quickjs.git
-    GIT_TAG        v0.9.0
-    GIT_SHALLOW    TRUE
-)
-set(BUILD_QJS_LIBC ON CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(quickjs)
 
 # SoLoud audio engine — fetch source and build manually for reliable integration
 FetchContent_Declare(

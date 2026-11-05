@@ -1,5 +1,8 @@
 /*
  * Copyright (c) 2026 General Arcade (Pte. Ltd.)
+ * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-05: assert V8 tick priority in the shared storage suite.
+ * Storage API regression checks; see docs/js-binding.md. Main-thread engines.
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
  */
 
@@ -733,19 +736,18 @@ TEST(process_next_tick_continues_after_throw)
     js_teardown();
 }
 
+/* Check Node tick priority after a promise was queued on the main-thread engine. */
 TEST(process_next_tick_after_already_queued_promise)
 {
     js_setup();
-    /* A Promise job queued before the first nextTick of a turn still runs
-       first: ticks are drained by Promise.resolve().then, so this is P,N.
-       Node would run N,P. */
+    /* Replaces QuickJS Promise-based tick scheduling (P,N) with V8/Node priority. */
     ASSERT(js_check(
         "var order = [];"
         "Promise.resolve().then(function() { order.push('P'); });"
         "process.nextTick(function() { order.push('N'); });"
         "order.length === 0"));
     js_engine_execute_pending_jobs(s_js);
-    ASSERT(js_check("order.join(',') === 'P,N'"));
+    ASSERT(js_check("order.join(',') === 'N,P'"));
     js_teardown();
 }
 
