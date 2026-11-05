@@ -1,436 +1,559 @@
 /*
  * Copyright (c) 2026 General Arcade (Pte. Ltd.)
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
+ * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-04: port the native audio bridge to jsb.
+ *
+ * Implements the native mixer bridge for src/shims/webaudio_shim.js, backing
+ * the AudioContext, AudioBufferSourceNode and AudioParam compat-surface rows.
+ * Reference: https://webaudio.github.io/web-audio-api/
+ * See docs/js-binding.md for seam and lifetime rules. Main thread only:
+ * handles and borrowed buffer bytes never outlive a native call; SoLoud
+ * copies audio bytes before return. No callbacks or persistent JS handles.
+ * Bus indices outside 0..3 throw RangeError; other native errors return
+ * invalid IDs or defaults. Missing arguments retain the shim defaults.
  */
 
 #include "bindings/bind_audio.h"
 #include "audio/audio_engine.h"
 #include "io/file_io.h"
 
-#include <quickjs.h>
+#ifdef SMZ_JSB_ADOPT
+#include "jsb/jsb_adopt.h"
+#endif
+#include <stdio.h>
 #include <string.h>
 
 #define PATH_BUF_SIZE 4096
 
-/* Resolve a JS string argument to an absolute path. Returns the JS C-string
-   (caller frees) or NULL with a pending exception. */
-static const char *resolve_audio_path(JSContext *ctx, JSValueConst arg,
-                                       char *out, size_t out_size)
+/* Coerce path argument index and resolve inside the game root, main thread.
+ * Returns an owned string (caller frees) or NULL with conversion/TypeError;
+ * out is a caller-owned path buffer of out_size bytes. No pointer is retained. */
+static char *resolve_audio_path(jsb_ctx *ctx, int index,
+                                char *out, size_t out_size)
 {
-    const char *raw = JS_ToCString(ctx, arg);
+    char *raw = jsb_arg_to_str(ctx, index, NULL);
     if (!raw) return NULL;
 
     if (!file_io_resolve_path(raw, out, out_size)) {
-        JS_ThrowTypeError(ctx, "audio path resolution failed: %s", raw);
-        JS_FreeCString(ctx, raw);
+        jsb_throw_type(ctx, "audio path resolution failed: %s", raw);
+        jsb_free_str(raw);
         return NULL;
     }
     return raw;
 }
 
-/* init() -> bool */
-static JSValue js_audio_init(JSContext *ctx, JSValueConst this_val,
-                              int argc, JSValueConst *argv)
+/* Start the shim mixer; no arguments, returns success as a Boolean.
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_init(jsb_ctx *ctx)
 {
-    (void)this_val; (void)argc; (void)argv;
-    return JS_NewBool(ctx, audio_engine_init());
+    jsb_ret_bool(ctx, audio_engine_init());
 }
 
-/* shutdown() */
-static JSValue js_audio_shutdown(JSContext *ctx, JSValueConst this_val,
-                                  int argc, JSValueConst *argv)
+/* Release mixer resources for AudioContext.close; returns undefined.
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_shutdown(jsb_ctx *ctx)
 {
-    (void)this_val; (void)argc; (void)argv;
+    (void)ctx;
     audio_engine_shutdown();
-    return JS_UNDEFINED;
+    return;
 }
 
-/* isInitialized() -> bool */
-static JSValue js_audio_is_initialized(JSContext *ctx, JSValueConst this_val,
-                                        int argc, JSValueConst *argv)
+/* Report whether AudioContext has a mixer; returns a Boolean.
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_is_initialized(jsb_ctx *ctx)
 {
-    (void)this_val; (void)argc; (void)argv;
-    return JS_NewBool(ctx, audio_engine_is_initialized());
+    jsb_ret_bool(ctx, audio_engine_is_initialized());
 }
 
-/* load(path) -> sourceHandle */
-static JSValue js_audio_load(JSContext *ctx, JSValueConst this_val,
-                              int argc, JSValueConst *argv)
+/* Decode an AudioBuffer from a coerced path; returns a source ID (0 on failure).
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_load(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1) return JS_ThrowTypeError(ctx, "load requires a path argument");
+    if (jsb_arg_count(ctx) < 1) {
+        jsb_throw_type(ctx, "load requires a path argument");
+        return;
+    }
 
     char resolved[PATH_BUF_SIZE];
-    const char *raw = resolve_audio_path(ctx, argv[0], resolved, sizeof(resolved));
-    if (!raw) return JS_EXCEPTION;
-    JS_FreeCString(ctx, raw);
+    char *raw = resolve_audio_path(ctx, 0, resolved, sizeof(resolved));
+    if (!raw) return;
+    jsb_free_str(raw);
 
     AudioSourceHandle h = audio_load(resolved);
-    return JS_NewUint32(ctx, h);
+    jsb_ret_val(ctx, jsb_new_u32(ctx, h));
 }
 
-/* loadStream(path) -> sourceHandle */
-static JSValue js_audio_load_stream(JSContext *ctx, JSValueConst this_val,
-                                     int argc, JSValueConst *argv)
+/* Open streamed audio from a coerced path; returns a source ID (0 on failure).
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_load_stream(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1) return JS_ThrowTypeError(ctx, "loadStream requires a path argument");
+    if (jsb_arg_count(ctx) < 1) {
+        jsb_throw_type(ctx, "loadStream requires a path argument");
+        return;
+    }
 
     char resolved[PATH_BUF_SIZE];
-    const char *raw = resolve_audio_path(ctx, argv[0], resolved, sizeof(resolved));
-    if (!raw) return JS_EXCEPTION;
-    JS_FreeCString(ctx, raw);
+    char *raw = resolve_audio_path(ctx, 0, resolved, sizeof(resolved));
+    if (!raw) return;
+    jsb_free_str(raw);
 
     AudioSourceHandle h = audio_load_stream(resolved);
-    return JS_NewUint32(ctx, h);
+    jsb_ret_val(ctx, jsb_new_u32(ctx, h));
 }
 
-/* loadFromMemory(arrayBuffer) -> sourceHandle */
-static JSValue js_audio_load_from_memory(JSContext *ctx, JSValueConst this_val,
-                                          int argc, JSValueConst *argv)
+/* Decode an AudioBuffer from borrowed bytes; returns a source ID (0 on failure).
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_load_from_memory(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1) return JS_ThrowTypeError(ctx, "loadFromMemory requires an ArrayBuffer");
+    if (jsb_arg_count(ctx) < 1) {
+        jsb_throw_type(ctx, "loadFromMemory requires an ArrayBuffer");
+        return;
+    }
 
     size_t size = 0;
-    uint8_t *data = JS_GetArrayBuffer(ctx, &size, argv[0]);
-    if (!data) return JS_ThrowTypeError(ctx, "argument must be an ArrayBuffer");
+    uint8_t *data;
+    if (!jsb_arg_bytes(ctx, 0, &data, &size)) {
+        jsb_clear_exception(ctx);
+        jsb_throw_type(ctx, "argument must be an ArrayBuffer");
+        return;
+    }
 
-    if (size > UINT32_MAX) return JS_ThrowRangeError(ctx, "audio buffer too large");
+    if (size > UINT32_MAX) {
+        jsb_throw_range(ctx, "audio buffer too large");
+        return;
+    }
     AudioSourceHandle h = audio_load_from_memory(data, (uint32_t)size);
-    return JS_NewUint32(ctx, h);
+    jsb_ret_val(ctx, jsb_new_u32(ctx, h));
 }
 
-/* freeSource(sourceHandle) */
-static JSValue js_audio_free_source(JSContext *ctx, JSValueConst this_val,
-                                     int argc, JSValueConst *argv)
+/* Release a source ID for AudioBuffer disposal; missing ID is a no-op.
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_free_source(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1) return JS_UNDEFINED;
+    if (jsb_arg_count(ctx) < 1) return;
     uint32_t h;
-    if (JS_ToUint32(ctx, &h, argv[0])) return JS_EXCEPTION;
+    if (!jsb_arg_to_u32(ctx, 0, &h)) return;
     audio_source_free(h);
-    return JS_UNDEFINED;
+    return;
 }
 
-/* play(source, bus, volume, pitch, pan, loop) -> voiceHandle */
-static JSValue js_audio_play(JSContext *ctx, JSValueConst this_val,
-                              int argc, JSValueConst *argv)
+/* Start AudioBufferSourceNode: source ID, bus 0..3, gain, rate, pan, loop; returns voice ID.
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_play(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 6) return JS_ThrowTypeError(ctx, "play requires 6 arguments");
+    if (jsb_arg_count(ctx) < 6) {
+        jsb_throw_type(ctx, "play requires 6 arguments");
+        return;
+    }
 
     uint32_t source;
     int32_t bus;
     double volume, pitch, pan;
-    int loop;
+    bool loop;
 
-    if (JS_ToUint32(ctx, &source, argv[0])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &bus, argv[1])) return JS_EXCEPTION;
-    if (bus < 0 || bus >= AUDIO_BUS_COUNT)
-        return JS_ThrowRangeError(ctx, "invalid audio bus: %d", bus);
-    if (JS_ToFloat64(ctx, &volume, argv[2])) return JS_EXCEPTION;
-    if (JS_ToFloat64(ctx, &pitch, argv[3])) return JS_EXCEPTION;
-    if (JS_ToFloat64(ctx, &pan, argv[4])) return JS_EXCEPTION;
-    loop = JS_ToBool(ctx, argv[5]);
-    if (loop < 0) return JS_EXCEPTION;
+    if (!jsb_arg_to_u32(ctx, 0, &source)) return;
+    if (!jsb_arg_to_i32(ctx, 1, &bus)) return;
+    if (bus < 0 || bus >= AUDIO_BUS_COUNT) {
+        jsb_throw_range(ctx, "invalid audio bus: %d", bus);
+        return;
+    }
+    if (!jsb_arg_to_f64(ctx, 2, &volume)) return;
+    if (!jsb_arg_to_f64(ctx, 3, &pitch)) return;
+    if (!jsb_arg_to_f64(ctx, 4, &pan)) return;
+    loop = jsb_arg_truthy(ctx, 5);
 
     AudioVoice voice = audio_play(source, (AudioBus)bus, (float)volume,
-                                   (float)pitch, (float)pan, loop != 0);
-    return JS_NewUint32(ctx, voice);
+                                  (float)pitch, (float)pan, loop != 0);
+    jsb_ret_val(ctx, jsb_new_u32(ctx, voice));
 }
 
-/* stop(voiceHandle) */
-static JSValue js_audio_stop(JSContext *ctx, JSValueConst this_val,
-                              int argc, JSValueConst *argv)
+/* Stop an AudioBufferSourceNode by voice ID; missing ID is a no-op.
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_stop(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1) return JS_UNDEFINED;
+    if (jsb_arg_count(ctx) < 1) return;
     uint32_t v;
-    if (JS_ToUint32(ctx, &v, argv[0])) return JS_EXCEPTION;
+    if (!jsb_arg_to_u32(ctx, 0, &v)) return;
     audio_stop(v);
-    return JS_UNDEFINED;
+    return;
 }
 
-/* stopBus(bus) */
-static JSValue js_audio_stop_bus(JSContext *ctx, JSValueConst this_val,
-                                  int argc, JSValueConst *argv)
+/* Stop voices on bus 0..3; missing bus is a no-op.
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_stop_bus(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1) return JS_UNDEFINED;
+    if (jsb_arg_count(ctx) < 1) return;
     int32_t bus;
-    if (JS_ToInt32(ctx, &bus, argv[0])) return JS_EXCEPTION;
-    if (bus < 0 || bus >= AUDIO_BUS_COUNT)
-        return JS_ThrowRangeError(ctx, "invalid audio bus: %d", bus);
+    if (!jsb_arg_to_i32(ctx, 0, &bus)) return;
+    if (bus < 0 || bus >= AUDIO_BUS_COUNT) {
+        jsb_throw_range(ctx, "invalid audio bus: %d", bus);
+        return;
+    }
     audio_stop_bus((AudioBus)bus);
-    return JS_UNDEFINED;
+    return;
 }
 
-/* stopAll() */
-static JSValue js_audio_stop_all(JSContext *ctx, JSValueConst this_val,
-                                  int argc, JSValueConst *argv)
+/* Stop all mixer voices for AudioContext teardown; returns undefined.
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_stop_all(jsb_ctx *ctx)
 {
-    (void)this_val; (void)argc; (void)argv;
+    (void)ctx;
     audio_stop_all();
-    return JS_UNDEFINED;
+    return;
 }
 
-/* pause(voiceHandle) */
-static JSValue js_audio_pause(JSContext *ctx, JSValueConst this_val,
-                               int argc, JSValueConst *argv)
+/* Suspend a voice ID for the shim; missing ID is a no-op.
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_pause(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1) return JS_UNDEFINED;
+    if (jsb_arg_count(ctx) < 1) return;
     uint32_t v;
-    if (JS_ToUint32(ctx, &v, argv[0])) return JS_EXCEPTION;
+    if (!jsb_arg_to_u32(ctx, 0, &v)) return;
     audio_pause(v);
-    return JS_UNDEFINED;
+    return;
 }
 
-/* resume(voiceHandle) */
-static JSValue js_audio_resume(JSContext *ctx, JSValueConst this_val,
-                                int argc, JSValueConst *argv)
+/* Resume a suspended voice ID for the shim; missing ID is a no-op.
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_resume(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1) return JS_UNDEFINED;
+    if (jsb_arg_count(ctx) < 1) return;
     uint32_t v;
-    if (JS_ToUint32(ctx, &v, argv[0])) return JS_EXCEPTION;
+    if (!jsb_arg_to_u32(ctx, 0, &v)) return;
     audio_resume(v);
-    return JS_UNDEFINED;
+    return;
 }
 
-/* pauseBus(bus) / resumeBus(bus) */
-static JSValue js_audio_pause_bus(JSContext *ctx, JSValueConst this_val,
-                                   int argc, JSValueConst *argv)
+/* Suspend bus 0..3 for the shim; missing bus is a no-op.
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_pause_bus(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1) return JS_UNDEFINED;
+    if (jsb_arg_count(ctx) < 1) return;
     int32_t bus;
-    if (JS_ToInt32(ctx, &bus, argv[0])) return JS_EXCEPTION;
-    if (bus < 0 || bus >= AUDIO_BUS_COUNT)
-        return JS_ThrowRangeError(ctx, "invalid audio bus: %d", bus);
+    if (!jsb_arg_to_i32(ctx, 0, &bus)) return;
+    if (bus < 0 || bus >= AUDIO_BUS_COUNT) {
+        jsb_throw_range(ctx, "invalid audio bus: %d", bus);
+        return;
+    }
     audio_pause_bus((AudioBus)bus);
-    return JS_UNDEFINED;
+    return;
 }
 
-static JSValue js_audio_resume_bus(JSContext *ctx, JSValueConst this_val,
-                                    int argc, JSValueConst *argv)
+/* Resume bus 0..3 for the shim; missing bus is a no-op.
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_resume_bus(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1) return JS_UNDEFINED;
+    if (jsb_arg_count(ctx) < 1) return;
     int32_t bus;
-    if (JS_ToInt32(ctx, &bus, argv[0])) return JS_EXCEPTION;
-    if (bus < 0 || bus >= AUDIO_BUS_COUNT)
-        return JS_ThrowRangeError(ctx, "invalid audio bus: %d", bus);
+    if (!jsb_arg_to_i32(ctx, 0, &bus)) return;
+    if (bus < 0 || bus >= AUDIO_BUS_COUNT) {
+        jsb_throw_range(ctx, "invalid audio bus: %d", bus);
+        return;
+    }
     audio_resume_bus((AudioBus)bus);
-    return JS_UNDEFINED;
+    return;
 }
 
-/* setVolume(voice, volume) / setPitch / setPan */
-static JSValue js_audio_set_volume(JSContext *ctx, JSValueConst this_val,
-                                    int argc, JSValueConst *argv)
+/* Set AudioParam gain by voice ID and linear gain; missing args are a no-op.
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_set_volume(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 2) return JS_UNDEFINED;
-    uint32_t v; double vol;
-    if (JS_ToUint32(ctx, &v, argv[0])) return JS_EXCEPTION;
-    if (JS_ToFloat64(ctx, &vol, argv[1])) return JS_EXCEPTION;
+    if (jsb_arg_count(ctx) < 2) return;
+    uint32_t v;
+    double vol;
+    if (!jsb_arg_to_u32(ctx, 0, &v)) return;
+    if (!jsb_arg_to_f64(ctx, 1, &vol)) return;
     audio_set_volume(v, (float)vol);
-    return JS_UNDEFINED;
+    return;
 }
 
-static JSValue js_audio_set_pitch(JSContext *ctx, JSValueConst this_val,
-                                   int argc, JSValueConst *argv)
+/* Set playbackRate by voice ID and rate multiplier; missing args are a no-op.
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_set_pitch(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 2) return JS_UNDEFINED;
-    uint32_t v; double p;
-    if (JS_ToUint32(ctx, &v, argv[0])) return JS_EXCEPTION;
-    if (JS_ToFloat64(ctx, &p, argv[1])) return JS_EXCEPTION;
+    if (jsb_arg_count(ctx) < 2) return;
+    uint32_t v;
+    double p;
+    if (!jsb_arg_to_u32(ctx, 0, &v)) return;
+    if (!jsb_arg_to_f64(ctx, 1, &p)) return;
     audio_set_pitch(v, (float)p);
-    return JS_UNDEFINED;
+    return;
 }
 
-static JSValue js_audio_set_pan(JSContext *ctx, JSValueConst this_val,
-                                 int argc, JSValueConst *argv)
+/* Set StereoPannerNode pan by voice ID and pan; missing args are a no-op.
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_set_pan(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 2) return JS_UNDEFINED;
-    uint32_t v; double pan;
-    if (JS_ToUint32(ctx, &v, argv[0])) return JS_EXCEPTION;
-    if (JS_ToFloat64(ctx, &pan, argv[1])) return JS_EXCEPTION;
+    if (jsb_arg_count(ctx) < 2) return;
+    uint32_t v;
+    double pan;
+    if (!jsb_arg_to_u32(ctx, 0, &v)) return;
+    if (!jsb_arg_to_f64(ctx, 1, &pan)) return;
     audio_set_pan(v, (float)pan);
-    return JS_UNDEFINED;
+    return;
 }
 
-/* setBusVolume(bus, volume) */
-static JSValue js_audio_set_bus_volume(JSContext *ctx, JSValueConst this_val,
-                                        int argc, JSValueConst *argv)
+/* Set bus 0..3 linear gain; missing args are a no-op.
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_set_bus_volume(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 2) return JS_UNDEFINED;
-    int32_t bus; double vol;
-    if (JS_ToInt32(ctx, &bus, argv[0])) return JS_EXCEPTION;
-    if (bus < 0 || bus >= AUDIO_BUS_COUNT)
-        return JS_ThrowRangeError(ctx, "invalid audio bus: %d", bus);
-    if (JS_ToFloat64(ctx, &vol, argv[1])) return JS_EXCEPTION;
+    if (jsb_arg_count(ctx) < 2) return;
+    int32_t bus;
+    double vol;
+    if (!jsb_arg_to_i32(ctx, 0, &bus)) return;
+    if (bus < 0 || bus >= AUDIO_BUS_COUNT) {
+        jsb_throw_range(ctx, "invalid audio bus: %d", bus);
+        return;
+    }
+    if (!jsb_arg_to_f64(ctx, 1, &vol)) return;
     audio_set_bus_volume((AudioBus)bus, (float)vol);
-    return JS_UNDEFINED;
+    return;
 }
 
-/* fadeVolume(voice, target, duration) */
-static JSValue js_audio_fade_volume(JSContext *ctx, JSValueConst this_val,
-                                     int argc, JSValueConst *argv)
+/* Ramp a voice ID to linear gain over seconds; missing args are a no-op.
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_fade_volume(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 3) return JS_UNDEFINED;
-    uint32_t v; double target, dur;
-    if (JS_ToUint32(ctx, &v, argv[0])) return JS_EXCEPTION;
-    if (JS_ToFloat64(ctx, &target, argv[1])) return JS_EXCEPTION;
-    if (JS_ToFloat64(ctx, &dur, argv[2])) return JS_EXCEPTION;
+    if (jsb_arg_count(ctx) < 3) return;
+    uint32_t v;
+    double target, dur;
+    if (!jsb_arg_to_u32(ctx, 0, &v)) return;
+    if (!jsb_arg_to_f64(ctx, 1, &target)) return;
+    if (!jsb_arg_to_f64(ctx, 2, &dur)) return;
     audio_fade_volume(v, (float)target, (float)dur);
-    return JS_UNDEFINED;
+    return;
 }
 
-/* fadeBusVolume(bus, target, duration) */
-static JSValue js_audio_fade_bus_volume(JSContext *ctx, JSValueConst this_val,
-                                         int argc, JSValueConst *argv)
+/* Ramp bus 0..3 to linear gain over seconds; missing args are a no-op.
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_fade_bus_volume(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 3) return JS_UNDEFINED;
-    int32_t bus; double target, dur;
-    if (JS_ToInt32(ctx, &bus, argv[0])) return JS_EXCEPTION;
-    if (bus < 0 || bus >= AUDIO_BUS_COUNT)
-        return JS_ThrowRangeError(ctx, "invalid audio bus: %d", bus);
-    if (JS_ToFloat64(ctx, &target, argv[1])) return JS_EXCEPTION;
-    if (JS_ToFloat64(ctx, &dur, argv[2])) return JS_EXCEPTION;
+    if (jsb_arg_count(ctx) < 3) return;
+    int32_t bus;
+    double target, dur;
+    if (!jsb_arg_to_i32(ctx, 0, &bus)) return;
+    if (bus < 0 || bus >= AUDIO_BUS_COUNT) {
+        jsb_throw_range(ctx, "invalid audio bus: %d", bus);
+        return;
+    }
+    if (!jsb_arg_to_f64(ctx, 1, &target)) return;
+    if (!jsb_arg_to_f64(ctx, 2, &dur)) return;
     audio_fade_bus_volume((AudioBus)bus, (float)target, (float)dur);
-    return JS_UNDEFINED;
+    return;
 }
 
-/* isPlaying(voice) -> bool */
-static JSValue js_audio_is_playing(JSContext *ctx, JSValueConst this_val,
-                                    int argc, JSValueConst *argv)
+/* Query playback by voice ID; missing ID returns false.
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_is_playing(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1) return JS_FALSE;
+    if (jsb_arg_count(ctx) < 1) {
+        jsb_ret_bool(ctx, false);
+        return;
+    }
     uint32_t v;
-    if (JS_ToUint32(ctx, &v, argv[0])) return JS_EXCEPTION;
-    return JS_NewBool(ctx, audio_is_playing(v));
+    if (!jsb_arg_to_u32(ctx, 0, &v)) return;
+    jsb_ret_bool(ctx, audio_is_playing(v));
 }
 
-/* isPaused(voice) -> bool */
-static JSValue js_audio_is_paused(JSContext *ctx, JSValueConst this_val,
-                                   int argc, JSValueConst *argv)
+/* Query suspension by voice ID; missing ID returns false.
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_is_paused(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1) return JS_FALSE;
+    if (jsb_arg_count(ctx) < 1) {
+        jsb_ret_bool(ctx, false);
+        return;
+    }
     uint32_t v;
-    if (JS_ToUint32(ctx, &v, argv[0])) return JS_EXCEPTION;
-    return JS_NewBool(ctx, audio_is_paused(v));
+    if (!jsb_arg_to_u32(ctx, 0, &v)) return;
+    jsb_ret_bool(ctx, audio_is_paused(v));
 }
 
-/* getVolume(voice) -> float */
-static JSValue js_audio_get_volume(JSContext *ctx, JSValueConst this_val,
-                                    int argc, JSValueConst *argv)
+/* Read voice ID linear gain; missing ID returns zero.
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_get_volume(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1) return JS_NewFloat64(ctx, 0.0);
+    if (jsb_arg_count(ctx) < 1) {
+        jsb_ret_f64(ctx, 0.0);
+        return;
+    }
     uint32_t v;
-    if (JS_ToUint32(ctx, &v, argv[0])) return JS_EXCEPTION;
-    return JS_NewFloat64(ctx, audio_get_volume(v));
+    if (!jsb_arg_to_u32(ctx, 0, &v)) return;
+    jsb_ret_f64(ctx, audio_get_volume(v));
 }
 
-/* getPosition(voice) -> float */
-static JSValue js_audio_get_position(JSContext *ctx, JSValueConst this_val,
-                                      int argc, JSValueConst *argv)
+/* Read voice ID playback position in seconds; missing ID returns zero.
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_get_position(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1) return JS_NewFloat64(ctx, 0.0);
+    if (jsb_arg_count(ctx) < 1) {
+        jsb_ret_f64(ctx, 0.0);
+        return;
+    }
     uint32_t v;
-    if (JS_ToUint32(ctx, &v, argv[0])) return JS_EXCEPTION;
-    return JS_NewFloat64(ctx, audio_get_position(v));
+    if (!jsb_arg_to_u32(ctx, 0, &v)) return;
+    jsb_ret_f64(ctx, audio_get_position(v));
 }
 
-/* seek(voice, position) */
-static JSValue js_audio_seek(JSContext *ctx, JSValueConst this_val,
-                              int argc, JSValueConst *argv)
+/* Seek voice ID to a position in seconds; missing args are a no-op.
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_seek(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 2) return JS_UNDEFINED;
-    uint32_t v; double pos;
-    if (JS_ToUint32(ctx, &v, argv[0])) return JS_EXCEPTION;
-    if (JS_ToFloat64(ctx, &pos, argv[1])) return JS_EXCEPTION;
+    if (jsb_arg_count(ctx) < 2) return;
+    uint32_t v;
+    double pos;
+    if (!jsb_arg_to_u32(ctx, 0, &v)) return;
+    if (!jsb_arg_to_f64(ctx, 1, &pos)) return;
     audio_seek(v, pos);
-    return JS_UNDEFINED;
+    return;
 }
 
-/* getDuration(sourceHandle) -> float */
-static JSValue js_audio_get_duration(JSContext *ctx, JSValueConst this_val,
-                                      int argc, JSValueConst *argv)
+/* Read AudioBuffer source ID duration in seconds; missing ID returns zero.
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_get_duration(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1) return JS_NewFloat64(ctx, 0.0);
+    if (jsb_arg_count(ctx) < 1) {
+        jsb_ret_f64(ctx, 0.0);
+        return;
+    }
     uint32_t h;
-    if (JS_ToUint32(ctx, &h, argv[0])) return JS_EXCEPTION;
-    return JS_NewFloat64(ctx, audio_get_duration(h));
+    if (!jsb_arg_to_u32(ctx, 0, &h)) return;
+    jsb_ret_f64(ctx, audio_get_duration(h));
 }
 
-/* getActiveVoiceCount() -> int */
-static JSValue js_audio_get_active_voice_count(JSContext *ctx, JSValueConst this_val,
-                                                int argc, JSValueConst *argv)
+/* Report mixer voice count as an integer Number; ignores extra args.
+ * Main thread; retains no JS handles. Coercion exceptions propagate.
+ * See the file contract for the Web Audio shim mapping. */
+static void js_audio_get_active_voice_count(jsb_ctx *ctx)
 {
-    (void)this_val; (void)argc; (void)argv;
-    return JS_NewInt32(ctx, audio_get_active_voice_count());
+    jsb_ret_i32(ctx, audio_get_active_voice_count());
 }
 
 /* Registration */
 
-static const JSCFunctionListEntry js_audio_funcs[] = {
-    JS_CFUNC_DEF("init",                0, js_audio_init),
-    JS_CFUNC_DEF("shutdown",            0, js_audio_shutdown),
-    JS_CFUNC_DEF("isInitialized",       0, js_audio_is_initialized),
-    JS_CFUNC_DEF("load",                1, js_audio_load),
-    JS_CFUNC_DEF("loadStream",          1, js_audio_load_stream),
-    JS_CFUNC_DEF("loadFromMemory",      1, js_audio_load_from_memory),
-    JS_CFUNC_DEF("freeSource",          1, js_audio_free_source),
-    JS_CFUNC_DEF("play",                6, js_audio_play),
-    JS_CFUNC_DEF("stop",                1, js_audio_stop),
-    JS_CFUNC_DEF("stopBus",             1, js_audio_stop_bus),
-    JS_CFUNC_DEF("stopAll",             0, js_audio_stop_all),
-    JS_CFUNC_DEF("pause",               1, js_audio_pause),
-    JS_CFUNC_DEF("resume",              1, js_audio_resume),
-    JS_CFUNC_DEF("pauseBus",            1, js_audio_pause_bus),
-    JS_CFUNC_DEF("resumeBus",           1, js_audio_resume_bus),
-    JS_CFUNC_DEF("setVolume",           2, js_audio_set_volume),
-    JS_CFUNC_DEF("setPitch",            2, js_audio_set_pitch),
-    JS_CFUNC_DEF("setPan",              2, js_audio_set_pan),
-    JS_CFUNC_DEF("setBusVolume",        2, js_audio_set_bus_volume),
-    JS_CFUNC_DEF("fadeVolume",          3, js_audio_fade_volume),
-    JS_CFUNC_DEF("fadeBusVolume",       3, js_audio_fade_bus_volume),
-    JS_CFUNC_DEF("isPlaying",           1, js_audio_is_playing),
-    JS_CFUNC_DEF("isPaused",            1, js_audio_is_paused),
-    JS_CFUNC_DEF("getVolume",           1, js_audio_get_volume),
-    JS_CFUNC_DEF("getPosition",         1, js_audio_get_position),
-    JS_CFUNC_DEF("seek",                2, js_audio_seek),
-    JS_CFUNC_DEF("getDuration",         1, js_audio_get_duration),
-    JS_CFUNC_DEF("getActiveVoiceCount", 0, js_audio_get_active_voice_count),
+/* Static native entry points keep upstream ordering and JS arities. */
+static const struct {
+    const char *name;
+    int length;
+    jsb_fn fn;
+} js_audio_funcs[] = {
+    {"init", 0, js_audio_init},
+    {"shutdown", 0, js_audio_shutdown},
+    {"isInitialized", 0, js_audio_is_initialized},
+    {"load", 1, js_audio_load},
+    {"loadStream", 1, js_audio_load_stream},
+    {"loadFromMemory", 1, js_audio_load_from_memory},
+    {"freeSource", 1, js_audio_free_source},
+    {"play", 6, js_audio_play},
+    {"stop", 1, js_audio_stop},
+    {"stopBus", 1, js_audio_stop_bus},
+    {"stopAll", 0, js_audio_stop_all},
+    {"pause", 1, js_audio_pause},
+    {"resume", 1, js_audio_resume},
+    {"pauseBus", 1, js_audio_pause_bus},
+    {"resumeBus", 1, js_audio_resume_bus},
+    {"setVolume", 2, js_audio_set_volume},
+    {"setPitch", 2, js_audio_set_pitch},
+    {"setPan", 2, js_audio_set_pan},
+    {"setBusVolume", 2, js_audio_set_bus_volume},
+    {"fadeVolume", 3, js_audio_fade_volume},
+    {"fadeBusVolume", 3, js_audio_fade_bus_volume},
+    {"isPlaying", 1, js_audio_is_playing},
+    {"isPaused", 1, js_audio_is_paused},
+    {"getVolume", 1, js_audio_get_volume},
+    {"getPosition", 1, js_audio_get_position},
+    {"seek", 2, js_audio_seek},
+    {"getDuration", 1, js_audio_get_duration},
+    {"getActiveVoiceCount", 0, js_audio_get_active_voice_count},
 };
 
-void bind_audio_register(JSContext *ctx)
+/* Define the Web Audio bridge in a call-scoped module; false propagates
+ * property-definition failure. Constants retain their enumerable shape. */
+static bool audio_module_init(jsb_ctx *ctx, jsb_val *module)
 {
-    JSValue global = JS_GetGlobalObject(ctx);
-    JSValue audio_obj = JS_NewObject(ctx);
-
-    JS_SetPropertyFunctionList(ctx, audio_obj, js_audio_funcs,
-                               sizeof(js_audio_funcs) / sizeof(js_audio_funcs[0]));
-
-    /* Export bus constants. */
-    JS_SetPropertyStr(ctx, audio_obj, "BUS_BGM", JS_NewInt32(ctx, AUDIO_BUS_BGM));
-    JS_SetPropertyStr(ctx, audio_obj, "BUS_BGS", JS_NewInt32(ctx, AUDIO_BUS_BGS));
-    JS_SetPropertyStr(ctx, audio_obj, "BUS_ME",  JS_NewInt32(ctx, AUDIO_BUS_ME));
-    JS_SetPropertyStr(ctx, audio_obj, "BUS_SE",  JS_NewInt32(ctx, AUDIO_BUS_SE));
-
-    JS_SetPropertyStr(ctx, global, "__native_audio", audio_obj);
-    JS_FreeValue(ctx, global);
+    for (size_t i = 0; i < sizeof(js_audio_funcs) / sizeof(js_audio_funcs[0]); i++) {
+        if (!jsb_set_fn_n(ctx, module, js_audio_funcs[i].name,
+                          js_audio_funcs[i].fn, js_audio_funcs[i].length))
+            return false;
+    }
+    return jsb_set_prop(ctx, module, "BUS_BGM", jsb_new_i32(ctx, AUDIO_BUS_BGM)) &&
+           jsb_set_prop(ctx, module, "BUS_BGS", jsb_new_i32(ctx, AUDIO_BUS_BGS)) &&
+           jsb_set_prop(ctx, module, "BUS_ME", jsb_new_i32(ctx, AUDIO_BUS_ME)) &&
+           jsb_set_prop(ctx, module, "BUS_SE", jsb_new_i32(ctx, AUDIO_BUS_SE));
 }
+
+/* Enter setup's handle scope; rt owns the module, user is unused. */
+static bool audio_define_setup(jsb_ctx *ctx, void *user)
+{
+    (void)user;
+    return jsb_define_module(ctx, "__native_audio", audio_module_init);
+}
+
+/* smzuggler: preserve the ArrayBuffer-only brand check and non-enumerable
+ * native functions, as in bind_font. Capture the intrinsic before game JS;
+ * no JS executes while C borrows buffer bytes. Method syntax keeps length,
+ * name and non-constructibility of the original native entry point. */
+static const char audio_surface_js[] =
+    "(function(m){"
+    "var nativeLoad=m.loadFromMemory;"
+    "var byteLength=Object.getOwnPropertyDescriptor(ArrayBuffer.prototype,'byteLength').get;"
+    "m.loadFromMemory={loadFromMemory(buffer){"
+    "if(arguments.length<1)return nativeLoad.apply(this,arguments);"
+    "try{byteLength.call(buffer)}catch(e){"
+    "throw new TypeError('argument must be an ArrayBuffer')}"
+    "return nativeLoad(buffer)}}.loadFromMemory;"
+    "Object.getOwnPropertyNames(m).forEach(function(k){"
+    "if(typeof m[k]==='function')Object.defineProperty(m,k,{enumerable:false})});"
+    "})(__native_audio);";
+
+/* See bind_audio.h: borrow rt, report registration errors on the main thread. */
+bool bind_audio_define(jsb_runtime *rt)
+{
+    if (!rt) {
+        fprintf(stderr, "bind_audio_define: no jsb runtime\n");
+        return false;
+    }
+    if (!jsb_runtime_setup(rt, audio_define_setup, NULL))
+        return false;
+    char error[256];
+    if (!jsb_runtime_eval(rt, audio_surface_js, "bind_audio.c", error, sizeof error)) {
+        fprintf(stderr, "bind_audio_define: %s\n", error);
+        return false;
+    }
+    return true;
+}
+
+#ifdef SMZ_JSB_ADOPT
+/* Transitional main-thread entry; the engine owns the adopted runtime. */
+void bind_audio_register(struct JSContext *ctx)
+{
+    (void)bind_audio_define(jsb_runtime_of(ctx));
+}
+#endif
