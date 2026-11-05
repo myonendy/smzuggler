@@ -1,14 +1,31 @@
 /*
  * Copyright (c) 2026 General Arcade (Pte. Ltd.)
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
+ * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-04: ported from QuickJS to the jsb seam (spec section 4.1).
+ *
+ * __native_canvas2d: the CPU Canvas2D rasteriser behind the
+ * HTMLCanvasElement / CanvasRenderingContext2D shim (docs/js-binding.md,
+ * "bind_canvas2d"). Canvases are numeric handles owned by rendering/canvas2d.
+ *
+ * smzuggler: the port keeps Outsider's structure function by function so
+ * upstream fixes re-apply by hand (docs/UPSTREAM.md). Every jsb_val here is
+ * a call-scoped handle, never kept past the native call that made it, and
+ * buffer bytes from jsb_arg_bytes are borrowed only after every argument
+ * conversion (which may run JS) and only until the call returns (spec
+ * section 15.8, docs/js-binding.md "Handle and lifetime rules").
+ * Main thread only.
  */
 
 #include "bindings/bind_canvas2d.h"
 #include "rendering/canvas2d.h"
 #include "rendering/image_loader.h"
 #include "io/file_io.h"
+#ifdef SMZ_JSB_ADOPT
+#include "jsb/jsb_adopt.h"
+#endif
 
-#include <quickjs.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -23,597 +40,787 @@
 #define MAX_PIXEL_DIM 8192
 #endif
 
+/* Returns whether argument `index` is a plain ArrayBuffer, not a view.
+ *
+ * Why: upstream read buffers with an engine call that accepts only an
+ * ArrayBuffer, while jsb_arg_bytes also takes TypedArrays and DataViews.
+ * Among those three only views have a `byteOffset` (an inherited getter).
+ * Fails, with the exception pending, if the read threw (null, a getter). */
+static bool arg_is_array_buffer(jsb_ctx *ctx, int index, bool *out)
+{
+    jsb_val *off = jsb_get_prop(ctx, jsb_arg_val(ctx, index), "byteOffset");
+    if (!off) return false;
+    *out = jsb_val_type(ctx, off) == JSB_TYPE_UNDEFINED;
+    return true;
+}
+
+/* Borrows argument `index`'s bytes into `*buf` / `*size` when it is an
+ * ArrayBuffer, as upstream's buffer read did.
+ *
+ * Why: keeps upstream's "ArrayBuffer only" rule; plain objects, including
+ * ones spoofing ArrayBuffer.prototype, fail in jsb_arg_bytes. Returns false,
+ * with any pending exception dropped, so the caller throws upstream's own
+ * TypeError. The bytes stay owned by JS, valid until the call returns. */
+static bool arg_array_buffer(jsb_ctx *ctx, int index,
+                             uint8_t **buf, size_t *size)
+{
+    bool is_ab = false;
+    if (!arg_is_array_buffer(ctx, index, &is_ab) || !is_ab ||
+        !jsb_arg_bytes(ctx, index, buf, size)) {
+        jsb_clear_exception(ctx);
+        return false;
+    }
+    return true;
+}
+
 /* Lifecycle */
 
-/* create(width, height) -> handle */
-static JSValue js_c2d_create(JSContext *ctx, JSValueConst this_val,
-                              int argc, JSValueConst *argv)
+/* create(width, height) -> handle | null
+ *
+ * Why: backing store of a new HTMLCanvasElement (compat: HTMLCanvasElement).
+ * Sizes are ToInt32 in 1..MAX_PIXEL_DIM (else RangeError); fewer than two
+ * arguments is a TypeError; null when canvas2d cannot allocate. The caller
+ * frees the handle with destroy. */
+static void js_c2d_create(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 2)
-        return JS_ThrowTypeError(ctx, "create requires width and height");
+    if (jsb_arg_count(ctx) < 2) {
+        jsb_throw_type(ctx, "create requires width and height");
+        return;
+    }
 
-    int w, h;
-    if (JS_ToInt32(ctx, &w, argv[0]) || JS_ToInt32(ctx, &h, argv[1]))
-        return JS_EXCEPTION;
+    int32_t w, h;
+    if (!jsb_arg_to_i32(ctx, 0, &w) || !jsb_arg_to_i32(ctx, 1, &h))
+        return;
 
-    if (w <= 0 || h <= 0 || w > MAX_PIXEL_DIM || h > MAX_PIXEL_DIM)
-        return JS_ThrowRangeError(ctx, "create: dimensions out of range %dx%d", w, h);
+    if (w <= 0 || h <= 0 || w > MAX_PIXEL_DIM || h > MAX_PIXEL_DIM) {
+        jsb_throw_range(ctx, "create: dimensions out of range %dx%d", w, h);
+        return;
+    }
 
     Canvas2DHandle handle = canvas2d_create(w, h);
-    if (handle == CANVAS2D_HANDLE_INVALID)
-        return JS_NULL;
+    if (handle == CANVAS2D_HANDLE_INVALID) {
+        jsb_ret_val(ctx, jsb_new_null(ctx));
+        return;
+    }
 
-    return JS_NewUint32(ctx, handle);
+    jsb_ret_val(ctx, jsb_new_u32(ctx, handle));
 }
 
-/* destroy(handle) */
-static JSValue js_c2d_destroy(JSContext *ctx, JSValueConst this_val,
-                               int argc, JSValueConst *argv)
+/* destroy(handle)
+ *
+ * Why: frees a canvas the shim drops. `handle` is ToUint32; unknown handles
+ * are ignored by canvas2d. No argument is a TypeError. */
+static void js_c2d_destroy(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1)
-        return JS_ThrowTypeError(ctx, "destroy requires a handle");
+    if (jsb_arg_count(ctx) < 1) {
+        jsb_throw_type(ctx, "destroy requires a handle");
+        return;
+    }
     uint32_t h;
-    if (JS_ToUint32(ctx, &h, argv[0])) return JS_EXCEPTION;
+    if (!jsb_arg_to_u32(ctx, 0, &h)) return;
     canvas2d_destroy(h);
-    return JS_UNDEFINED;
+    jsb_ret_undefined(ctx);
 }
 
-/* resize(handle, width, height) */
-static JSValue js_c2d_resize(JSContext *ctx, JSValueConst this_val,
-                              int argc, JSValueConst *argv)
+/* resize(handle, width, height)
+ *
+ * Why: backs setting canvas.width / canvas.height (compat:
+ * HTMLCanvasElement). Sizes and errors as for create. */
+static void js_c2d_resize(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 3)
-        return JS_ThrowTypeError(ctx, "resize requires handle, width, height");
+    if (jsb_arg_count(ctx) < 3) {
+        jsb_throw_type(ctx, "resize requires handle, width, height");
+        return;
+    }
     uint32_t handle;
-    int w, h;
-    if (JS_ToUint32(ctx, &handle, argv[0])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &w, argv[1])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &h, argv[2])) return JS_EXCEPTION;
+    int32_t w, h;
+    if (!jsb_arg_to_u32(ctx, 0, &handle)) return;
+    if (!jsb_arg_to_i32(ctx, 1, &w)) return;
+    if (!jsb_arg_to_i32(ctx, 2, &h)) return;
 
-    if (w <= 0 || h <= 0 || w > MAX_PIXEL_DIM || h > MAX_PIXEL_DIM)
-        return JS_ThrowRangeError(ctx, "resize: dimensions out of range %dx%d", w, h);
+    if (w <= 0 || h <= 0 || w > MAX_PIXEL_DIM || h > MAX_PIXEL_DIM) {
+        jsb_throw_range(ctx, "resize: dimensions out of range %dx%d", w, h);
+        return;
+    }
 
     canvas2d_resize(handle, w, h);
-    return JS_UNDEFINED;
+    jsb_ret_undefined(ctx);
 }
 
-/* getSize(handle) -> {width, height} */
-static JSValue js_c2d_get_size(JSContext *ctx, JSValueConst this_val,
-                                int argc, JSValueConst *argv)
+/* getSize(handle) -> {width, height} | null
+ *
+ * Why: lets the shim read the real canvas size back. null for an unknown
+ * handle; no argument is a TypeError. */
+static void js_c2d_get_size(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1)
-        return JS_ThrowTypeError(ctx, "getSize requires a handle");
+    if (jsb_arg_count(ctx) < 1) {
+        jsb_throw_type(ctx, "getSize requires a handle");
+        return;
+    }
     uint32_t handle;
-    if (JS_ToUint32(ctx, &handle, argv[0])) return JS_EXCEPTION;
+    if (!jsb_arg_to_u32(ctx, 0, &handle)) return;
     int w, h;
-    if (!canvas2d_get_size(handle, &w, &h)) return JS_NULL;
-    JSValue obj = JS_NewObject(ctx);
-    JS_SetPropertyStr(ctx, obj, "width", JS_NewInt32(ctx, w));
-    JS_SetPropertyStr(ctx, obj, "height", JS_NewInt32(ctx, h));
-    return obj;
+    if (!canvas2d_get_size(handle, &w, &h)) {
+        jsb_ret_val(ctx, jsb_new_null(ctx));
+        return;
+    }
+    jsb_val *obj = jsb_new_object(ctx);
+    jsb_set_prop(ctx, obj, "width", jsb_new_i32(ctx, w));
+    jsb_set_prop(ctx, obj, "height", jsb_new_i32(ctx, h));
+    jsb_ret_val(ctx, obj);
 }
 
 /* State setters */
 
-/* setFillColor(handle, r, g, b, a) */
-static JSValue js_c2d_set_fill_color(JSContext *ctx, JSValueConst this_val,
-                                      int argc, JSValueConst *argv)
+/* setFillColor(handle, r, g, b, a)
+ *
+ * Why: CanvasRenderingContext2D.fillStyle after the shim parsed the CSS
+ * colour. Channels are ToInt32 truncated to 8 bits, as upstream did. */
+static void js_c2d_set_fill_color(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 5)
-        return JS_ThrowTypeError(ctx, "setFillColor requires handle,r,g,b,a");
-    uint32_t handle; int r, g, b, a;
-    if (JS_ToUint32(ctx, &handle, argv[0])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &r, argv[1])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &g, argv[2])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &b, argv[3])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &a, argv[4])) return JS_EXCEPTION;
+    if (jsb_arg_count(ctx) < 5) {
+        jsb_throw_type(ctx, "setFillColor requires handle,r,g,b,a");
+        return;
+    }
+    uint32_t handle; int32_t r, g, b, a;
+    if (!jsb_arg_to_u32(ctx, 0, &handle)) return;
+    if (!jsb_arg_to_i32(ctx, 1, &r)) return;
+    if (!jsb_arg_to_i32(ctx, 2, &g)) return;
+    if (!jsb_arg_to_i32(ctx, 3, &b)) return;
+    if (!jsb_arg_to_i32(ctx, 4, &a)) return;
     canvas2d_set_fill_color(handle, (uint8_t)r, (uint8_t)g, (uint8_t)b, (uint8_t)a);
-    return JS_UNDEFINED;
+    jsb_ret_undefined(ctx);
 }
 
-/* setStrokeColor(handle, r, g, b, a) */
-static JSValue js_c2d_set_stroke_color(JSContext *ctx, JSValueConst this_val,
-                                        int argc, JSValueConst *argv)
+/* setStrokeColor(handle, r, g, b, a)
+ *
+ * Why: CanvasRenderingContext2D.strokeStyle; as setFillColor. */
+static void js_c2d_set_stroke_color(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 5)
-        return JS_ThrowTypeError(ctx, "setStrokeColor requires handle,r,g,b,a");
-    uint32_t handle; int r, g, b, a;
-    if (JS_ToUint32(ctx, &handle, argv[0])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &r, argv[1])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &g, argv[2])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &b, argv[3])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &a, argv[4])) return JS_EXCEPTION;
+    if (jsb_arg_count(ctx) < 5) {
+        jsb_throw_type(ctx, "setStrokeColor requires handle,r,g,b,a");
+        return;
+    }
+    uint32_t handle; int32_t r, g, b, a;
+    if (!jsb_arg_to_u32(ctx, 0, &handle)) return;
+    if (!jsb_arg_to_i32(ctx, 1, &r)) return;
+    if (!jsb_arg_to_i32(ctx, 2, &g)) return;
+    if (!jsb_arg_to_i32(ctx, 3, &b)) return;
+    if (!jsb_arg_to_i32(ctx, 4, &a)) return;
     canvas2d_set_stroke_color(handle, (uint8_t)r, (uint8_t)g, (uint8_t)b, (uint8_t)a);
-    return JS_UNDEFINED;
+    jsb_ret_undefined(ctx);
 }
 
-/* setGlobalAlpha(handle, alpha) */
-static JSValue js_c2d_set_global_alpha(JSContext *ctx, JSValueConst this_val,
-                                        int argc, JSValueConst *argv)
+/* setGlobalAlpha(handle, alpha)
+ *
+ * Why: CanvasRenderingContext2D.globalAlpha; `alpha` is ToNumber and
+ * clamped by canvas2d. */
+static void js_c2d_set_global_alpha(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 2)
-        return JS_ThrowTypeError(ctx, "setGlobalAlpha requires handle, alpha");
+    if (jsb_arg_count(ctx) < 2) {
+        jsb_throw_type(ctx, "setGlobalAlpha requires handle, alpha");
+        return;
+    }
     uint32_t handle; double alpha;
-    if (JS_ToUint32(ctx, &handle, argv[0])) return JS_EXCEPTION;
-    if (JS_ToFloat64(ctx, &alpha, argv[1])) return JS_EXCEPTION;
+    if (!jsb_arg_to_u32(ctx, 0, &handle)) return;
+    if (!jsb_arg_to_f64(ctx, 1, &alpha)) return;
     canvas2d_set_global_alpha(handle, (float)alpha);
-    return JS_UNDEFINED;
+    jsb_ret_undefined(ctx);
 }
 
-/* setCompositeOp(handle, op) */
-static JSValue js_c2d_set_composite_op(JSContext *ctx, JSValueConst this_val,
-                                        int argc, JSValueConst *argv)
+/* setCompositeOp(handle, op)
+ *
+ * Why: CanvasRenderingContext2D.globalCompositeOperation, as the canvas2d
+ * enum value the shim mapped it to (ToInt32). */
+static void js_c2d_set_composite_op(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 2)
-        return JS_ThrowTypeError(ctx, "setCompositeOp requires handle, op");
-    uint32_t handle; int op;
-    if (JS_ToUint32(ctx, &handle, argv[0])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &op, argv[1])) return JS_EXCEPTION;
+    if (jsb_arg_count(ctx) < 2) {
+        jsb_throw_type(ctx, "setCompositeOp requires handle, op");
+        return;
+    }
+    uint32_t handle; int32_t op;
+    if (!jsb_arg_to_u32(ctx, 0, &handle)) return;
+    if (!jsb_arg_to_i32(ctx, 1, &op)) return;
     canvas2d_set_composite_op(handle, op);
-    return JS_UNDEFINED;
+    jsb_ret_undefined(ctx);
 }
 
-/* setLineWidth(handle, width) */
-static JSValue js_c2d_set_line_width(JSContext *ctx, JSValueConst this_val,
-                                      int argc, JSValueConst *argv)
+/* setLineWidth(handle, width)
+ *
+ * Why: CanvasRenderingContext2D.lineWidth, in pixels (ToNumber). */
+static void js_c2d_set_line_width(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 2)
-        return JS_ThrowTypeError(ctx, "setLineWidth requires handle, width");
+    if (jsb_arg_count(ctx) < 2) {
+        jsb_throw_type(ctx, "setLineWidth requires handle, width");
+        return;
+    }
     uint32_t handle; double w;
-    if (JS_ToUint32(ctx, &handle, argv[0])) return JS_EXCEPTION;
-    if (JS_ToFloat64(ctx, &w, argv[1])) return JS_EXCEPTION;
+    if (!jsb_arg_to_u32(ctx, 0, &handle)) return;
+    if (!jsb_arg_to_f64(ctx, 1, &w)) return;
     canvas2d_set_line_width(handle, (float)w);
-    return JS_UNDEFINED;
+    jsb_ret_undefined(ctx);
 }
 
-/* setTextAlign(handle, align) */
-static JSValue js_c2d_set_text_align(JSContext *ctx, JSValueConst this_val,
-                                      int argc, JSValueConst *argv)
+/* setTextAlign(handle, align)
+ *
+ * Why: CanvasRenderingContext2D.textAlign, as a canvas2d enum (ToInt32). */
+static void js_c2d_set_text_align(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 2)
-        return JS_ThrowTypeError(ctx, "setTextAlign requires handle, align");
-    uint32_t handle; int align;
-    if (JS_ToUint32(ctx, &handle, argv[0])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &align, argv[1])) return JS_EXCEPTION;
+    if (jsb_arg_count(ctx) < 2) {
+        jsb_throw_type(ctx, "setTextAlign requires handle, align");
+        return;
+    }
+    uint32_t handle; int32_t align;
+    if (!jsb_arg_to_u32(ctx, 0, &handle)) return;
+    if (!jsb_arg_to_i32(ctx, 1, &align)) return;
     canvas2d_set_text_align(handle, align);
-    return JS_UNDEFINED;
+    jsb_ret_undefined(ctx);
 }
 
-/* setTextBaseline(handle, baseline) */
-static JSValue js_c2d_set_text_baseline(JSContext *ctx, JSValueConst this_val,
-                                         int argc, JSValueConst *argv)
+/* setTextBaseline(handle, baseline)
+ *
+ * Why: CanvasRenderingContext2D.textBaseline, as a canvas2d enum (ToInt32). */
+static void js_c2d_set_text_baseline(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 2)
-        return JS_ThrowTypeError(ctx, "setTextBaseline requires handle, baseline");
-    uint32_t handle; int baseline;
-    if (JS_ToUint32(ctx, &handle, argv[0])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &baseline, argv[1])) return JS_EXCEPTION;
+    if (jsb_arg_count(ctx) < 2) {
+        jsb_throw_type(ctx, "setTextBaseline requires handle, baseline");
+        return;
+    }
+    uint32_t handle; int32_t baseline;
+    if (!jsb_arg_to_u32(ctx, 0, &handle)) return;
+    if (!jsb_arg_to_i32(ctx, 1, &baseline)) return;
     canvas2d_set_text_baseline(handle, baseline);
-    return JS_UNDEFINED;
+    jsb_ret_undefined(ctx);
 }
 
 /* State stack */
 
-/* save(handle) */
-static JSValue js_c2d_save(JSContext *ctx, JSValueConst this_val,
-                            int argc, JSValueConst *argv)
+/* save(handle)
+ *
+ * Why: CanvasRenderingContext2D.save(). No argument is a TypeError. */
+static void js_c2d_save(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1) return JS_ThrowTypeError(ctx, "save requires a handle");
+    if (jsb_arg_count(ctx) < 1) {
+        jsb_throw_type(ctx, "save requires a handle");
+        return;
+    }
     uint32_t handle;
-    if (JS_ToUint32(ctx, &handle, argv[0])) return JS_EXCEPTION;
+    if (!jsb_arg_to_u32(ctx, 0, &handle)) return;
     canvas2d_save(handle);
-    return JS_UNDEFINED;
+    jsb_ret_undefined(ctx);
 }
 
-/* restore(handle) */
-static JSValue js_c2d_restore(JSContext *ctx, JSValueConst this_val,
-                               int argc, JSValueConst *argv)
+/* restore(handle)
+ *
+ * Why: CanvasRenderingContext2D.restore(). No argument is a TypeError. */
+static void js_c2d_restore(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1) return JS_ThrowTypeError(ctx, "restore requires a handle");
+    if (jsb_arg_count(ctx) < 1) {
+        jsb_throw_type(ctx, "restore requires a handle");
+        return;
+    }
     uint32_t handle;
-    if (JS_ToUint32(ctx, &handle, argv[0])) return JS_EXCEPTION;
+    if (!jsb_arg_to_u32(ctx, 0, &handle)) return;
     canvas2d_restore(handle);
-    return JS_UNDEFINED;
+    jsb_ret_undefined(ctx);
 }
 
 /* Drawing operations */
 
-/* fillRect(handle, x, y, w, h) */
-static JSValue js_c2d_fill_rect(JSContext *ctx, JSValueConst this_val,
-                                 int argc, JSValueConst *argv)
+/* fillRect(handle, x, y, w, h)
+ *
+ * Why: CanvasRenderingContext2D.fillRect in integer pixels (ToInt32). */
+static void js_c2d_fill_rect(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 5)
-        return JS_ThrowTypeError(ctx, "fillRect requires handle,x,y,w,h");
-    uint32_t handle; int x, y, w, h;
-    if (JS_ToUint32(ctx, &handle, argv[0])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &x, argv[1])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &y, argv[2])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &w, argv[3])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &h, argv[4])) return JS_EXCEPTION;
+    if (jsb_arg_count(ctx) < 5) {
+        jsb_throw_type(ctx, "fillRect requires handle,x,y,w,h");
+        return;
+    }
+    uint32_t handle; int32_t x, y, w, h;
+    if (!jsb_arg_to_u32(ctx, 0, &handle)) return;
+    if (!jsb_arg_to_i32(ctx, 1, &x)) return;
+    if (!jsb_arg_to_i32(ctx, 2, &y)) return;
+    if (!jsb_arg_to_i32(ctx, 3, &w)) return;
+    if (!jsb_arg_to_i32(ctx, 4, &h)) return;
     canvas2d_fill_rect(handle, x, y, w, h);
-    return JS_UNDEFINED;
+    jsb_ret_undefined(ctx);
 }
 
-/* clearRect(handle, x, y, w, h) */
-static JSValue js_c2d_clear_rect(JSContext *ctx, JSValueConst this_val,
-                                  int argc, JSValueConst *argv)
+/* clearRect(handle, x, y, w, h)
+ *
+ * Why: CanvasRenderingContext2D.clearRect in integer pixels (ToInt32). */
+static void js_c2d_clear_rect(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 5)
-        return JS_ThrowTypeError(ctx, "clearRect requires handle,x,y,w,h");
-    uint32_t handle; int x, y, w, h;
-    if (JS_ToUint32(ctx, &handle, argv[0])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &x, argv[1])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &y, argv[2])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &w, argv[3])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &h, argv[4])) return JS_EXCEPTION;
+    if (jsb_arg_count(ctx) < 5) {
+        jsb_throw_type(ctx, "clearRect requires handle,x,y,w,h");
+        return;
+    }
+    uint32_t handle; int32_t x, y, w, h;
+    if (!jsb_arg_to_u32(ctx, 0, &handle)) return;
+    if (!jsb_arg_to_i32(ctx, 1, &x)) return;
+    if (!jsb_arg_to_i32(ctx, 2, &y)) return;
+    if (!jsb_arg_to_i32(ctx, 3, &w)) return;
+    if (!jsb_arg_to_i32(ctx, 4, &h)) return;
     canvas2d_clear_rect(handle, x, y, w, h);
-    return JS_UNDEFINED;
+    jsb_ret_undefined(ctx);
 }
 
-/* strokeRect(handle, x, y, w, h) */
-static JSValue js_c2d_stroke_rect(JSContext *ctx, JSValueConst this_val,
-                                   int argc, JSValueConst *argv)
+/* strokeRect(handle, x, y, w, h)
+ *
+ * Why: CanvasRenderingContext2D.strokeRect in integer pixels (ToInt32). */
+static void js_c2d_stroke_rect(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 5)
-        return JS_ThrowTypeError(ctx, "strokeRect requires handle,x,y,w,h");
-    uint32_t handle; int x, y, w, h;
-    if (JS_ToUint32(ctx, &handle, argv[0])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &x, argv[1])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &y, argv[2])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &w, argv[3])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &h, argv[4])) return JS_EXCEPTION;
+    if (jsb_arg_count(ctx) < 5) {
+        jsb_throw_type(ctx, "strokeRect requires handle,x,y,w,h");
+        return;
+    }
+    uint32_t handle; int32_t x, y, w, h;
+    if (!jsb_arg_to_u32(ctx, 0, &handle)) return;
+    if (!jsb_arg_to_i32(ctx, 1, &x)) return;
+    if (!jsb_arg_to_i32(ctx, 2, &y)) return;
+    if (!jsb_arg_to_i32(ctx, 3, &w)) return;
+    if (!jsb_arg_to_i32(ctx, 4, &h)) return;
     canvas2d_stroke_rect(handle, x, y, w, h);
-    return JS_UNDEFINED;
+    jsb_ret_undefined(ctx);
 }
 
-/* drawImage(handle, srcPixels, srcW, srcH, sx, sy, sw, sh, dx, dy, dw, dh) */
-static JSValue js_c2d_draw_image(JSContext *ctx, JSValueConst this_val,
-                                  int argc, JSValueConst *argv)
+/* drawImage(handle, srcPixels, srcW, srcH, sx, sy, sw, sh, dx, dy, dw, dh)
+ *
+ * Why: CanvasRenderingContext2D.drawImage with RGBA pixels the shim holds.
+ * Numbers are ToInt32. A non-ArrayBuffer source is a TypeError; a source
+ * size outside 1..MAX_PIXEL_DIM or under srcW*srcH*4 bytes is a RangeError.
+ * The pixels are borrowed for the call only. */
+static void js_c2d_draw_image(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 12)
-        return JS_ThrowTypeError(ctx, "drawImage requires 12 arguments");
+    if (jsb_arg_count(ctx) < 12) {
+        jsb_throw_type(ctx, "drawImage requires 12 arguments");
+        return;
+    }
 
     uint32_t handle;
-    if (JS_ToUint32(ctx, &handle, argv[0])) return JS_EXCEPTION;
+    if (!jsb_arg_to_u32(ctx, 0, &handle)) return;
 
-    int src_w, src_h, sx, sy, sw, sh, dx, dy, dw, dh;
-    if (JS_ToInt32(ctx, &src_w, argv[2])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &src_h, argv[3])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &sx, argv[4])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &sy, argv[5])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &sw, argv[6])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &sh, argv[7])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &dx, argv[8])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &dy, argv[9])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &dw, argv[10])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &dh, argv[11])) return JS_EXCEPTION;
+    int32_t src_w, src_h, sx, sy, sw, sh, dx, dy, dw, dh;
+    if (!jsb_arg_to_i32(ctx, 2, &src_w)) return;
+    if (!jsb_arg_to_i32(ctx, 3, &src_h)) return;
+    if (!jsb_arg_to_i32(ctx, 4, &sx)) return;
+    if (!jsb_arg_to_i32(ctx, 5, &sy)) return;
+    if (!jsb_arg_to_i32(ctx, 6, &sw)) return;
+    if (!jsb_arg_to_i32(ctx, 7, &sh)) return;
+    if (!jsb_arg_to_i32(ctx, 8, &dx)) return;
+    if (!jsb_arg_to_i32(ctx, 9, &dy)) return;
+    if (!jsb_arg_to_i32(ctx, 10, &dw)) return;
+    if (!jsb_arg_to_i32(ctx, 11, &dh)) return;
 
     /* Fetch the pixel ArrayBuffer (argv[1]) only after the conversions above:
        they can run user JS (valueOf) that detaches it and leaves a stale pointer. */
     size_t buf_size = 0;
-    uint8_t *src_pixels = JS_GetArrayBuffer(ctx, &buf_size, argv[1]);
-    if (!src_pixels)
-        return JS_ThrowTypeError(ctx, "drawImage: second arg must be ArrayBuffer");
+    uint8_t *src_pixels = NULL;
+    if (!arg_array_buffer(ctx, 1, &src_pixels, &buf_size) || !src_pixels) {
+        jsb_throw_type(ctx, "drawImage: second arg must be ArrayBuffer");
+        return;
+    }
 
     if (src_w <= 0 || src_h <= 0 || src_w > MAX_PIXEL_DIM || src_h > MAX_PIXEL_DIM ||
-        buf_size < (size_t)src_w * (size_t)src_h * 4)
-        return JS_ThrowRangeError(ctx, "drawImage: buffer size mismatch for %dx%d", src_w, src_h);
+        buf_size < (size_t)src_w * (size_t)src_h * 4) {
+        jsb_throw_range(ctx, "drawImage: buffer size mismatch for %dx%d", src_w, src_h);
+        return;
+    }
 
     canvas2d_draw_image(handle, src_pixels, src_w, src_h,
                          sx, sy, sw, sh, dx, dy, dw, dh);
-    return JS_UNDEFINED;
+    jsb_ret_undefined(ctx);
 }
 
 /* drawImageHandle(handle, imageHandle, sx, sy, sw, sh, dx, dy, dw, dh)
-   Like drawImage but takes an image_loader handle instead of pixel ArrayBuffer. */
-static JSValue js_c2d_draw_image_handle(JSContext *ctx, JSValueConst this_val,
-                                         int argc, JSValueConst *argv)
+ *
+ * Why: like drawImage but takes an image_loader handle instead of a pixel
+ * ArrayBuffer, so decoded images are drawn without a JS copy. An unknown
+ * image returns undefined before the rectangle is converted, as upstream. */
+static void js_c2d_draw_image_handle(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 10)
-        return JS_ThrowTypeError(ctx, "drawImageHandle requires 10 arguments");
+    if (jsb_arg_count(ctx) < 10) {
+        jsb_throw_type(ctx, "drawImageHandle requires 10 arguments");
+        return;
+    }
 
     uint32_t handle, img_handle;
-    if (JS_ToUint32(ctx, &handle, argv[0])) return JS_EXCEPTION;
-    if (JS_ToUint32(ctx, &img_handle, argv[1])) return JS_EXCEPTION;
+    if (!jsb_arg_to_u32(ctx, 0, &handle)) return;
+    if (!jsb_arg_to_u32(ctx, 1, &img_handle)) return;
 
     ImageInfo info;
-    if (!image_get_info(img_handle, &info)) return JS_UNDEFINED;
-    const uint8_t *pixels = image_get_pixels(img_handle);
-    if (!pixels) return JS_UNDEFINED;
+    const uint8_t *pixels = NULL;
+    if (!image_get_info(img_handle, &info) ||
+        !(pixels = image_get_pixels(img_handle))) {
+        jsb_ret_undefined(ctx);
+        return;
+    }
 
-    int sx, sy, sw, sh, dx, dy, dw, dh;
-    if (JS_ToInt32(ctx, &sx, argv[2])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &sy, argv[3])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &sw, argv[4])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &sh, argv[5])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &dx, argv[6])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &dy, argv[7])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &dw, argv[8])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &dh, argv[9])) return JS_EXCEPTION;
+    int32_t sx, sy, sw, sh, dx, dy, dw, dh;
+    if (!jsb_arg_to_i32(ctx, 2, &sx)) return;
+    if (!jsb_arg_to_i32(ctx, 3, &sy)) return;
+    if (!jsb_arg_to_i32(ctx, 4, &sw)) return;
+    if (!jsb_arg_to_i32(ctx, 5, &sh)) return;
+    if (!jsb_arg_to_i32(ctx, 6, &dx)) return;
+    if (!jsb_arg_to_i32(ctx, 7, &dy)) return;
+    if (!jsb_arg_to_i32(ctx, 8, &dw)) return;
+    if (!jsb_arg_to_i32(ctx, 9, &dh)) return;
 
     canvas2d_draw_image(handle, pixels, info.width, info.height,
                          sx, sy, sw, sh, dx, dy, dw, dh);
-    return JS_UNDEFINED;
+    jsb_ret_undefined(ctx);
 }
 
 /* Pixel manipulation */
 
-/* getImageData(handle, x, y, w, h) -> ArrayBuffer (RGBA) */
-static JSValue js_c2d_get_image_data(JSContext *ctx, JSValueConst this_val,
-                                      int argc, JSValueConst *argv)
+/* getImageData(handle, x, y, w, h) -> ArrayBuffer (RGBA) | null
+ *
+ * Why: CanvasRenderingContext2D.getImageData; the shim wraps the bytes in
+ * an ImageData. Returns a copy the engine owns. A non-positive size gives
+ * null; a side over MAX_PIXEL_DIM or more than 64 MiB is a RangeError. */
+static void js_c2d_get_image_data(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 5)
-        return JS_ThrowTypeError(ctx, "getImageData requires handle,x,y,w,h");
-    uint32_t handle; int x, y, w, h;
-    if (JS_ToUint32(ctx, &handle, argv[0])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &x, argv[1])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &y, argv[2])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &w, argv[3])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &h, argv[4])) return JS_EXCEPTION;
+    if (jsb_arg_count(ctx) < 5) {
+        jsb_throw_type(ctx, "getImageData requires handle,x,y,w,h");
+        return;
+    }
+    uint32_t handle; int32_t x, y, w, h;
+    if (!jsb_arg_to_u32(ctx, 0, &handle)) return;
+    if (!jsb_arg_to_i32(ctx, 1, &x)) return;
+    if (!jsb_arg_to_i32(ctx, 2, &y)) return;
+    if (!jsb_arg_to_i32(ctx, 3, &w)) return;
+    if (!jsb_arg_to_i32(ctx, 4, &h)) return;
 
-    if (w <= 0 || h <= 0) return JS_NULL;
-    if (w > MAX_PIXEL_DIM || h > MAX_PIXEL_DIM)
-        return JS_ThrowRangeError(ctx, "getImageData: dimensions too large %dx%d", w, h);
+    if (w <= 0 || h <= 0) {
+        jsb_ret_val(ctx, jsb_new_null(ctx));
+        return;
+    }
+    if (w > MAX_PIXEL_DIM || h > MAX_PIXEL_DIM) {
+        jsb_throw_range(ctx, "getImageData: dimensions too large %dx%d", w, h);
+        return;
+    }
 
     size_t buf_size = (size_t)w * (size_t)h * 4;
-    if (buf_size > 64 * 1024 * 1024)
-        return JS_ThrowRangeError(ctx, "getImageData: total size too large (%zu bytes)", buf_size);
+    if (buf_size > 64 * 1024 * 1024) {
+        jsb_throw_range(ctx, "getImageData: total size too large (%zu bytes)", buf_size);
+        return;
+    }
     /* calloc: an invalid handle or out-of-range rect yields zeroed pixels, not uninitialized heap. */
     uint8_t *buf = calloc(buf_size, 1);
-    if (!buf) return JS_ThrowInternalError(ctx, "out of memory");
+    if (!buf) {
+        jsb_throw_internal(ctx, "out of memory");
+        return;
+    }
 
     canvas2d_get_image_data(handle, x, y, w, h, buf);
 
-    JSValue ab = JS_NewArrayBufferCopy(ctx, buf, buf_size);
+    jsb_val *ab = jsb_new_buffer_copy(ctx, buf, buf_size);
     free(buf);
-    return ab;
+    jsb_ret_val(ctx, ab);
 }
 
-/* putImageData(handle, arrayBuffer, x, y, w, h) */
-static JSValue js_c2d_put_image_data(JSContext *ctx, JSValueConst this_val,
-                                      int argc, JSValueConst *argv)
+/* putImageData(handle, arrayBuffer, x, y, w, h)
+ *
+ * Why: CanvasRenderingContext2D.putImageData with the shim's RGBA bytes,
+ * borrowed for the call. A non-ArrayBuffer is a TypeError; a size outside
+ * 1..MAX_PIXEL_DIM or fewer than w*h*4 bytes is a RangeError. */
+static void js_c2d_put_image_data(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 6)
-        return JS_ThrowTypeError(ctx, "putImageData requires handle,data,x,y,w,h");
+    if (jsb_arg_count(ctx) < 6) {
+        jsb_throw_type(ctx, "putImageData requires handle,data,x,y,w,h");
+        return;
+    }
     uint32_t handle;
-    if (JS_ToUint32(ctx, &handle, argv[0])) return JS_EXCEPTION;
+    if (!jsb_arg_to_u32(ctx, 0, &handle)) return;
 
-    int x, y, w, h;
-    if (JS_ToInt32(ctx, &x, argv[2])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &y, argv[3])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &w, argv[4])) return JS_EXCEPTION;
-    if (JS_ToInt32(ctx, &h, argv[5])) return JS_EXCEPTION;
+    int32_t x, y, w, h;
+    if (!jsb_arg_to_i32(ctx, 2, &x)) return;
+    if (!jsb_arg_to_i32(ctx, 3, &y)) return;
+    if (!jsb_arg_to_i32(ctx, 4, &w)) return;
+    if (!jsb_arg_to_i32(ctx, 5, &h)) return;
 
     /* Fetch the ArrayBuffer only after the conversions above: they can run user
        JS (valueOf) that detaches it and leaves a stale pointer. */
     size_t buf_size = 0;
-    uint8_t *data = JS_GetArrayBuffer(ctx, &buf_size, argv[1]);
-    if (!data)
-        return JS_ThrowTypeError(ctx, "putImageData: second arg must be ArrayBuffer");
+    uint8_t *data = NULL;
+    if (!arg_array_buffer(ctx, 1, &data, &buf_size) || !data) {
+        jsb_throw_type(ctx, "putImageData: second arg must be ArrayBuffer");
+        return;
+    }
 
     if (w <= 0 || h <= 0 || w > MAX_PIXEL_DIM || h > MAX_PIXEL_DIM ||
-        buf_size < (size_t)w * (size_t)h * 4)
-        return JS_ThrowRangeError(ctx, "putImageData: buffer size mismatch for %dx%d", w, h);
+        buf_size < (size_t)w * (size_t)h * 4) {
+        jsb_throw_range(ctx, "putImageData: buffer size mismatch for %dx%d", w, h);
+        return;
+    }
 
     canvas2d_put_image_data(handle, data, x, y, w, h);
-    return JS_UNDEFINED;
+    jsb_ret_undefined(ctx);
 }
 
-/* getPixels(handle) -> ArrayBuffer (full canvas RGBA) */
-static JSValue js_c2d_get_pixels(JSContext *ctx, JSValueConst this_val,
-                                  int argc, JSValueConst *argv)
+/* getPixels(handle) -> ArrayBuffer (full canvas RGBA) | null
+ *
+ * Why: lets the renderer shim upload a whole canvas as a texture. Returns a
+ * copy the engine owns; null for an unknown handle. */
+static void js_c2d_get_pixels(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1) return JS_ThrowTypeError(ctx, "getPixels requires a handle");
+    if (jsb_arg_count(ctx) < 1) {
+        jsb_throw_type(ctx, "getPixels requires a handle");
+        return;
+    }
     uint32_t handle;
-    if (JS_ToUint32(ctx, &handle, argv[0])) return JS_EXCEPTION;
+    if (!jsb_arg_to_u32(ctx, 0, &handle)) return;
 
     int w, h;
-    if (!canvas2d_get_size(handle, &w, &h)) return JS_NULL;
-    uint8_t *pixels = canvas2d_get_pixels(handle);
-    if (!pixels) return JS_NULL;
+    uint8_t *pixels = NULL;
+    if (!canvas2d_get_size(handle, &w, &h) ||
+        !(pixels = canvas2d_get_pixels(handle))) {
+        jsb_ret_val(ctx, jsb_new_null(ctx));
+        return;
+    }
 
-    if (w <= 0 || h <= 0 || w > MAX_PIXEL_DIM || h > MAX_PIXEL_DIM)
-        return JS_ThrowRangeError(ctx, "getPixels: canvas dimensions out of range %dx%d", w, h);
+    if (w <= 0 || h <= 0 || w > MAX_PIXEL_DIM || h > MAX_PIXEL_DIM) {
+        jsb_throw_range(ctx, "getPixels: canvas dimensions out of range %dx%d", w, h);
+        return;
+    }
 
-    return JS_NewArrayBufferCopy(ctx, pixels, (size_t)w * (size_t)h * 4);
+    jsb_ret_val(ctx, jsb_new_buffer_copy(ctx, pixels, (size_t)w * (size_t)h * 4));
 }
 
 /* Font and text */
 
-/* loadFont(name, arrayBuffer) -> bool */
-static JSValue js_c2d_load_font(JSContext *ctx, JSValueConst this_val,
-                                 int argc, JSValueConst *argv)
+/* loadFont(name, arrayBuffer) -> bool
+ *
+ * Why: FontFace loading from memory (compat: FontFace). `name` is ToString;
+ * a non-ArrayBuffer is a TypeError; false when the font does not parse. The
+ * bytes are borrowed; canvas2d copies what it keeps. */
+static void js_c2d_load_font(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 2)
-        return JS_ThrowTypeError(ctx, "loadFont requires name and ArrayBuffer");
+    if (jsb_arg_count(ctx) < 2) {
+        jsb_throw_type(ctx, "loadFont requires name and ArrayBuffer");
+        return;
+    }
 
-    const char *name = JS_ToCString(ctx, argv[0]);
-    if (!name) return JS_EXCEPTION;
+    char *name = jsb_arg_to_str(ctx, 0, NULL);
+    if (!name) return;
 
     size_t buf_size = 0;
-    uint8_t *data = JS_GetArrayBuffer(ctx, &buf_size, argv[1]);
-    if (!data) {
-        JS_FreeCString(ctx, name);
-        return JS_ThrowTypeError(ctx, "loadFont: second arg must be ArrayBuffer");
+    uint8_t *data = NULL;
+    if (!arg_array_buffer(ctx, 1, &data, &buf_size) || !data) {
+        jsb_free_str(name);
+        jsb_throw_type(ctx, "loadFont: second arg must be ArrayBuffer");
+        return;
     }
 
     bool ok = canvas2d_load_font(name, data, buf_size);
-    JS_FreeCString(ctx, name);
-    return JS_NewBool(ctx, ok);
+    jsb_free_str(name);
+    jsb_ret_bool(ctx, ok);
 }
 
-/* loadFontFile(name, path) -> bool */
-static JSValue js_c2d_load_font_file(JSContext *ctx, JSValueConst this_val,
-                                      int argc, JSValueConst *argv)
+/* loadFontFile(name, path) -> bool
+ *
+ * Why: loads a game font by game-relative URL (compat: FontFace with a url()
+ * source). Both are ToString; false when the path leaves the game root, the
+ * file cannot be read or the font does not parse. */
+static void js_c2d_load_font_file(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 2)
-        return JS_ThrowTypeError(ctx, "loadFontFile requires name and path");
+    if (jsb_arg_count(ctx) < 2) {
+        jsb_throw_type(ctx, "loadFontFile requires name and path");
+        return;
+    }
 
-    const char *name = JS_ToCString(ctx, argv[0]);
-    if (!name) return JS_EXCEPTION;
+    char *name = jsb_arg_to_str(ctx, 0, NULL);
+    if (!name) return;
 
-    const char *path = JS_ToCString(ctx, argv[1]);
+    char *path = jsb_arg_to_str(ctx, 1, NULL);
     if (!path) {
-        JS_FreeCString(ctx, name);
-        return JS_EXCEPTION;
+        jsb_free_str(name);
+        return;
     }
 
     char resolved[PATH_BUF_SIZE];
     if (!file_io_resolve_path(path, resolved, sizeof(resolved))) {
-        JS_FreeCString(ctx, path);
-        JS_FreeCString(ctx, name);
-        return JS_NewBool(ctx, false);
+        jsb_free_str(path);
+        jsb_free_str(name);
+        jsb_ret_bool(ctx, false);
+        return;
     }
-    JS_FreeCString(ctx, path);
+    jsb_free_str(path);
 
     size_t file_size = 0;
     uint8_t *data = file_io_read_binary(resolved, &file_size);
     if (!data) {
-        JS_FreeCString(ctx, name);
-        return JS_NewBool(ctx, false);
+        jsb_free_str(name);
+        jsb_ret_bool(ctx, false);
+        return;
     }
 
     bool ok = canvas2d_load_font(name, data, file_size);
     free(data);
-    JS_FreeCString(ctx, name);
-    return JS_NewBool(ctx, ok);
+    jsb_free_str(name);
+    jsb_ret_bool(ctx, ok);
 }
 
-/* setFont(handle, name, pixelSize) */
-static JSValue js_c2d_set_font(JSContext *ctx, JSValueConst this_val,
-                                int argc, JSValueConst *argv)
+/* setFont(handle, name, pixelSize)
+ *
+ * Why: CanvasRenderingContext2D.font after the shim parsed the CSS font
+ * string. `name` is ToString, `pixelSize` ToNumber, in that order. */
+static void js_c2d_set_font(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 3)
-        return JS_ThrowTypeError(ctx, "setFont requires handle, name, pixelSize");
+    if (jsb_arg_count(ctx) < 3) {
+        jsb_throw_type(ctx, "setFont requires handle, name, pixelSize");
+        return;
+    }
     uint32_t handle; double size;
-    if (JS_ToUint32(ctx, &handle, argv[0])) return JS_EXCEPTION;
-    const char *name = JS_ToCString(ctx, argv[1]);
-    if (!name) return JS_EXCEPTION;
-    if (JS_ToFloat64(ctx, &size, argv[2])) {
-        JS_FreeCString(ctx, name);
-        return JS_EXCEPTION;
+    if (!jsb_arg_to_u32(ctx, 0, &handle)) return;
+    char *name = jsb_arg_to_str(ctx, 1, NULL);
+    if (!name) return;
+    if (!jsb_arg_to_f64(ctx, 2, &size)) {
+        jsb_free_str(name);
+        return;
     }
     canvas2d_set_font(handle, name, (float)size);
-    JS_FreeCString(ctx, name);
-    return JS_UNDEFINED;
+    jsb_free_str(name);
+    jsb_ret_undefined(ctx);
 }
 
-/* fillText(handle, text, x, y) */
-static JSValue js_c2d_fill_text(JSContext *ctx, JSValueConst this_val,
-                                 int argc, JSValueConst *argv)
+/* fillText(handle, text, x, y)
+ *
+ * Why: CanvasRenderingContext2D.fillText (no maxWidth). `text` is ToString,
+ * x and y ToNumber, converted in that order. */
+static void js_c2d_fill_text(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 4)
-        return JS_ThrowTypeError(ctx, "fillText requires handle,text,x,y");
+    if (jsb_arg_count(ctx) < 4) {
+        jsb_throw_type(ctx, "fillText requires handle,text,x,y");
+        return;
+    }
     uint32_t handle; double x, y;
-    if (JS_ToUint32(ctx, &handle, argv[0])) return JS_EXCEPTION;
-    const char *text = JS_ToCString(ctx, argv[1]);
-    if (!text) return JS_EXCEPTION;
-    if (JS_ToFloat64(ctx, &x, argv[2])) { JS_FreeCString(ctx, text); return JS_EXCEPTION; }
-    if (JS_ToFloat64(ctx, &y, argv[3])) { JS_FreeCString(ctx, text); return JS_EXCEPTION; }
+    if (!jsb_arg_to_u32(ctx, 0, &handle)) return;
+    char *text = jsb_arg_to_str(ctx, 1, NULL);
+    if (!text) return;
+    if (!jsb_arg_to_f64(ctx, 2, &x)) { jsb_free_str(text); return; }
+    if (!jsb_arg_to_f64(ctx, 3, &y)) { jsb_free_str(text); return; }
     canvas2d_fill_text(handle, text, (float)x, (float)y);
-    JS_FreeCString(ctx, text);
-    return JS_UNDEFINED;
+    jsb_free_str(text);
+    jsb_ret_undefined(ctx);
 }
 
-/* strokeText(handle, text, x, y) */
-static JSValue js_c2d_stroke_text(JSContext *ctx, JSValueConst this_val,
-                                   int argc, JSValueConst *argv)
+/* strokeText(handle, text, x, y)
+ *
+ * Why: CanvasRenderingContext2D.strokeText (no maxWidth); as fillText. */
+static void js_c2d_stroke_text(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 4)
-        return JS_ThrowTypeError(ctx, "strokeText requires handle,text,x,y");
+    if (jsb_arg_count(ctx) < 4) {
+        jsb_throw_type(ctx, "strokeText requires handle,text,x,y");
+        return;
+    }
     uint32_t handle; double x, y;
-    if (JS_ToUint32(ctx, &handle, argv[0])) return JS_EXCEPTION;
-    const char *text = JS_ToCString(ctx, argv[1]);
-    if (!text) return JS_EXCEPTION;
-    if (JS_ToFloat64(ctx, &x, argv[2])) { JS_FreeCString(ctx, text); return JS_EXCEPTION; }
-    if (JS_ToFloat64(ctx, &y, argv[3])) { JS_FreeCString(ctx, text); return JS_EXCEPTION; }
+    if (!jsb_arg_to_u32(ctx, 0, &handle)) return;
+    char *text = jsb_arg_to_str(ctx, 1, NULL);
+    if (!text) return;
+    if (!jsb_arg_to_f64(ctx, 2, &x)) { jsb_free_str(text); return; }
+    if (!jsb_arg_to_f64(ctx, 3, &y)) { jsb_free_str(text); return; }
     canvas2d_stroke_text(handle, text, (float)x, (float)y);
-    JS_FreeCString(ctx, text);
-    return JS_UNDEFINED;
+    jsb_free_str(text);
+    jsb_ret_undefined(ctx);
 }
 
-/* measureText(handle, text) -> number (width in pixels) */
-static JSValue js_c2d_measure_text(JSContext *ctx, JSValueConst this_val,
-                                    int argc, JSValueConst *argv)
+/* measureText(handle, text) -> number (width in pixels)
+ *
+ * Why: CanvasRenderingContext2D.measureText().width; the shim builds the
+ * TextMetrics object. 0 for an unknown handle or no font. */
+static void js_c2d_measure_text(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 2)
-        return JS_ThrowTypeError(ctx, "measureText requires handle and text");
+    if (jsb_arg_count(ctx) < 2) {
+        jsb_throw_type(ctx, "measureText requires handle and text");
+        return;
+    }
     uint32_t handle;
-    if (JS_ToUint32(ctx, &handle, argv[0])) return JS_EXCEPTION;
-    const char *text = JS_ToCString(ctx, argv[1]);
-    if (!text) return JS_EXCEPTION;
+    if (!jsb_arg_to_u32(ctx, 0, &handle)) return;
+    char *text = jsb_arg_to_str(ctx, 1, NULL);
+    if (!text) return;
     float w = canvas2d_measure_text(handle, text);
-    JS_FreeCString(ctx, text);
-    return JS_NewFloat64(ctx, (double)w);
+    jsb_free_str(text);
+    jsb_ret_f64(ctx, (double)w);
 }
 
 /* Registration */
 
-static const JSCFunctionListEntry js_c2d_funcs[] = {
-    JS_CFUNC_DEF("create",           2, js_c2d_create),
-    JS_CFUNC_DEF("destroy",          1, js_c2d_destroy),
-    JS_CFUNC_DEF("resize",           3, js_c2d_resize),
-    JS_CFUNC_DEF("getSize",          1, js_c2d_get_size),
-    JS_CFUNC_DEF("setFillColor",     5, js_c2d_set_fill_color),
-    JS_CFUNC_DEF("setStrokeColor",   5, js_c2d_set_stroke_color),
-    JS_CFUNC_DEF("setGlobalAlpha",   2, js_c2d_set_global_alpha),
-    JS_CFUNC_DEF("setCompositeOp",   2, js_c2d_set_composite_op),
-    JS_CFUNC_DEF("setLineWidth",     2, js_c2d_set_line_width),
-    JS_CFUNC_DEF("setTextAlign",     2, js_c2d_set_text_align),
-    JS_CFUNC_DEF("setTextBaseline",  2, js_c2d_set_text_baseline),
-    JS_CFUNC_DEF("save",             1, js_c2d_save),
-    JS_CFUNC_DEF("restore",          1, js_c2d_restore),
-    JS_CFUNC_DEF("fillRect",         5, js_c2d_fill_rect),
-    JS_CFUNC_DEF("clearRect",        5, js_c2d_clear_rect),
-    JS_CFUNC_DEF("strokeRect",       5, js_c2d_stroke_rect),
-    JS_CFUNC_DEF("drawImage",       12, js_c2d_draw_image),
-    JS_CFUNC_DEF("drawImageHandle", 10, js_c2d_draw_image_handle),
-    JS_CFUNC_DEF("getImageData",     5, js_c2d_get_image_data),
-    JS_CFUNC_DEF("putImageData",     6, js_c2d_put_image_data),
-    JS_CFUNC_DEF("getPixels",        1, js_c2d_get_pixels),
-    JS_CFUNC_DEF("loadFont",         2, js_c2d_load_font),
-    JS_CFUNC_DEF("loadFontFile",     2, js_c2d_load_font_file),
-    JS_CFUNC_DEF("setFont",          3, js_c2d_set_font),
-    JS_CFUNC_DEF("fillText",         4, js_c2d_fill_text),
-    JS_CFUNC_DEF("strokeText",       4, js_c2d_stroke_text),
-    JS_CFUNC_DEF("measureText",      2, js_c2d_measure_text),
-};
-
-void bind_canvas2d_register(JSContext *ctx)
+/* Fills __native_canvas2d in upstream's function-list order, with its
+ * upstream arities as each function's `length`. Returns false with a
+ * JS exception pending. */
+static bool c2d_module_init(jsb_ctx *ctx, jsb_val *m)
 {
-    JSValue global = JS_GetGlobalObject(ctx);
-    JSValue obj = JS_NewObject(ctx);
-
-    JS_SetPropertyFunctionList(ctx, obj, js_c2d_funcs,
-                               sizeof(js_c2d_funcs) / sizeof(js_c2d_funcs[0]));
-
-    JS_SetPropertyStr(ctx, global, "__native_canvas2d", obj);
-    JS_FreeValue(ctx, global);
+    return jsb_set_fn_n(ctx, m, "create",          js_c2d_create, 2) &&
+           jsb_set_fn_n(ctx, m, "destroy",         js_c2d_destroy, 1) &&
+           jsb_set_fn_n(ctx, m, "resize",          js_c2d_resize, 3) &&
+           jsb_set_fn_n(ctx, m, "getSize",         js_c2d_get_size, 1) &&
+           jsb_set_fn_n(ctx, m, "setFillColor",    js_c2d_set_fill_color, 5) &&
+           jsb_set_fn_n(ctx, m, "setStrokeColor",  js_c2d_set_stroke_color, 5) &&
+           jsb_set_fn_n(ctx, m, "setGlobalAlpha",  js_c2d_set_global_alpha, 2) &&
+           jsb_set_fn_n(ctx, m, "setCompositeOp",  js_c2d_set_composite_op, 2) &&
+           jsb_set_fn_n(ctx, m, "setLineWidth",    js_c2d_set_line_width, 2) &&
+           jsb_set_fn_n(ctx, m, "setTextAlign",    js_c2d_set_text_align, 2) &&
+           jsb_set_fn_n(ctx, m, "setTextBaseline", js_c2d_set_text_baseline, 2) &&
+           jsb_set_fn_n(ctx, m, "save",            js_c2d_save, 1) &&
+           jsb_set_fn_n(ctx, m, "restore",         js_c2d_restore, 1) &&
+           jsb_set_fn_n(ctx, m, "fillRect",        js_c2d_fill_rect, 5) &&
+           jsb_set_fn_n(ctx, m, "clearRect",       js_c2d_clear_rect, 5) &&
+           jsb_set_fn_n(ctx, m, "strokeRect",      js_c2d_stroke_rect, 5) &&
+           jsb_set_fn_n(ctx, m, "drawImage",       js_c2d_draw_image, 12) &&
+           jsb_set_fn_n(ctx, m, "drawImageHandle", js_c2d_draw_image_handle, 10) &&
+           jsb_set_fn_n(ctx, m, "getImageData",    js_c2d_get_image_data, 5) &&
+           jsb_set_fn_n(ctx, m, "putImageData",    js_c2d_put_image_data, 6) &&
+           jsb_set_fn_n(ctx, m, "getPixels",       js_c2d_get_pixels, 1) &&
+           jsb_set_fn_n(ctx, m, "loadFont",        js_c2d_load_font, 2) &&
+           jsb_set_fn_n(ctx, m, "loadFontFile",    js_c2d_load_font_file, 2) &&
+           jsb_set_fn_n(ctx, m, "setFont",         js_c2d_set_font, 3) &&
+           jsb_set_fn_n(ctx, m, "fillText",        js_c2d_fill_text, 4) &&
+           jsb_set_fn_n(ctx, m, "strokeText",      js_c2d_stroke_text, 4) &&
+           jsb_set_fn_n(ctx, m, "measureText",     js_c2d_measure_text, 2);
 }
+
+/* jsb_runtime_setup callback that defines the module; `user` is unused. */
+static bool c2d_define_setup(jsb_ctx *ctx, void *user)
+{
+    (void)user;
+    return jsb_define_module(ctx, "__native_canvas2d", c2d_module_init);
+}
+
+/* smzuggler: upstream's function list defined the functions non-enumerable
+ * (writable, configurable); jsb_set_fn_n assigns them, which makes them
+ * enumerable. This restores the old attributes so the JS API stays
+ * byte-for-byte. Run once by bind_canvas2d_define, after the module exists. */
+static const char c2d_hide_fns_js[] =
+    "(function (m) {\n"
+    "  Object.getOwnPropertyNames(m).forEach(function (k) {\n"
+    "    Object.defineProperty(m, k, { enumerable: false });\n"
+    "  });\n"
+    "})(__native_canvas2d);\n";
+
+/* Defines the shim bridge on the borrowed runtime, on the main thread.
+ * No handles survive setup; errors return false and are printed to stderr. */
+bool bind_canvas2d_define(jsb_runtime *rt)
+{
+    if (!rt) {
+        fprintf(stderr, "bind_canvas2d_define: no jsb runtime\n");
+        return false;
+    }
+    if (!jsb_runtime_setup(rt, c2d_define_setup, NULL))
+        return false;
+    char err[256];
+    if (!jsb_runtime_eval(rt, c2d_hide_fns_js, "bind_canvas2d.c", err,
+                          sizeof err)) {
+        fprintf(stderr, "bind_canvas2d_define: %s\n", err);
+        return false;
+    }
+    return true;
+}
+
+#ifdef SMZ_JSB_ADOPT
+/* Keeps old engine callers working until M1-T026; `ctx` is borrowed. */
+void bind_canvas2d_register(struct JSContext *ctx)
+{
+    bind_canvas2d_define(jsb_runtime_of(ctx));
+}
+#endif

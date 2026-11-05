@@ -653,9 +653,9 @@ own handle.
 `bind_canvas2d_define` defines the module on the supplied engine runtime. The
 transitional register wrapper adopts the existing engine context. All calls run
 on the main thread; no jsb handle or borrowed buffer survives a native call.
-ArrayBuffer brand checks use the captured intrinsic byte-length getter, rejecting
-views and spoofed objects. The three buffer methods retain their original names,
-arities and non-constructibility. Numeric/string coercions run in upstream order
+The ArrayBuffer-only check is the same as bind_image's: a value with a `byteOffset`
+is a view and is rejected, and plain or spoofed objects fail in `jsb_arg_bytes`;
+either way the binding throws upstream's own TypeError. Numeric/string coercions run in upstream order
 before buffer validation, so user code cannot detach an already borrowed pointer.
 The setup script also restores non-enumerability for all 27 methods.
 

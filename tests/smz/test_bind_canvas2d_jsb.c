@@ -1,7 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 The smzuggler contributors
- * Pins the Canvas2D shim bridge to the pre-port binary without a device.
- * Engine strings are freed on the main thread; see docs/js-binding.md.
+ * Pins __native_canvas2d's JS API (names, lengths, results, errors) to the
+ * pre-port binary's, through bind_canvas2d_define on the selected engine's
+ * jsb runtime (DEC-M1-T014-JSB-ADOPT); --dump-surface cannot show it.
+ * Main thread only; engine strings are freed here (docs/js-binding.md).
  */
 #include "bindings/bind_canvas2d.h"
 #include "engine/js_engine.h"
@@ -153,7 +155,8 @@ int main(void)
     canvas2d_init();
     JSEngine *engine = js_engine_init();
     assert(engine);
-    bind_canvas2d_register(js_engine_get_context(engine));
+    bool defined = bind_canvas2d_define(js_engine_get_jsb(engine));
+    assert(defined);
     check_shape(engine);
     check_missing(engine);
     check_results(engine);
