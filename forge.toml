@@ -15,8 +15,8 @@ Copyright (C) 2026 The smzuggler contributors
 [agents]
 # Claude is review-only in this project (owner, 2026-10-30): never a worker, implementer,
 # fallback worker, planner or auditor. Same shape as the earlier project used for review-only Claude.
-workers = ["codex", "claude"]  # Claude allowed as a worker from 2026-10-31 (never on overage); grok only as the last-resort fallback
-fallback_workers = ["codex", "claude"]  # grok removed 2026-11-01 (owner): Grok weekly allowance low
+workers = ["codex"]  # OWNER 2026-11-04: Codex does the work; Claude writes only when Codex is cooling down
+fallback_workers = ["claude"]  # OWNER 2026-11-04: Claude mostly reviews; grok removed 2026-11-01
 reviewer = "cross"                 # never the author; prefers another model family and CLI
 self_review_fallback = true        # author reviews only when every other reviewer is cooling
 review_pool = ["claude", "codex"]  # grok removed 2026-11-01 (owner); OpenCode Go cancelled 2026-10-30
