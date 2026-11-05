@@ -8,6 +8,7 @@ Modified 2026-11-01: document how the game loop calls into JS.
 Modified 2026-11-01: document the error handler's js_engine.h path.
 Modified 2026-11-01: document microtask checkpoints and nextTick order.
 Modified 2026-11-04: document the V8 code cache.
+Modified 2026-11-04: document the bind_io port and parity checks.
 Modified 2026-11-04: document main thread stack sizing.
 Modified 2026-11-04: document the font and audio binding ports and buffer validation.
 Modified 2026-11-04: document the image binding and its buffer ownership.
@@ -107,6 +108,7 @@ binary's in both engine modes.
 
 | Binding | Module and functions (`length`) | jsb calls used | Buffers | Callbacks |
 | --- | --- | --- | --- | --- |
+| `bind_io.c` (M1-T016) | `__native_io`: `readFileSync` (1), `readFileBinary` (1), `writeFileSync` (2), `writeFileBinary` (2), `mkdirSync` (1), `existsSync` (1), `isDirSync` (1), `readdirSync` (1), `unlinkSync` (1), `renameSync` (2), `getGameRoot` (0), `resolvePath` (1) | `jsb_define_module`, `jsb_set_fn_n`, `jsb_arg_count/to_str/val/bytes`, `jsb_free_str`, `jsb_get_prop`, `jsb_val_type`, `jsb_clear_exception`, `jsb_new_array/str/str_len/buffer_copy`, `jsb_set_index`, `jsb_ret_val/bool/str/undefined`, `jsb_throw_type/internal`, `jsb_runtime_setup/eval` | Reads copy native bytes into engine-owned ArrayBuffers; writes borrow bytes only during the call and accept ArrayBuffers only | none |
 | `bind_input.c` (M1-T015) | `__native_input`: `pollEvents` (0), `getGamepad` (1), `getGamepadCount` (0) | `jsb_define_module`, `jsb_set_fn_n`, `jsb_new_object/array/str/i32/f64/bool/null`, `jsb_set_prop`, `jsb_set_index`, `jsb_arg_count`, `jsb_arg_to_i32` (`getGamepad` coerces its index), `jsb_ret_val/i32`, `jsb_runtime_eval` | none | none |
 | `bind_font.c` (M1-T018) | `__native_font`: `loadFont` (2), `loadFontFile` (2), `hasFont` (1), `getMetrics` (2), `measureText` (3), `fontCount` (0), `fontNames` (0) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_to_str/f64`, `jsb_free_str`, `jsb_arg_bytes`, `jsb_clear_exception`, `jsb_throw_type`, `jsb_new_object/array/str/f64/null`, `jsb_set_prop/index`, `jsb_ret_val/bool/i32/f64` | Borrowed ArrayBuffer bytes during `loadFont`; both font caches copy them before return. File bytes are owned and freed by the binding. | none |
 | `bind_audio.c` (M1-T019) | `__native_audio`: `init`, `shutdown`, `isInitialized`, `stopAll`, `getActiveVoiceCount` (0); `load`, `loadStream`, `loadFromMemory`, `freeSource`, `stop`, `stopBus`, `pause`, `resume`, `pauseBus`, `resumeBus`, `isPlaying`, `isPaused`, `getVolume`, `getPosition`, `getDuration` (1); `setVolume`, `setPitch`, `setPan`, `setBusVolume`, `seek` (2); `fadeVolume`, `fadeBusVolume` (3); `play` (6) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_to_str/u32/i32/f64`, `jsb_arg_truthy`, `jsb_free_str`, `jsb_arg_bytes`, `jsb_clear_exception`, `jsb_throw_type/range`, `jsb_new_u32/i32`, `jsb_set_prop`, `jsb_ret_val/bool/i32/f64` | ArrayBuffer-only `loadFromMemory`; borrowed bytes are copied by SoLoud before return. | none |
@@ -119,6 +121,28 @@ them non-enumerable. `bind_input_define` restores that with a one-line
 `Object.defineProperty` script after the module exists, so `Object.keys(__native_input)`
 stays empty as before.
 
+`bind_io_define` restores the same property attributes for `__native_io`.
+The `bind_io_jsb` ctest checks all twelve names and arities above, string and
+ArrayBuffer round trips (including embedded NULs and empty buffers), directory
+arrays, boolean filesystem results, undefined write results, coercion, and exact
+binding error names/messages. It uses the adopted engine in quickjs mode and
+`smz_js_engine_v8` in v8 mode. Engine-generated Symbol conversion messages retain
+each engine's spelling. No JS handle or borrowed buffer survives a native call.
+
+The retained I/O parity test records these pre-port expectations:
+
+| Check | Expected value |
+| --- | --- |
+| Own names and arities | The twelve functions in the `bind_io.c` row, in that order; all have `typeof === "function"` |
+| Function properties | Writable, configurable, non-enumerable; `Object.keys(__native_io)` is empty |
+| Text round trip | `h\u00e9\u0000x` has length 4, with character codes 233 and 0 at indices 1 and 2 |
+| Binary round trip | ArrayBuffer of length 3, bytes `1,2,255`; empty ArrayBuffers round-trip with length 0 |
+| Writes and directory reads | Writes return `undefined`; `readdirSync` returns an array of entry names |
+| Filesystem predicates and mutations | Boolean results, including `false` for missing paths in predicates, rename and unlink |
+| Path results | `getGameRoot` returns the configured root; `resolvePath('a/b%20c.txt')` returns that root plus `/a/b c.txt` |
+| Missing arguments (functions with nonzero arity) | TypeError: `<function> requires a path argument`, except writes require `path and data arguments` and rename requires `oldPath and newPath arguments` |
+| Invalid binary data | `TypeError: writeFileBinary: second argument must be an ArrayBuffer` |
+| Missing read targets | InternalError: `failed to read file: <resolved path>`, `failed to read binary file: <resolved path>`, or `failed to read directory: <resolved path>` |
 
 `bind_font_define` also restores non-enumerable function properties. Its setup script
 captures the intrinsic ArrayBuffer byte-length getter and wraps `loadFont` with a
