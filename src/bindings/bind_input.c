@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-11-04: ported from QuickJS to the jsb seam (spec section 4.1).
+ * Modified 2026-11-05: remove the transitional QuickJS wrapper.
  *
  * __native_input: hands queued keyboard, mouse, wheel and text events and
  * the polled gamepad state to dom_shim.js, which turns them into DOM events
@@ -17,10 +18,6 @@
 
 #include "bindings/bind_input.h"
 #include "input/input_manager.h"
-
-#ifdef SMZ_JSB_ADOPT
-#include "jsb/jsb_adopt.h"
-#endif
 
 #include <stdio.h>
 #include <string.h>
@@ -228,10 +225,3 @@ bool bind_input_define(jsb_runtime *rt)
     }
     return true;
 }
-
-#ifdef SMZ_JSB_ADOPT
-void bind_input_register(struct JSContext *ctx)
-{
-    bind_input_define(jsb_runtime_of(ctx));
-}
-#endif

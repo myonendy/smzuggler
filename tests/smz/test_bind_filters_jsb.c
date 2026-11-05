@@ -114,7 +114,7 @@ static void check_errors(JSEngine *engine)
 }
 
 /* Own the engine; no device, game assets or retained handles are needed.
- * `js_engine_get_jsb` is the adopted QuickJS runtime in quickjs mode and the
+ * `js_engine_get_jsb` is the adopted jsb runtime in the default engine mode and the
  * V8 backend in v8 mode, so the port itself runs on the selected engine. */
 int main(void)
 {

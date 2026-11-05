@@ -117,8 +117,8 @@ def build_tree(root):
     write(build / 'bin/bar.dll', DLL)
     write(build / 'tests/libhelper.so', make_elf(LIB))
     write(build / 'tests/libhelper.a', make_archive([('h.o', make_elf([TEXT + (9,)]))]))
-    write(build / '_deps/quickjs-build/libqjs.a', make_archive([
-        ('quickjs.c.o', obj(TEXT + (100,), DATA + (10,), BSS + (8,))),
+    write(build / '_deps/qjs-build/libqjs.a', make_archive([
+        ('qjs.c.o', obj(TEXT + (100,), DATA + (10,), BSS + (8,))),
         ('libregexp_long_name.c.o', obj(TEXT + (200,), ('.symtab', SYMTAB, 0, 99)))]))
     write(build / '_deps/sdl3-build/libSDL3.a', make_archive([('a.o', obj(TEXT + (50,)))]))
     write(build / '_deps/glslang-build/libglslang.a',
@@ -191,7 +191,7 @@ class BinsizeTests(unittest.TestCase):
         self.assertEqual(pick('zzz'), {'text': 0, 'data': 3, 'bss': 0, 'other': 0})
         self.assertNotIn('Effekseer', deps)
         self.assertNotIn('helper', deps)
-        qjs = self.build / '_deps/quickjs-build/libqjs.a'
+        qjs = self.build / '_deps/qjs-build/libqjs.a'
         self.assertEqual(deps['QuickJS']['archive_bytes'], qjs.stat().st_size)
 
     def test_markdown_lists_flags_totals_and_missing_dependency(self):

@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-11-04: expose the jsb entry point for the video DOM bridge.
+ * Modified 2026-11-05: remove the transitional QuickJS wrapper.
  * See docs/js-binding.md; all entry points are main-thread only.
  */
 
@@ -14,11 +15,5 @@
 /* Define the HTMLVideoElement shim's module in borrowed rt. Returns false
  * with diagnostics on setup failure; no JS handles escape registration. */
 bool bind_video_define(jsb_runtime *rt);
-
-#ifdef SMZ_JSB_ADOPT
-struct JSContext;
-/* Transitional main-thread wrapper (M1-T026); ctx is borrowed and opaque. */
-void bind_video_register(struct JSContext *ctx);
-#endif
 
 #endif /* RMMZ_BIND_VIDEO_H */

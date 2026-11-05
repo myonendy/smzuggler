@@ -945,14 +945,14 @@ dump and rejection of a stale `name` row through the CLI.
 | `print` | stub | `src/shims/dom_shim.js` | `-` | No-op. |
 | `print.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | No-op. |
 | `process` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | File-backed storage / limited Node and NW.js compatibility. |
-| `process.arch` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Compile-target CPU in Node spelling; "x64" when no native binding. dump_surface does not call bind_platform_register_process, so it sees the fallback; the running host gets it from __native_process (§5.3). |
+| `process.arch` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Compile-target CPU in Node spelling; "x64" when no native binding. dump_surface does not call bind_platform_define_process, so it sees the fallback; the running host gets it from __native_process (§5.3). |
 | `process.argv` | partial | `src/shims/storage_shim.js` | `tests/smz/test_process_shim.c` | Chrome/NW.js-shaped `[chrome, index.html]`; index.html is game-relative (§5.3). |
 | `process.argv.0` | partial | `src/shims/storage_shim.js` | `tests/smz/test_process_shim.c` | Chromium/NW.js binary name (`chrome`). |
 | `process.argv.1` | partial | `src/shims/storage_shim.js` | `tests/smz/test_process_shim.c` | Game-relative main HTML (`index.html`), as NW.js reports when cwd is the game root. |
 | `process.argv.length` | partial | `src/shims/storage_shim.js` | `tests/smz/test_process_shim.c` | 2 (chrome + index.html). |
 | `process.cwd` | partial | `src/shims/storage_shim.js` | `tests/smz/test_process_shim.c` | Game root from `__native_io.getGameRoot`, or "." if unset (§5.3). |
 | `process.cwd.prototype.constructor` | partial | `src/shims/storage_shim.js` | `tests/smz/test_process_shim.c` | Game root from `__native_io.getGameRoot`, or "." if unset (§5.3). |
-| `process.env` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Snapshot of the host environ at start; empty object when no native binding. dump_surface does not call bind_platform_register_process, so it sees the fallback; the running host gets it from __native_process (§5.3). |
+| `process.env` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Snapshot of the host environ at start; empty object when no native binding. dump_surface does not call bind_platform_define_process, so it sees the fallback; the running host gets it from __native_process (§5.3). |
 | `process.exit` | partial | `src/shims/storage_shim.js` | `tests/smz/test_process_shim.c` | Sets `process.exitCode` and takes the nw.App.quit / SDL-quit path; main returns that code. |
 | `process.exit.prototype.constructor` | partial | `src/shims/storage_shim.js` | `tests/smz/test_process_shim.c` | Sets `process.exitCode` and takes the nw.App.quit / SDL-quit path; main returns that code. |
 | `process.hrtime` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Monotonic [s, ns], or elapsed since prev; Date.now() fallback without the native clock. |
@@ -963,7 +963,7 @@ dump and rejection of a stale `name` row through the CLI.
 | `process.mainModule.filename` | partial | `src/shims/storage_shim.js` | `tests/smz/test_process_shim.c` | `<gameRoot>/index.html`, or `index.html` when the root is empty (§5.3). |
 | `process.nextTick` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Runs before timers in one microtask; a Promise job queued before the first tick of a turn runs first (Node runs the tick). |
 | `process.nextTick.prototype.constructor` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Runs before timers in one microtask; a Promise job queued before the first tick of a turn runs first (Node runs the tick). |
-| `process.platform` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Compile-target OS in Node spelling; "linux" when no native binding. dump_surface does not call bind_platform_register_process, so it sees the fallback; the running host gets it from __native_process (§5.3). |
+| `process.platform` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | Compile-target OS in Node spelling; "linux" when no native binding. dump_surface does not call bind_platform_define_process, so it sees the fallback; the running host gets it from __native_process (§5.3). |
 | `process.versions` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | NW.js 0.80.0 reference values; native engine name added at run time. |
 | `process.versions.chromium` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | NW.js 0.80.0 reference values; native engine name added at run time. |
 | `process.versions.node` | partial | `src/shims/storage_shim.js` | `tests/test_storage.c` | NW.js 0.80.0 reference values; native engine name added at run time. |

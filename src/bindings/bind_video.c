@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-11-04: port the HTMLVideoElement bridge to jsb.
+ * Modified 2026-11-05: remove the transitional QuickJS wrapper.
  *
  * Main-thread native video bridge for the DOM shim; see docs/js-binding.md.
  * jsb handles are call-scoped and never retained (spec section 15.8).
@@ -14,9 +15,6 @@
 #include "bindings/bind_video.h"
 #include "video/video_player.h"
 
-#ifdef SMZ_JSB_ADOPT
-#include "jsb/jsb_adopt.h"
-#endif
 #include <stdio.h>
 
 /* Coerce a borrowed JS handle number for the HTMLVideoElement bridge.
@@ -232,11 +230,3 @@ bool bind_video_define(jsb_runtime *rt)
     }
     return true;
 }
-
-#ifdef SMZ_JSB_ADOPT
-/* Preserve transitional callers; ctx is borrowed and opaque (M1-T026). */
-void bind_video_register(struct JSContext *ctx)
-{
-    bind_video_define(jsb_runtime_of(ctx));
-}
-#endif

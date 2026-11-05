@@ -31,6 +31,7 @@ Modified 2026-11-01: record the V8 script watchdog.
 Modified 2026-11-01: record the game loop off QuickJS.
 Modified 2026-11-01: record microtask checkpoints after every macrotask.
 Modified 2026-11-04: record the renderer binding port.
+Modified 2026-11-05: record the direct-QuickJS test port.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 <!-- Records project changes for release review; keep entries free of private data. -->
@@ -40,6 +41,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Port the tests that called QuickJS directly to `js_engine.h`/`jsb.h` and remove the transitional binding wrappers. (M1-T026) (M1-T026)
 - Port the `__native_tilemap` binding to the jsb seam with unchanged names, function arities, results and errors. (M1-T025)
 - Port the `__native_filters` binding to the jsb seam with unchanged names, function arities, results and errors. (M1-T024)
 - Port the `__native_renderer` binding to the jsb seam with unchanged names, function arities, results and errors. (M1-T023)

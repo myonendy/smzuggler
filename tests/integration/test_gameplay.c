@@ -1053,27 +1053,27 @@ static JSEngine *create_full_engine(void)
     JSEngine *engine = js_engine_init();
     if (!engine) return NULL;
 
-    JSContext *ctx = js_engine_get_context(engine);
+    jsb_runtime *jsb = js_engine_get_jsb(engine);
 
-    bind_io_register(ctx);
+    bind_io_define(jsb);
 
     image_loader_init(false); /* headless, no GL */
-    bind_image_register(ctx);
+    bind_image_define(jsb);
 
     canvas2d_init();
-    bind_canvas2d_register(ctx);
+    bind_canvas2d_define(jsb);
 
     font_manager_init();
-    bind_font_register(ctx);
+    bind_font_define(jsb);
 
-    bind_renderer_register(ctx);
-    bind_tilemap_register(ctx);
+    bind_renderer_define(jsb);
+    bind_tilemap_define(jsb);
 
     audio_engine_init();
-    bind_audio_register(ctx);
+    bind_audio_define(jsb);
 
     input_manager_init();
-    bind_input_register(ctx);
+    bind_input_define(jsb);
 
     return engine;
 }

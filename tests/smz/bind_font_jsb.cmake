@@ -20,7 +20,7 @@ if(SMZ_JS_ENGINE STREQUAL "v8")
 else()
     add_executable(test_bind_font_jsb ${font_jsb_sources}
         ${PROJECT_SOURCE_DIR}/src/engine/js_engine.c)
-    target_link_libraries(test_bind_font_jsb PRIVATE smz_jsb_quickjs qjs)
+    target_link_libraries(test_bind_font_jsb PRIVATE smz_jsb)
 endif()
 target_include_directories(test_bind_font_jsb PRIVATE
     ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/third_party/stb)

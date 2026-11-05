@@ -33,8 +33,8 @@ static void setup(const char *root)
 {
     s_js = js_engine_init();
     assert(s_js);
-    bind_io_register(js_engine_get_context(s_js));
-    bind_platform_register_process(js_engine_get_context(s_js));
+    bind_io_define(js_engine_get_jsb(s_js));
+    bind_platform_define_process(js_engine_get_jsb(s_js));
     file_io_set_game_root(root);
     assert(js_engine_eval_file(s_js, "src/shims/dom_shim.js"));
     assert(js_engine_execute_pending_jobs(s_js) >= 0);

@@ -7,7 +7,6 @@
 #include "bindings/bind_io.h"
 #include "engine/js_engine.h"
 
-#include <quickjs.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -470,8 +469,8 @@ static void test_js_bindings(void)
     ConsoleCapture cap = {0};
     js_engine_set_console_callback(engine, console_capture_cb, &cap);
 
-    JSContext *ctx = js_engine_get_context(engine);
-    bind_io_register(ctx);
+    jsb_runtime *jsb = js_engine_get_jsb(engine);
+    bind_io_define(jsb);
 
     /* Game root is set at C level; it is not exposed to JS. */
     TEST(js_set_game_root);
@@ -755,8 +754,8 @@ static void test_save_guard_js(const char *root, const char *outside)
         FAIL("failed to create JS engine");
         return;
     }
-    JSContext *ctx = js_engine_get_context(engine);
-    bind_io_register(ctx);
+    jsb_runtime *jsb = js_engine_get_jsb(engine);
+    bind_io_define(jsb);
     char js[TEST_PATH_MAX * 4];
 
     TEST(guard_js_write_outside_root);
@@ -957,7 +956,7 @@ static void test_save_guard_off_reads(const char *outside)
         FAIL("failed to create JS engine");
         return;
     }
-    bind_io_register(js_engine_get_context(engine));
+    bind_io_define(js_engine_get_jsb(engine));
     expect_js_quiet(engine, outside,
         "var r = [];"
         "['existsSync', 'isDirSync', 'readdirSync', 'readFileSync', 'readFileBinary']"

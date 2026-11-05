@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-11-04: ported from QuickJS to the jsb seam (spec section 4.1).
+ * Modified 2026-11-05: remove the transitional QuickJS wrapper.
  *
  * __native_io: synchronous file I/O for fs_shim.js, which stands in for
  * Node's `fs` module as NW.js games use it (docs/js-binding.md, "bind_io").
@@ -18,10 +19,6 @@
 
 #include "bindings/bind_io.h"
 #include "io/file_io.h"
-
-#ifdef SMZ_JSB_ADOPT
-#include "jsb/jsb_adopt.h"
-#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -447,10 +444,3 @@ bool bind_io_define(jsb_runtime *rt)
     }
     return true;
 }
-
-#ifdef SMZ_JSB_ADOPT
-void bind_io_register(struct JSContext *ctx)
-{
-    bind_io_define(jsb_runtime_of(ctx));
-}
-#endif

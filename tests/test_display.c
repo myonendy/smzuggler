@@ -517,8 +517,8 @@ int main(int argc, char *argv[])
     }
 
     /* Register bindings. */
-    bind_io_register(js_engine_get_context(g_js));
-    bind_platform_register(js_engine_get_context(g_js), g_platform);
+    bind_io_define(js_engine_get_jsb(g_js));
+    bind_platform_define(js_engine_get_jsb(g_js), g_platform);
 
     /* Load DOM shim. */
     if (!js_engine_eval_file(g_js, "src/shims/dom_shim.js")) {

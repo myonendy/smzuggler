@@ -9,7 +9,7 @@
  * (DEC-M0-T009b), so this test is what shows the port changed nothing
  * (DEC-M1-T014-JSB-ADOPT). Every expected string below was printed by the
  * pre-port QuickJS binary (bind_input_register on js_engine.c). It calls
- * bind_input_define on js_engine_get_jsb(): the QuickJS engine in quickjs
+ * bind_input_define on js_engine_get_jsb(): js_engine.c in the default
  * mode, smz_js_engine_v8 in v8 mode, so the port really runs on V8 there.
  * Events and gamepads are fed through input_manager, so no device is needed.
  * Main thread only; see docs/js-binding.md for the handle rules.
@@ -147,7 +147,7 @@ static void check_gamepads(JSEngine *engine)
            "{\"pressed\":true,\"value\":1,\"touched\":true},"
            "{\"pressed\":false,\"value\":0.25,\"touched\":false},"
            "[-0.5,0,0,1]]");
-    /* ToInt32 coercion, as JS_ToInt32 did. */
+    /* ToInt32 coercion, as the old ToInt32 read did. */
     expect(engine, "__native_input.getGamepad('1').id", "Test Pad");
     expect(engine, "__native_input.getGamepad(1.9).id", "Test Pad");
     expect(engine, "__native_input.getGamepad({valueOf:function(){return 1}})"

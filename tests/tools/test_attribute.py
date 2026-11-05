@@ -21,11 +21,17 @@ ATTR = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(ATTR)
 ABSOLUTE = re.compile(r'(?:^|[\s"(`|:=])/[A-Za-z0-9._-]+/|file:|[A-Za-z]:\\')
 
+# The interpreter bucket keeps its report id in tools/perf/buckets.toml; find it
+# by its label so this test does not pin a name that M1-T027 may rename.
+_BUCKETS, _RULES, _FALLBACK = ATTR.load_rules(ATTR.DEFAULT_RULES)
+INTERPRETER = next(bucket_id for bucket_id, label in _BUCKETS
+                   if label == 'QuickJS interpreter')
+
 # Weights (summed periods) per bucket for the fixture, worked out by hand.
-SELF = {'quickjs': 1000, 'gc': 2000, 'shim_js': 1000, 'game_js': 1000,
+SELF = {INTERPRETER: 1000, 'gc': 2000, 'shim_js': 1000, 'game_js': 1000,
         'canvas2d': 2000, 'renderer': 1000, 'audio': 500, 'video': 500,
         'other': 2000}
-TOTAL = {'quickjs': 4000, 'gc': 2000, 'shim_js': 1000, 'game_js': 2000,
+TOTAL = {INTERPRETER: 4000, 'gc': 2000, 'shim_js': 1000, 'game_js': 2000,
          'canvas2d': 2000, 'renderer': 1000, 'audio': 500, 'video': 500,
          'other': 4500}
 
@@ -63,8 +69,8 @@ class AttributeTests(unittest.TestCase):
         """Counts and percentages derive from the same attribution."""
         self.assertEqual(self.rows['canvas2d']['self_samples'], 2)
         self.assertEqual(self.rows['other']['total_samples'], 5)
-        self.assertEqual(self.rows['quickjs']['self_pct'], 9.09)
-        self.assertEqual(self.rows['quickjs']['total_pct'], 36.36)
+        self.assertEqual(self.rows[INTERPRETER]['self_pct'], 9.09)
+        self.assertEqual(self.rows[INTERPRETER]['total_pct'], 36.36)
         self.assertEqual(self.rows['other']['total_pct'], 40.91)
         self.assertEqual(sum(r['self_samples'] for r in self.rows.values()), 11)
 
@@ -99,12 +105,12 @@ class AttributeTests(unittest.TestCase):
 
     def test_missing_period_weighs_one(self):
         """Without a printed period every sample weighs 1."""
-        text = ['app 1/1 [000] 1.000001: cycles:u:\n', '\t 10 JS_Eval (/opt/a/app)\n', '\n',
+        text = ['app 1/1 [000] 1.000001: cycles:u:\n', '\t 10 js_eval (/opt/a/app)\n', '\n',
                 'app 1/1 [000] 1.000002: cycles:u:\n', '\t 20 canvas2d_save (/opt/a/app)\n']
         samples = ATTR.parse_samples(text)
         self.assertEqual([s['weight'] for s in samples], [1, 1])
         with self.assertRaises(ValueError):
-            ATTR.parse_samples(['\t 10 JS_Eval (/opt/a/app)\n'])
+            ATTR.parse_samples(['\t 10 js_eval (/opt/a/app)\n'])
 
     def test_no_absolute_path_in_outputs(self):
         """JSON and Markdown carry basenames only, though the input has paths."""

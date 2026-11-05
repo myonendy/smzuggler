@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-11-04: define the font module through jsb.
+ * Modified 2026-11-05: remove the transitional QuickJS wrapper.
  *
  * Exposes the native FontFace/Canvas2D services without engine-specific types.
  * Setup runs on the main thread after engine/font initialization; the engine
@@ -19,12 +20,5 @@
  * false means setup failed (diagnostic printed or JS exception reported).
  * The engine owns all module handles; no graphics device is required. */
 bool bind_font_define(jsb_runtime *rt);
-
-#ifdef SMZ_JSB_ADOPT
-struct JSContext;
-/* Transitional entry for existing callers; borrows ctx and its adopted runtime.
- * Main thread after engine/font initialization; failures are reported by define. */
-void bind_font_register(struct JSContext *ctx);
-#endif
 
 #endif /* RMMZ_BIND_FONT_H */

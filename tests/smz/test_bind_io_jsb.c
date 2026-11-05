@@ -9,7 +9,7 @@
  * (DEC-M0-T009b), so this test is what shows the port changed nothing
  * (DEC-M1-T014-JSB-ADOPT). Every expected string below matches the pre-port
  * QuickJS binary (bind_io_register on js_engine.c). It calls bind_io_define
- * on js_engine_get_jsb(): the QuickJS engine in quickjs mode,
+ * on js_engine_get_jsb(): js_engine.c in the default engine mode,
  * smz_js_engine_v8 in v8 mode, so the port really runs on V8 there. All
  * files live in a fresh temporary game root; paths in messages are shown as
  * ROOT. Main thread only; see docs/js-binding.md for the handle rules.
@@ -93,7 +93,7 @@ static void check_results(JSEngine *engine, const char *root)
            "undefined");
     expect(engine, "var s=io.readFileSync('save/t.txt');[s.length,"
            "s.charCodeAt(1),s.charCodeAt(2)].join()", "4,233,0");
-    /* ToString coercion of the data and of the path, as JS_ToCString did. */
+    /* ToString coercion of the data and of the path, as the old C-string read did. */
     expect(engine, "io.writeFileSync({toString:function(){return 'save/n.txt'}},"
            "12.5);io.readFileSync('save/n.txt')", "12.5");
     expect(engine, "var u=new Uint8Array([1,2,255]);"

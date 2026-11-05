@@ -7,7 +7,7 @@
  * Why: game_loop.c drives dom_shim.js's timers and rAF and must keep its
  * phase order, job drains, error reporting, window-close, exit-probe and
  * control-mode behaviour while it moves off QuickJS. This links the real
- * game_loop.c against js_engine.c (quickjs mode) or js_engine_v8.cc (v8
+ * game_loop.c against js_engine.c (default mode) or js_engine_v8.cc (v8
  * mode) and stubs only the platform, renderer, audio, video and log
  * functions it calls, so no window or GPU is needed. Checks use assert()
  * and the fragment compiles with NDEBUG undefined.

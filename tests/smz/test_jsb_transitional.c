@@ -1,9 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 The smzuggler contributors
  *
- * Tests what is particular to the TRANSITIONAL QuickJS jsb backend
- * (src/jsb/jsb_quickjs.c), through jsb.h only. Removed with that backend by
- * card M1-T027.
+ * Tests what is particular to the TRANSITIONAL jsb backend (src/jsb/,
+ * through jsb.h only). Removed with that backend by card M1-T027.
  *
  * Why: test_jsb_core.c checks the seam's contract; this file checks the
  * QuickJS backend's own machinery that the contract test does not reach:
@@ -29,7 +28,7 @@
  * mismatch first so a failing assert says what went wrong. */
 static void expect_js(jsb_runtime *rt, const char *src, const char *expect) {
     char out[512];
-    bool ok = jsb_runtime_eval(rt, src, "test_jsb_quickjs.js", out, sizeof out);
+    bool ok = jsb_runtime_eval(rt, src, "test_jsb_transitional.js", out, sizeof out);
     if (!ok || strcmp(out, expect) != 0)
         fprintf(stderr, "FAIL: %s\n  expected %s, got %s%s\n", src, expect,
                 ok ? "" : "exception ", out);
@@ -92,7 +91,7 @@ static bool setup(jsb_ctx *ctx, void *user) {
 
 /* Creates a runtime with `__native_t` from `init`; asserts it worked. */
 static jsb_runtime *make_runtime(jsb_module_init init) {
-    jsb_runtime *rt = jsb_runtime_create("test_jsb_quickjs", "");
+    jsb_runtime *rt = jsb_runtime_create("test_jsb_transitional", "");
     assert(rt);
     assert(jsb_runtime_setup(rt, setup, (void *)init));
     return rt;
@@ -142,6 +141,6 @@ int main(void) {
     test_two_runtimes(rt);
     jsb_runtime_destroy(rt);
     test_runtime_churn();
-    printf("test_jsb_quickjs: all checks passed\n");
+    printf("test_jsb_transitional: all checks passed\n");
     return 0;
 }

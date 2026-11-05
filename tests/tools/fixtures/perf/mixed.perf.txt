@@ -5,13 +5,13 @@
 # stacks. Paths are generic install paths so the path-stripping test has
 # something to strip. Expected totals are documented in the test.
 smzuggler 4242/4242 [001] 100.000100:       1000 cycles:u:
-	    55d000001000 JS_CallInternal+0x1a0 (/opt/smz/build/smzuggler)
+	    55d000001000 js_call_internal+0x1a0 (/opt/smz/build/smzuggler)
 	    55d000000100 main+0x20 (/opt/smz/build/smzuggler)
 
 smzuggler 4242/4242 [001] 100.000200:       2000 cycles:u:
 	    55d000002000 gc_decref+0x10 (/opt/smz/build/smzuggler)
-	    55d000002100 JS_RunGC+0x40 (/opt/smz/build/smzuggler)
-	    55d000001000 JS_CallInternal+0x1a0 (/opt/smz/build/smzuggler)
+	    55d000002100 gc_free_cycles+0x40 (/opt/smz/build/smzuggler)
+	    55d000001000 js_call_internal+0x1a0 (/opt/smz/build/smzuggler)
 
 smzuggler 4242/4242 [001] 100.000300:       1000 cycles:u:
 	    55d000009000 [unknown] ([unknown])

@@ -9,7 +9,6 @@
 #include "io/file_io.h"
 #include "engine/js_engine.h"
 
-#include <quickjs.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -258,8 +257,8 @@ static JSEngine *js = NULL;
 static void init_js(void)
 {
     js = js_engine_init();
-    bind_io_register(js_engine_get_context(js));
-    bind_effekseer_register(js_engine_get_context(js));
+    bind_io_define(js_engine_get_jsb(js));
+    bind_effekseer_define(js_engine_get_jsb(js));
 }
 
 static void shutdown_js(void)

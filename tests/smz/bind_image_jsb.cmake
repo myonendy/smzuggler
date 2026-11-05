@@ -15,7 +15,7 @@ if(SMZ_JS_ENGINE STREQUAL "v8")
     set_target_properties(test_bind_image_jsb PROPERTIES LINKER_LANGUAGE CXX)
 else()
     target_sources(test_bind_image_jsb PRIVATE ${PROJECT_SOURCE_DIR}/src/engine/js_engine.c)
-    target_link_libraries(test_bind_image_jsb PRIVATE smz_jsb_quickjs qjs)
+    target_link_libraries(test_bind_image_jsb PRIVATE smz_jsb)
 endif()
 target_include_directories(test_bind_image_jsb PRIVATE
     ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/third_party/stb)

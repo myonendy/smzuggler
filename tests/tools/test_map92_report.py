@@ -10,6 +10,7 @@ command the recipe names exists in the tree. Outputs go to temp dirs.
 from __future__ import annotations
 
 import csv
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -26,6 +27,14 @@ RECIPE = ROOT / 'docs/perf/m0-map92-profile-recipe.md'
 COMMITTED_REPORT = ROOT / 'docs/perf/m0-map92-profile.md'
 RECIPE_TOOL = re.compile(
     r'(?:^|[\s`"\'])((?:tools|src)/[A-Za-z0-9_./-]+)', re.M)
+_SPEC = importlib.util.spec_from_file_location('map92_report', TOOL)
+MAP = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(MAP)
+# The report sums every id in JS_BUCKETS; the interpreter share is the one id
+# that is not GC, shim JS or game JS. Derive it so the test does not pin a name
+# that M1-T027 may rename.
+INTERPRETER = next(bucket_id for bucket_id in sorted(MAP.JS_BUCKETS)
+                   if bucket_id not in ('gc', 'shim_js', 'game_js'))
 
 # Ten scored frames used by the matching tests. Mean total 11.00 ms, nearest-rank
 # p95 20.00 ms, mean JS update (timers+jobs+rAF) 7.50 ms.
@@ -73,14 +82,14 @@ def attribution(js_pct=70.0, leak=None):
     js_weight = int(js_pct * 100)
     native = 10000 - js_weight
     weights = {
-        'quickjs': js_weight * 40 // 70, 'gc': js_weight * 10 // 70,
+        INTERPRETER: js_weight * 40 // 70, 'gc': js_weight * 10 // 70,
         'shim_js': js_weight * 5 // 70, 'game_js': js_weight * 15 // 70,
         'canvas2d': native * 10 // 30, 'renderer': native * 10 // 30,
         'audio': native * 2 // 30, 'video': 0,
     }
     weights['other'] = 10000 - sum(weights.values())
     labels = {
-        'quickjs': 'QuickJS interpreter', 'gc': 'GC', 'shim_js': 'shim JS',
+        INTERPRETER: 'JS interpreter', 'gc': 'GC', 'shim_js': 'shim JS',
         'game_js': 'game JS', 'canvas2d': 'Canvas2D',
         'renderer': 'renderer/GPU submit', 'audio': 'audio', 'video': 'video',
         'other': 'libc/other',

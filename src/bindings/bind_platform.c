@@ -5,6 +5,7 @@
  * Modified 2026-10-30: use the configurable runtime identity.
  * Modified 2026-11-04: port to the jsb seam (spec section 4.1); the
  * JS-visible API is unchanged.
+ * Modified 2026-11-05: remove the transitional QuickJS wrapper.
  *
  * Platform bindings for browser window operations; main thread only.
  * See docs/DECISIONS.md (DEC-M0-T001) for identity ownership.
@@ -176,10 +177,3 @@ bool bind_platform_define(jsb_runtime *rt, Platform *platform)
     /* storage_shim.js builds process.platform/arch/env/hrtime from this. */
     return bind_platform_define_process(rt);
 }
-
-#ifdef SMZ_JSB_ADOPT
-void bind_platform_register(struct JSContext *ctx, Platform *platform)
-{
-    (void)bind_platform_define(jsb_runtime_of(ctx), platform);
-}
-#endif

@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-11-04: expose the font API through jsb.
+ * Modified 2026-11-05: remove the transitional QuickJS wrapper.
  *
  * Supplies font loading and measurement for the FontFace/Canvas2D shims.
  * Main thread only; no JS handle or borrowed buffer survives a call.
@@ -16,9 +17,6 @@
 #include "rendering/canvas2d.h"
 #include "io/file_io.h"
 
-#ifdef SMZ_JSB_ADOPT
-#include "jsb/jsb_adopt.h"
-#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -275,11 +273,3 @@ bool bind_font_define(jsb_runtime *rt)
     }
     return true;
 }
-
-#ifdef SMZ_JSB_ADOPT
-/* Transitional main-thread entry; the engine owns the adopted runtime. */
-void bind_font_register(struct JSContext *ctx)
-{
-    bind_font_define(jsb_runtime_of(ctx));
-}
-#endif

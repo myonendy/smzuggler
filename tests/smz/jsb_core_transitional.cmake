@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 The smzuggler contributors
 # Registers the unchanged jsb seam test (test_jsb_core.c) against the
-# transitional QuickJS backend in quickjs mode (DEC-SETUP-008; removed with
-# that backend by M1-T027). jsb_core.cmake registers it for v8 mode. QuickJS
-# has no ICU, so the ICU data path the test passes is empty and unused.
+# transitional jsb backend in the default engine mode (DEC-SETUP-008; removed
+# with that backend by M1-T027). jsb_core.cmake registers it for v8 mode. The
+# transitional backend has no ICU, so the ICU data path the test passes is
+# empty and unused.
 if(NOT SMZ_JS_ENGINE STREQUAL "v8")
     add_executable(test_jsb_core ${CMAKE_CURRENT_LIST_DIR}/test_jsb_core.c)
     target_link_libraries(test_jsb_core PRIVATE smz_jsb)

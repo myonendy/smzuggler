@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-11-04: define __native_platform and __native_process through
+ * Modified 2026-11-05: remove the transitional QuickJS wrapper.
  * the jsb seam (spec section 4.1, docs/js-binding.md) instead of QuickJS.
  *
  * Declares the platform bindings and holds the window-less __native_process
@@ -15,9 +16,6 @@
 #define RMMZ_BIND_PLATFORM_H
 
 #include "jsb/jsb.h"
-#ifdef SMZ_JSB_ADOPT
-#include "jsb/jsb_adopt.h"
-#endif
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -43,13 +41,6 @@ typedef struct Platform Platform;
    outside any JS call. Returns false, after jsb has printed the pending
    exception, if a module could not be defined. */
 bool bind_platform_define(jsb_runtime *rt, Platform *platform);
-
-#ifdef SMZ_JSB_ADOPT
-/* Transitional wrapper for callers holding the engine's QuickJS context
-   (an opaque pointer here): bind_platform_define(jsb_runtime_of(ctx), ...).
-   Removed by M1-T026 (DEC-M1-T014-JSB-ADOPT). */
-void bind_platform_register(struct JSContext *ctx, Platform *platform);
-#endif
 
 /* Host facts behind storage_shim.js's process object (process.platform,
    process.arch, process.env, process.hrtime). They live here, inline and
@@ -199,15 +190,5 @@ static inline bool bind_platform_define_process(jsb_runtime *rt)
 {
     return jsb_runtime_setup(rt, bind_platform_process_setup, NULL);
 }
-
-#ifdef SMZ_JSB_ADOPT
-/* Transitional wrapper for callers that still hold the engine's QuickJS
-   context (tests/test_storage.c, tests/smz/test_process_shim.c); `ctx` is
-   an opaque pointer here. Removed by M1-T026 (DEC-M1-T014-JSB-ADOPT). */
-static inline void bind_platform_register_process(struct JSContext *ctx)
-{
-    (void)bind_platform_define_process(jsb_runtime_of(ctx));
-}
-#endif
 
 #endif /* RMMZ_BIND_PLATFORM_H */

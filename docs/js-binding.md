@@ -14,6 +14,8 @@ Modified 2026-11-04: document the font and audio binding ports and buffer valida
 Modified 2026-11-04: document the image binding and its buffer ownership.
 Modified 2026-11-04: document the font binding port and buffer validation.
 Modified 2026-11-04: document the video binding port and parity checks.
+Modified 2026-11-05: document that M1-T026 removed the bind_<x>_register wrappers
+and that tests reach the engine through js_engine.h and jsb.h.
 Modified 2026-11-04: document the Effekseer binding port and parity capture.
 Modified 2026-11-05: document the filters binding port and parity capture.
 Modified 2026-11-04: document the renderer binding port and parity checks.
@@ -40,7 +42,7 @@ when `SMZ_JS_ENGINE=quickjs` (the default). It exists only so bindings can be po
 QuickJS. Rules while it lives:
 
 - It must behave exactly like `jsb_v8.cc`: the unchanged `tests/smz/test_jsb_core.c` runs
-  against it as ctest `jsb_core` in quickjs mode (`tests/smz/jsb_core_quickjs.cmake`).
+  against it as ctest `jsb_core` in quickjs mode (`tests/smz/jsb_core_transitional.cmake`).
   Any new jsb call lands in both backends in the same change.
 - It adds no API of its own; nothing outside `src/jsb/` may include `quickjs.h` through it.
 - `jsb_runtime_create` ignores `argv0` and `icu_data_path` (QuickJS has no ICU).
@@ -58,7 +60,8 @@ The game runs on `js_engine.c` (QuickJS) in both modes until M1-T027, so binding
 need a jsb runtime on *its* context (DEC-M1-T014-JSB-ADOPT). The private header
 `src/jsb/jsb_adopt.h` declares `jsb_runtime_adopt(JSContext *)`, which wraps a context
 without owning it (`js_engine_init` calls it; `js_engine_get_jsb()` returns it), and
-`jsb_runtime_of(JSContext *)`, which the port cards' `bind_<x>_register` wrappers use.
+`jsb_runtime_of(JSContext *)`, which finds that runtime. The port cards' transitional
+`bind_<x>_register` wrappers used it until M1-T026 removed them.
 jsb keeps its runtime in the QuickJS **runtime** opaque; the context opaque stays
 `js_engine.c`'s. `jsb_runtime_destroy` on an adopted runtime frees only jsb's own
 references and must run before the context is freed (`js_engine_shutdown` does).
@@ -105,10 +108,10 @@ in a `TryCatch` that it resets. On V8 `jsb_throw_internal` makes an `Error` whos
 
 ## Ported bindings
 
-Each port defines its module in `bind_<x>_define(jsb_runtime *rt, ...)`; the old
-`bind_<x>_register(struct JSContext *, ...)` stays as a wrapper under `SMZ_JSB_ADOPT`
-until M1-T026. A `tests/smz/test_bind_<x>_jsb.c` test pins the JS API to the pre-port
-binary's in both engine modes.
+Each port defines its module in `bind_<x>_define(jsb_runtime *rt, ...)`. M1-T026 removed
+the transitional `bind_<x>_register(struct JSContext *, ...)` wrappers; every caller now
+passes `js_engine_get_jsb()`. A `tests/smz/test_bind_<x>_jsb.c` test pins the JS API to
+the pre-port binary's in both engine modes.
 
 | Binding | Module and functions (`length`) | jsb calls used | Buffers | Callbacks |
 | --- | --- | --- | --- | --- |
@@ -377,7 +380,7 @@ DEC-M1-T011). It holds no JS value and has no QuickJS calls: it reaches JS only 
 | `error_handler_report_js_error(engine, message, stack, fatal)` | Logs `JS Exception: <message>` and `Stack trace:` (scrubbed), runs the shim's `__error_handler_dispatch(message, error)`, then a dialog if `fatal`. `engine` NULL skips dispatch. |
 | `error_handler_on_jsb_error(message, stack, user)` | A `jsb_error_fn`: `jsb_set_error_handler(rt, error_handler_on_jsb_error, NULL)` sends jsb callback exceptions to this log instead of stderr. Declared without `jsb.h`, so it builds in both modes. Whoever owns the runtime installs it; `js_engine_v8.cc` does not yet (not this card's file). |
 | `error_handler_attempt_auto_save(engine)` | Runs the shim's `__error_handler_autoSave`; true if it returned non-zero. |
-| `error_handler_report_js_exception(engine, fatal)` | quickjs mode only, an inline in `error_handler.h` for the QuickJS-era tests: takes QuickJS's pending exception and reports it as above. Removed by M1-T027. |
+| `error_handler_report_js_exception(engine, fatal)` | quickjs mode only, an inline in `error_handler.h` that takes QuickJS's pending exception and reports it as above; no caller remains after M1-T026 ported the tests. Removed by M1-T027. |
 
 * **Text in, script out.** Message and stack (each cut at 4096 bytes) are escaped into a
   short script run with `js_engine_eval`; quotes, backslashes and control characters
@@ -394,14 +397,16 @@ DEC-M1-T011). It holds no JS value and has no QuickJS calls: it reaches JS only 
 log lines, exact delivery of quotes, backslashes, newlines and UTF-8 to window.onerror,
 that a message cannot break out of its literal, missing and throwing dispatchers, every
 auto-save outcome, and in v8 mode that a throwing jsb callback is logged with its stack.
-The older `tests/test_error_handler.c` still calls QuickJS directly and runs on QuickJS
-in both modes until M1-T027 ports it.
+The older `tests/test_error_handler.c` now reports through the engine-neutral
+`error_handler_report_js_error`, so it runs on QuickJS in both modes without
+touching a QuickJS value.
 
 ## Ported bindings
 Each port keeps its JS API byte-for-byte (names, order, `length`, results, errors) and
-adds `bind_<x>_define(jsb_runtime *rt, ...)`; the old `bind_<x>_register(struct JSContext
-*, ...)` stays as a one-line wrapper under `#ifdef SMZ_JSB_ADOPT` until M1-T026
-(DEC-M1-T014-JSB-ADOPT). Each has a `tests/smz/test_bind_<x>_jsb.c` ctest run in both modes.
+adds `bind_<x>_define(jsb_runtime *rt, ...)`; M1-T026 removed the old
+`bind_<x>_register(struct JSContext *, ...)` wrappers, and callers pass
+`js_engine_get_jsb()` (DEC-M1-T014-JSB-ADOPT). Each has a
+`tests/smz/test_bind_<x>_jsb.c` ctest run in both modes.
 
 | Binding | Globals | Functions (`length`) | jsb calls used | Buffers | Callbacks |
 | --- | --- | --- | --- | --- | --- |
@@ -483,8 +488,8 @@ adds `bind_<x>_define(jsb_runtime *rt, ...)`; the old `bind_<x>_register(struct 
   output is unchanged by the port.
 
 * **bind_platform.** The `__native_process` helpers stay inline in `bind_platform.h`
-  (`bind_platform_define_process(rt)`), so window-less tests need no SDL;
-  `bind_platform_register_process(struct JSContext *)` is their transitional wrapper.
+  (`bind_platform_define_process(rt)`), so window-less tests need no SDL; callers pass
+  `js_engine_get_jsb()` directly now that the transitional wrapper is gone.
   `bind_platform_define` also defines `__native_process`, as the old register did. The
   `Platform *` is kept in a file static (jsb modules have no user pointer); no jsb handle
   is stored. `engine` is `jsb_engine_version()`, the running engine's version.
@@ -540,10 +545,10 @@ before creating other jsb runtimes. QuickJS retains its Windows linker reservati
 ## js_engine on V8
 `src/engine/js_engine_v8.cc` implements `src/engine/js_engine.h` on V8 (§4.1 item 3,
 card M1-T007). In v8 mode CMake builds it as `smz_js_engine_v8`, which defines
-`SMZ_JS_ENGINE_V8` for its users. Until `game_loop.c`, `error_handler.c` and the bindings
-are ported (M1-T009, M1-T011, M1-T016..T025) the runtime executable still links
-`js_engine.c`, because those files call QuickJS through `js_engine_get_context`; the
-v8-mode library serves every caller that needs only `js_engine.h`, starting with tests.
+`SMZ_JS_ENGINE_V8` for its users. The runtime executable still links `js_engine.c` in
+both modes because the engine itself moves to V8 only in M1-T027; its callers reach it
+through `js_engine.h` and the jsb seam, never through `js_engine_get_context`.
+The v8-mode library serves every caller that needs only `js_engine.h`, starting with tests.
 
 - **Isolate and context** come from `jsb_runtime_create`; the engine picks them up inside
   `jsb_runtime_setup`, so `js_engine_get_jsb()` returns a runtime whose modules land in

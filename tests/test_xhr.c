@@ -8,7 +8,6 @@
 #include "test_paths.h"
 #include "io/file_io.h"
 
-#include <quickjs.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -114,7 +113,7 @@ static TestCtx *create_test_ctx(void)
     }
 
     js_engine_set_console_callback(tc->engine, console_capture_cb, &tc->cap);
-    bind_io_register(js_engine_get_context(tc->engine));
+    bind_io_define(js_engine_get_jsb(tc->engine));
 
     file_io_set_game_root(test_dir);
 

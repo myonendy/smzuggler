@@ -9,7 +9,7 @@
  * (DEC-M0-T009b), so this test is what shows the port changed nothing
  * (DEC-M1-T014-JSB-ADOPT). Every expected value below was printed by the
  * pre-port QuickJS binary (bind_tilemap_register on js_engine.c). It calls
- * bind_tilemap_define on js_engine_get_jsb(): the QuickJS engine in quickjs
+ * bind_tilemap_define on js_engine_get_jsb(): js_engine.c in the default
  * mode, smz_js_engine_v8 in v8 mode, so the port really runs on V8 there.
  * The renderer is created headless, so no graphics device is needed. Main
  * thread only; see docs/js-binding.md for the handle rules.

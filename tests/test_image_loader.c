@@ -9,7 +9,6 @@
 #include "io/file_io.h"
 #include "engine/js_engine.h"
 
-#include <quickjs.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -344,8 +343,8 @@ static void setup_js(void)
 {
     g_engine = js_engine_init();
     image_loader_init(false);
-    bind_io_register(js_engine_get_context(g_engine));
-    bind_image_register(js_engine_get_context(g_engine));
+    bind_io_define(js_engine_get_jsb(g_engine));
+    bind_image_define(js_engine_get_jsb(g_engine));
 }
 
 static void teardown_js(void)

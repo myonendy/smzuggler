@@ -795,13 +795,13 @@ TEST(title_screen_boot_sequence)
     js_engine_set_console_callback(engine, console_capture_cb, NULL);
     console_capture_reset();
 
-    JSContext *ctx = js_engine_get_context(engine);
-    bind_io_register(ctx);
-    bind_image_register(ctx);
-    bind_canvas2d_register(ctx);
-    bind_renderer_register(ctx);
-    bind_font_register(ctx);
-    bind_tilemap_register(ctx);
+    jsb_runtime *jsb = js_engine_get_jsb(engine);
+    bind_io_define(jsb);
+    bind_image_define(jsb);
+    bind_canvas2d_define(jsb);
+    bind_renderer_define(jsb);
+    bind_font_define(jsb);
+    bind_tilemap_define(jsb);
 
     file_io_set_game_root(MOCK_GAME_DIR);
 
@@ -876,13 +876,13 @@ TEST(new_game_gameplay_flow)
     js_engine_set_console_callback(engine, console_capture_cb, NULL);
     console_capture_reset();
 
-    JSContext *ctx = js_engine_get_context(engine);
-    bind_io_register(ctx);
-    bind_image_register(ctx);
-    bind_canvas2d_register(ctx);
-    bind_renderer_register(ctx);
-    bind_font_register(ctx);
-    bind_tilemap_register(ctx);
+    jsb_runtime *jsb = js_engine_get_jsb(engine);
+    bind_io_define(jsb);
+    bind_image_define(jsb);
+    bind_canvas2d_define(jsb);
+    bind_renderer_define(jsb);
+    bind_font_define(jsb);
+    bind_tilemap_define(jsb);
 
     file_io_set_game_root(MOCK_GAME_DIR);
 
@@ -1001,9 +1001,9 @@ TEST(audio_webaudio_shim_integration)
     js_engine_set_console_callback(engine, console_capture_cb, NULL);
     console_capture_reset();
 
-    JSContext *ctx = js_engine_get_context(engine);
-    bind_io_register(ctx);
-    bind_audio_register(ctx);
+    jsb_runtime *jsb = js_engine_get_jsb(engine);
+    bind_io_define(jsb);
+    bind_audio_define(jsb);
 
     ASSERT(js_engine_eval_file(engine, "src/shims/dom_shim.js"));
     ASSERT(js_engine_eval_file(engine, "src/shims/navigator_shim.js"));
@@ -1053,8 +1053,8 @@ TEST(save_load_roundtrip)
     js_engine_set_console_callback(engine, console_capture_cb, NULL);
     console_capture_reset();
 
-    JSContext *ctx = js_engine_get_context(engine);
-    bind_io_register(ctx);
+    jsb_runtime *jsb = js_engine_get_jsb(engine);
+    bind_io_define(jsb);
 
     file_io_set_game_root(MOCK_GAME_DIR);
 
@@ -1142,8 +1142,8 @@ TEST(fullscreen_and_resize_logic)
     js_engine_set_console_callback(engine, console_capture_cb, NULL);
     console_capture_reset();
 
-    JSContext *ctx = js_engine_get_context(engine);
-    bind_io_register(ctx);
+    jsb_runtime *jsb = js_engine_get_jsb(engine);
+    bind_io_define(jsb);
 
     ASSERT(js_engine_eval_file(engine, "src/shims/dom_shim.js"));
     ASSERT(js_engine_eval_file(engine, "src/shims/navigator_shim.js"));
@@ -1222,9 +1222,9 @@ TEST(gamepad_input_subsystem)
 
     JSEngine *engine = js_engine_init();
     ASSERT(engine != NULL);
-    JSContext *ctx = js_engine_get_context(engine);
-    bind_io_register(ctx);
-    bind_input_register(ctx);
+    jsb_runtime *jsb = js_engine_get_jsb(engine);
+    bind_io_define(jsb);
+    bind_input_define(jsb);
 
     ASSERT(js_engine_eval_file(engine, "src/shims/dom_shim.js"));
     ASSERT(js_engine_eval_file(engine, "src/shims/navigator_shim.js"));
@@ -1276,9 +1276,9 @@ TEST(effekseer_effects_subsystem)
 
     JSEngine *engine = js_engine_init();
     ASSERT(engine != NULL);
-    JSContext *ctx = js_engine_get_context(engine);
-    bind_io_register(ctx);
-    bind_effekseer_register(ctx);
+    jsb_runtime *jsb = js_engine_get_jsb(engine);
+    bind_io_define(jsb);
+    bind_effekseer_define(jsb);
 
     ASSERT(js_engine_eval_file(engine, "src/shims/dom_shim.js"));
     ASSERT(js_engine_eval_file(engine, "src/shims/navigator_shim.js"));
@@ -1400,16 +1400,16 @@ TEST(all_shims_load_cleanly)
     js_engine_set_console_callback(engine, console_capture_cb, NULL);
     console_capture_reset();
 
-    JSContext *ctx = js_engine_get_context(engine);
-    bind_io_register(ctx);
-    bind_image_register(ctx);
-    bind_canvas2d_register(ctx);
-    bind_renderer_register(ctx);
-    bind_font_register(ctx);
-    bind_tilemap_register(ctx);
-    bind_audio_register(ctx);
-    bind_input_register(ctx);
-    bind_effekseer_register(ctx);
+    jsb_runtime *jsb = js_engine_get_jsb(engine);
+    bind_io_define(jsb);
+    bind_image_define(jsb);
+    bind_canvas2d_define(jsb);
+    bind_renderer_define(jsb);
+    bind_font_define(jsb);
+    bind_tilemap_define(jsb);
+    bind_audio_define(jsb);
+    bind_input_define(jsb);
+    bind_effekseer_define(jsb);
 
     const char *shim_files[] = {
         "src/shims/dom_shim.js",

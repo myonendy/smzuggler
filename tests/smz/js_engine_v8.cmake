@@ -3,9 +3,9 @@
 # Register the js_engine.h tests of card M1-T007 (spec section 4.1,
 # docs/js-binding.md, "js_engine on V8").
 # - js_engine_stack (test_js_engine_v8.c) runs in both engine modes: on
-#   js_engine_v8.cc in v8 mode, on js_engine.c in quickjs mode.
+#   js_engine_v8.cc in v8 mode, on js_engine.c in the default mode.
 # - js_engine_on_v8 builds Outsider's unchanged tests/test_js_engine.c, which
-#   uses only js_engine.h, against js_engine_v8.cc (v8 mode only; quickjs
+#   uses only js_engine.h, against js_engine_v8.cc (v8 mode only; the
 #   mode already runs it as js_engine).
 if(SMZ_JS_ENGINE STREQUAL "v8")
     add_executable(test_js_engine_stack ${CMAKE_CURRENT_LIST_DIR}/test_js_engine_v8.c)

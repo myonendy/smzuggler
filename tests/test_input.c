@@ -9,7 +9,6 @@
 #include "input/input_manager.h"
 #include "io/file_io.h"
 
-#include <quickjs.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -64,8 +63,8 @@ static TestCtx *create_test_ctx(void)
     }
 
     input_manager_init();
-    bind_io_register(js_engine_get_context(tc->engine));
-    bind_input_register(js_engine_get_context(tc->engine));
+    bind_io_define(js_engine_get_jsb(tc->engine));
+    bind_input_define(js_engine_get_jsb(tc->engine));
 
     /* Load DOM shim. */
     char *dom_shim = read_shim("src/shims/dom_shim.js");

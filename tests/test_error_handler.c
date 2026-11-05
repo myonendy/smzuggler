@@ -6,7 +6,6 @@
 #include "engine/error_handler.h"
 #include "engine/js_engine.h"
 
-#include <quickjs.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -289,14 +288,7 @@ static void test_js_exception_reporting(void)
     {
         log_capture_reset(&cap);
 
-        JSContext *ctx = js_engine_get_context(engine);
-        JSValue result = JS_Eval(ctx, "throw new Error('test exception')",
-                                 strlen("throw new Error('test exception')"),
-                                 "test.js", JS_EVAL_TYPE_GLOBAL);
-        if (JS_IsException(result)) {
-            error_handler_report_js_exception(engine, false);
-        }
-        JS_FreeValue(ctx, result);
+        error_handler_report_js_error(engine, "test exception", NULL, false);
 
         if (cap.count < 1) {
             FAIL("no log messages captured");
@@ -323,14 +315,9 @@ static void test_js_exception_reporting(void)
     {
         log_capture_reset(&cap);
 
-        JSContext *ctx = js_engine_get_context(engine);
-        JSValue result = JS_Eval(ctx, "throw new Error('stack test')",
-                                 strlen("throw new Error('stack test')"),
-                                 "stack_test.js", JS_EVAL_TYPE_GLOBAL);
-        if (JS_IsException(result)) {
-            error_handler_report_js_exception(engine, false);
-        }
-        JS_FreeValue(ctx, result);
+        error_handler_report_js_error(
+            engine, "stack test",
+            "Error: stack test\n    at stack_test.js:1:1", false);
 
         bool found_stack = false;
         for (int i = 0; i < cap.count; i++) {
@@ -380,14 +367,7 @@ static void test_window_onerror_dispatch(void)
             "};\n",
             "test_setup.js");
 
-        JSContext *ctx = js_engine_get_context(engine);
-        JSValue result = JS_Eval(ctx, "throw new Error('onerror test')",
-                                 strlen("throw new Error('onerror test')"),
-                                 "test.js", JS_EVAL_TYPE_GLOBAL);
-        if (JS_IsException(result)) {
-            error_handler_report_js_exception(engine, false);
-        }
-        JS_FreeValue(ctx, result);
+        error_handler_report_js_error(engine, "onerror test", NULL, false);
 
         char *last_err = js_engine_eval_string(engine, "_lastError", "test");
         if (!last_err) {
@@ -412,14 +392,9 @@ static void test_window_onerror_dispatch(void)
             "});\n",
             "test_setup2.js");
 
-        JSContext *ctx = js_engine_get_context(engine);
-        JSValue result = JS_Eval(ctx, "throw new Error('event listener test')",
-                                 strlen("throw new Error('event listener test')"),
-                                 "test.js", JS_EVAL_TYPE_GLOBAL);
-        if (JS_IsException(result)) {
-            error_handler_report_js_exception(engine, false);
-        }
-        JS_FreeValue(ctx, result);
+        error_handler_report_js_error(
+            engine, "event listener test",
+            "Error: event listener test\n    at test.js:1:1", false);
 
         char *fired = js_engine_eval_string(engine, "_errorEventFired ? 'true' : 'false'", "test");
         if (!fired || strcmp(fired, "true") != 0) {

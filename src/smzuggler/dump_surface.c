@@ -96,7 +96,7 @@ bool dump_surface(FILE *output, const char *shim_dir)
         return false;
     }
     file_io_set_game_root(shim_dir);
-    bind_io_register(js_engine_get_context(engine));
+    bind_io_define(js_engine_get_jsb(engine));
     js_engine_set_console_callback(engine, console_message, NULL);
     bool ok = js_engine_eval(engine, observer, "<surface-observer>") &&
               load_observed(engine, shim_dir);

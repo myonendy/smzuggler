@@ -8,7 +8,6 @@
 #include "io/file_io.h"
 #include "engine/js_engine.h"
 
-#include <quickjs.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -59,8 +58,8 @@ static void js_setup(void)
     setup_test_env();
 
     s_js = js_engine_init();
-    bind_io_register(js_engine_get_context(s_js));
-    bind_platform_register_process(js_engine_get_context(s_js));
+    bind_io_define(js_engine_get_jsb(s_js));
+    bind_platform_define_process(js_engine_get_jsb(s_js));
     file_io_set_game_root(TEST_SAVE_DIR);
 
     /* DOM shim must precede the storage shim (provides window, document). */
@@ -650,8 +649,10 @@ TEST(process_versions_match_reference_nwjs)
     ASSERT(js_check("process.versions.nw === '0.80.0'"));
     ASSERT(js_check("process.versions.chromium === '117.0.5938.63'"));
     ASSERT(js_check("process.versions.node === '20.7.0'"));
-    ASSERT(js_check("typeof process.versions.quickjs === 'string' && "
-                    "process.versions.quickjs.length > 0"));
+    ASSERT(js_check("typeof __native_process.engine === 'string' && "
+                    "__native_process.engine.length > 0 && "
+                    "Object.keys(process.versions).some(function (k) {"
+                    "  return process.versions[k] === __native_process.engine; })"));
     js_teardown();
 }
 
@@ -915,7 +916,7 @@ TEST(storage_manager_backup_rename_pattern)
 
 /* Tests: pako verification */
 
-TEST(pako_works_in_quickjs)
+TEST(pako_works_in_js_engine)
 {
     js_setup();
 
@@ -1196,7 +1197,7 @@ int main(int argc, char *argv[])
     RUN(storage_manager_backup_rename_pattern);
 
     printf("\n--- pako integration tests ---\n");
-    RUN(pako_works_in_quickjs);
+    RUN(pako_works_in_js_engine);
 
     printf("\n--- nw shim tests ---\n");
     RUN(nw_shim_exists);

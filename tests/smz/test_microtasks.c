@@ -12,7 +12,7 @@
  * before promise jobs. Plugins that chain promises off timers notice when
  * that order changes. This runs the real game_loop.c with the real
  * dom_shim.js and storage_shim.js on js_engine_v8.cc (v8 mode) or
- * js_engine.c (quickjs mode), stubbing only the platform, renderer, audio,
+ * js_engine.c (default mode), stubbing only the platform, renderer, audio,
  * video and log calls, and checks the logged order. Checks use assert()
  * and the fragment compiles with NDEBUG undefined. Main thread only.
  */
@@ -116,7 +116,7 @@ static const char *const kScenarioJs =
 static const char kChromeOrder[] =
     "a,ap,b,bp,t1,n1,n1b,p1,p1b,t2,p2,iv,ivp,r1,rn1,rp1,r2";
 
-/* The order quickjs mode produces: js_engine.c has no checkpoint callable
+/* The order the default mode produces: js_engine.c has no checkpoint callable
    from JS, so the timers and the rAF callbacks of a frame each share one
    checkpoint after their phase (DEC-M1-T010 lists the differences). Ticks
    still run before promise jobs, and each phase's jobs before the next. */
@@ -152,7 +152,7 @@ static GameLoop *make_loop(JSEngine **engine)
 /* ---- Tests -------------------------------------------------------------- */
 
 /* One frame of timers, rAF and an input dispatch logs the NW.js order in
-   v8 mode, and the phase-level order of DEC-M1-T010 in quickjs mode. */
+   v8 mode, and the phase-level order of DEC-M1-T010 in the default mode. */
 static void test_frame_order(void)
 {
     JSEngine *engine;
@@ -164,7 +164,7 @@ static void test_frame_order(void)
     fprintf(stderr, "  check: v8 mode follows Chrome/NW.js order\n");
     assert(js_is(engine, "log.join(',')", kChromeOrder));
 #else
-    fprintf(stderr, "  check: quickjs mode follows its phase-level order\n");
+    fprintf(stderr, "  check: default mode follows its phase-level order\n");
     assert(js_is(engine, "log.join(',')", kQuickJsOrder));
 #endif
     fprintf(stderr, "  check: nothing is left for the next frame\n");

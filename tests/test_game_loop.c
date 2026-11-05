@@ -85,7 +85,7 @@ static JSEngine *create_test_engine(void)
 {
     JSEngine *engine = js_engine_init();
     if (engine) {
-        bind_io_register(js_engine_get_context(engine));
+        bind_io_define(js_engine_get_jsb(engine));
     }
     return engine;
 }

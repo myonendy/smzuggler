@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 The smzuggler contributors
- * Modified 2026-11-04: quickjs-mode get_jsb is now the adopted runtime
+ * Modified 2026-11-04: default-mode get_jsb is now the adopted runtime
  * (card M1-T007b), so its assertion expects non-NULL.
  *
  * Stack-trace locations and the jsb accessor of js_engine.h, in both engine
@@ -11,7 +11,7 @@
  * a ScriptOrigin; this proves the location survives in both modes and that
  * v8 mode names scripts relative to the game root as NW.js does. It also
  * checks that js_engine_get_jsb() hands out the runtime the game runs in.
- * Built against js_engine_v8.cc in v8 mode and js_engine.c in quickjs mode
+ * Built against js_engine_v8.cc in v8 mode and js_engine.c in the default mode
  * (tests/smz/js_engine_v8.cmake); SMZ_JS_ENGINE_V8 tells which. Checks use
  * assert() and the fragment compiles with NDEBUG undefined, as the other
  * tests/smz tests do.
@@ -163,13 +163,13 @@ static void test_get_jsb_shares_globals(void)
     js_engine_shutdown(engine);
 }
 #else
-/* quickjs mode adopts the engine's context into a jsb runtime (js_engine.h). */
-static void test_get_jsb_quickjs(void)
+/* default mode adopts the engine's context into a jsb runtime (js_engine.h). */
+static void test_get_jsb_default_mode(void)
 {
     JSEngine *engine = js_engine_init();
     note("engine starts");
     assert(engine != NULL);
-    note("quickjs get_jsb is not NULL and get_context remains");
+    note("default-mode get_jsb is not NULL and get_context remains");
     assert(js_engine_get_jsb(engine) != NULL);
     assert(js_engine_get_context(engine) != NULL);
     js_engine_shutdown(engine);
@@ -184,7 +184,7 @@ int main(void)
     test_stack_is_game_relative();
     test_get_jsb_shares_globals();
 #else
-    test_get_jsb_quickjs();
+    test_get_jsb_default_mode();
 #endif
     printf("OK\n");
     return 0;

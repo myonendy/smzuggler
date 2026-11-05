@@ -577,45 +577,47 @@ static int runtime_main(int argc, char *argv[])
         error_handler_log(LOG_INFO, "Script watchdog enabled: %d ms", watchdog_ms);
     }
 
-    bind_io_register(js_engine_get_context(js));
+    jsb_runtime *jsb = js_engine_get_jsb(js);
+
+    bind_io_define(jsb);
 
     /* Initialize image loader (GL enabled since we have a context). */
     image_loader_init(true);
-    bind_image_register(js_engine_get_context(js));
+    bind_image_define(jsb);
 
     canvas2d_init();
-    bind_canvas2d_register(js_engine_get_context(js));
+    bind_canvas2d_define(jsb);
 
     font_manager_init();
-    bind_font_register(js_engine_get_context(js));
+    bind_font_define(jsb);
 
-    bind_renderer_register(js_engine_get_context(js));
+    bind_renderer_define(jsb);
 
-    bind_filters_register(js_engine_get_context(js));
+    bind_filters_define(jsb);
 
     /* Register tilemap bindings (depends on renderer). */
-    bind_tilemap_register(js_engine_get_context(js));
+    bind_tilemap_define(jsb);
 
     if (no_audio) {
         audio_engine_set_disabled(true);
     } else {
         audio_engine_init();
     }
-    bind_audio_register(js_engine_get_context(js));
+    bind_audio_define(jsb);
 
     input_manager_init();
-    bind_input_register(js_engine_get_context(js));
+    bind_input_define(jsb);
 
-    bind_platform_register(js_engine_get_context(js), platform);
+    bind_platform_define(jsb, platform);
 
     effekseer_init(win_w, win_h, 8000);
-    bind_effekseer_register(js_engine_get_context(js));
+    bind_effekseer_define(jsb);
 
     {
         extern Renderer *s_renderer;
         video_player_init(&s_renderer);
     }
-    bind_video_register(js_engine_get_context(js));
+    bind_video_define(jsb);
 
     file_io_set_game_root(game_dir);
 #ifdef SMZUGGLER_NAME

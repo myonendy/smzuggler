@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-11-04: ported from QuickJS to the jsb seam (spec section 4.1).
+ * Modified 2026-11-05: remove the transitional QuickJS wrapper.
  *
  * __native_renderer: the high-level sprite-batch renderer API (frame
  * lifecycle, textures, render textures, quads, scissor and readPixels) that
@@ -19,9 +20,6 @@
 #include "bindings/bind_renderer.h"
 #include "rendering/renderer.h"
 #include "rendering/sprite_batch.h"
-#ifdef SMZ_JSB_ADOPT
-#include "jsb/jsb_adopt.h"
-#endif
 
 #include <stdint.h>
 #include <stdio.h>
@@ -761,11 +759,3 @@ bool bind_renderer_define(jsb_runtime *rt)
     }
     return true;
 }
-
-#ifdef SMZ_JSB_ADOPT
-/* Keep old engine callers working until M1-T026; ctx is borrowed. */
-void bind_renderer_register(struct JSContext *ctx)
-{
-    bind_renderer_define(jsb_runtime_of(ctx));
-}
-#endif

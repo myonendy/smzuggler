@@ -735,8 +735,8 @@ static bool setup_test_engine(void)
     js_engine_set_console_callback(g_engine, console_capture_cb, NULL);
 
     /* I/O bindings are needed by the XHR and storage shims */
-    JSContext *ctx = js_engine_get_context(g_engine);
-    bind_io_register(ctx);
+    jsb_runtime *jsb = js_engine_get_jsb(g_engine);
+    bind_io_define(jsb);
 
     if (!script_loader_load_shims(g_engine, SHIM_DIR)) {
         fprintf(stderr, "Failed to load shims\n");

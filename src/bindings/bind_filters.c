@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-11-05: port the __native_filters binding to the jsb seam.
+ * Modified 2026-11-05: remove the transitional QuickJS wrapper.
  *
  * __native_filters: the native bridge under pixi_shim.js, which compiles and
  * draws the PIXI filter shaders on Outsider's renderer (docs/js-binding.md,
@@ -19,10 +20,6 @@
 #include "bindings/bind_filters.h"
 #include "rendering/filters.h"
 #include "engine/error_handler.h"
-
-#ifdef SMZ_JSB_ADOPT
-#include "jsb/jsb_adopt.h"
-#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -449,11 +446,3 @@ void bind_filters_shutdown(void)
     if (s_mask_shader) { filter_delete_shader(s_mask_shader); s_mask_shader = 0; }
     s_runtime = NULL;
 }
-
-#ifdef SMZ_JSB_ADOPT
-/* Preserve transitional callers; ctx is borrowed and opaque (M1-T026). */
-void bind_filters_register(struct JSContext *ctx)
-{
-    bind_filters_define(jsb_runtime_of(ctx));
-}
-#endif

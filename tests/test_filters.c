@@ -133,9 +133,9 @@ static JSEngine *_js = NULL;
 static void js_setup(void)
 {
     _js = js_engine_init();
-    bind_io_register(js_engine_get_context(_js));
-    bind_filters_register(js_engine_get_context(_js));
-    bind_renderer_register(js_engine_get_context(_js));
+    bind_io_define(js_engine_get_jsb(_js));
+    bind_filters_define(js_engine_get_jsb(_js));
+    bind_renderer_define(js_engine_get_jsb(_js));
 }
 
 static void js_teardown(void)
@@ -220,9 +220,9 @@ TEST(test_js_rebind_batch_exists)
 static void js_setup_with_shims(void)
 {
     _js = js_engine_init();
-    bind_io_register(js_engine_get_context(_js));
-    bind_renderer_register(js_engine_get_context(_js));
-    bind_filters_register(js_engine_get_context(_js));
+    bind_io_define(js_engine_get_jsb(_js));
+    bind_renderer_define(js_engine_get_jsb(_js));
+    bind_filters_define(js_engine_get_jsb(_js));
 
     js_engine_eval_file(_js, "src/shims/dom_shim.js");
     js_engine_execute_pending_jobs(_js);

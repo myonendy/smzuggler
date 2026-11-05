@@ -3,7 +3,7 @@
 # Register the engine-neutral error handler test of card M1-T011 (spec
 # section 4.1 item 5, docs/js-binding.md, "Error handler"). It runs in both
 # engine modes: on js_engine_v8.cc (with jsb callbacks) in v8 mode, on
-# js_engine.c in quickjs mode.
+# js_engine.c in the default engine mode.
 if(SMZ_JS_ENGINE STREQUAL "v8")
     add_executable(test_error_handler_jsb
         ${CMAKE_CURRENT_LIST_DIR}/test_error_handler_jsb.c

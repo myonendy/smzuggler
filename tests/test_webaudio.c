@@ -9,7 +9,6 @@
 #include "io/file_io.h"
 #include "engine/js_engine.h"
 
-#include <quickjs.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -150,8 +149,8 @@ static JSEngine *s_js = NULL;
 static void js_setup(void)
 {
     s_js = js_engine_init();
-    bind_io_register(js_engine_get_context(s_js));
-    bind_audio_register(js_engine_get_context(s_js));
+    bind_io_define(js_engine_get_jsb(s_js));
+    bind_audio_define(js_engine_get_jsb(s_js));
     file_io_set_game_root(".");
 
     /* DOM shim must precede the WebAudio shim (provides window, document). */

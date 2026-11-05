@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-11-04: ported from QuickJS to the jsb seam (spec section 4.1).
+ * Modified 2026-11-05: remove the transitional QuickJS wrapper.
  *
  * __native_canvas2d: the CPU Canvas2D rasteriser behind the
  * HTMLCanvasElement / CanvasRenderingContext2D shim (docs/js-binding.md,
@@ -21,9 +22,6 @@
 #include "rendering/canvas2d.h"
 #include "rendering/image_loader.h"
 #include "io/file_io.h"
-#ifdef SMZ_JSB_ADOPT
-#include "jsb/jsb_adopt.h"
-#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -816,11 +814,3 @@ bool bind_canvas2d_define(jsb_runtime *rt)
     }
     return true;
 }
-
-#ifdef SMZ_JSB_ADOPT
-/* Keeps old engine callers working until M1-T026; `ctx` is borrowed. */
-void bind_canvas2d_register(struct JSContext *ctx)
-{
-    bind_canvas2d_define(jsb_runtime_of(ctx));
-}
-#endif

@@ -465,9 +465,9 @@ static void js_setup(void)
     _js = js_engine_init();
     font_manager_init();
     canvas2d_init();
-    bind_io_register(js_engine_get_context(_js));
-    bind_font_register(js_engine_get_context(_js));
-    bind_canvas2d_register(js_engine_get_context(_js));
+    bind_io_define(js_engine_get_jsb(_js));
+    bind_font_define(js_engine_get_jsb(_js));
+    bind_canvas2d_define(js_engine_get_jsb(_js));
 }
 
 static void js_teardown(void)
@@ -572,9 +572,9 @@ static void js_setup_with_shims(void)
     _js = js_engine_init();
     font_manager_init();
     canvas2d_init();
-    bind_io_register(js_engine_get_context(_js));
-    bind_font_register(js_engine_get_context(_js));
-    bind_canvas2d_register(js_engine_get_context(_js));
+    bind_io_define(js_engine_get_jsb(_js));
+    bind_font_define(js_engine_get_jsb(_js));
+    bind_canvas2d_define(js_engine_get_jsb(_js));
 
     js_engine_eval_file(_js, "src/shims/dom_shim.js");
     js_engine_eval_file(_js, "src/shims/canvas2d_shim.js");

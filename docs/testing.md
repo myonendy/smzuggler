@@ -6,8 +6,10 @@ prelude, step summaries and local NW.js references.
 Modified 2026-11-01: document scratch HOME/XDG isolation for the evaluator game process.
 Modified 2026-11-01: export scratch HOME/XDG in the NW.js reference recipe so the
 child inherits isolated save paths.
+Modified 2026-11-05: tests reach the engine through js_engine.h and jsb.h in both
+engine modes; no test calls QuickJS directly.
 
-Local and CI validation of the QuickJS baseline, part of build infrastructure.
+Local and CI validation of the JavaScript engine baseline, part of build infrastructure.
 Keep the game-free suite independent of any installed game; do not bypass skips.
 -->
 
@@ -32,6 +34,12 @@ Linux, Windows and macOS jobs. Each configures CMake, builds, runs CTest with
 failure output, then runs the same three Python test directories. Windows uses
 Visual Studio 2022 and the Release configuration; Linux and macOS use Ninja.
 QuickJS is the current CMake baseline, so no engine selection flag is needed.
+Tests reach the engine only through `engine/js_engine.h` and the `jsb` seam
+(`src/jsb/jsb.h`): no test includes `<quickjs.h>` or calls a `JS_*` function, and
+every binding test defines its module on `js_engine_get_jsb()`. The default
+CMake mode still runs the transitional QuickJS engine; a `-DSMZ_JS_ENGINE=v8`
+build runs the same suite against V8, and both modes must stay green until
+M1-T027 removes the transitional mode.
 
 Dependencies and the Linux Xvfb/Openbox display setup follow upstream's
 [release workflow](../.github/workflows/release.yml). That workflow has no cache

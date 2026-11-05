@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-11-04: define the module through jsb (bind_io_define).
+ * Modified 2026-11-05: remove the transitional QuickJS wrapper.
  *
  * Entry points of the __native_io binding, the synchronous file I/O under
  * fs_shim.js's Node `fs` stand-in (docs/js-binding.md, "bind_io"). Main
@@ -25,17 +26,5 @@
  * exception, when `rt` is NULL or the module could not be defined. Main
  * thread only. */
 bool bind_io_define(jsb_runtime *rt);
-
-#ifdef SMZ_JSB_ADOPT
-struct JSContext;
-/* Legacy callers such as test_plugins still use the typedef until M1-T026. */
-typedef struct JSContext JSContext;
-
-/* TRANSITIONAL (removed by M1-T026): registers __native_io on the engine's
- * own context through its adopted jsb runtime, so callers that still hold a
- * QuickJS context need no change (DEC-M1-T014-JSB-ADOPT). `ctx` is an
- * opaque, borrowed pointer here. Main thread only. */
-void bind_io_register(struct JSContext *ctx);
-#endif
 
 #endif /* RMMZ_BIND_IO_H */

@@ -2,8 +2,8 @@
 # Copyright (C) 2026 The smzuggler contributors
 # Register the game-loop JS test of card M1-T009 (spec section 4.1,
 # docs/js-binding.md, "Game loop"). It runs in both engine modes: the real
-# game_loop.c on js_engine_v8.cc in v8 mode and on js_engine.c in quickjs
-# mode, with the platform, renderer, audio, video and log calls stubbed in
+# game_loop.c on js_engine_v8.cc in v8 mode and on js_engine.c in the
+# default mode, with the platform, renderer, audio, video and log calls stubbed in
 # the test itself.
 add_executable(test_game_loop_js
     ${CMAKE_CURRENT_LIST_DIR}/test_game_loop_js.c

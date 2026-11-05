@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-11-04: ported to the jsb seam (bind_effekseer_define).
+ * Modified 2026-11-05: remove the transitional QuickJS wrapper.
  *
  * The __native_effekseer binding: the native bridge under effekseer_shim.js,
  * which stands in for the Effekseer WebGL runtime RMMZ loads in NW.js. See
@@ -14,10 +15,6 @@
 #include "bindings/bind_effekseer.h"
 #include "effects/effekseer_backend.h"
 #include "io/file_io.h"
-
-#ifdef SMZ_JSB_ADOPT
-#include "jsb/jsb_adopt.h"
-#endif
 
 #include <stdio.h>
 #include <string.h>
@@ -432,10 +429,3 @@ bool bind_effekseer_define(jsb_runtime *rt)
     }
     return true;
 }
-
-#ifdef SMZ_JSB_ADOPT
-void bind_effekseer_register(struct JSContext *ctx)
-{
-    bind_effekseer_define(jsb_runtime_of(ctx));
-}
-#endif

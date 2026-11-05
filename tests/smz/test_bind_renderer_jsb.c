@@ -2,7 +2,7 @@
  * Copyright (C) 2026 The smzuggler contributors
  *
  * Checks the jsb port of bind_renderer.c (card M1-T023) on the engine's own
- * jsb runtime: QuickJS in quickjs mode, smz_js_engine_v8 in v8 mode.
+ * jsb runtime: js_engine.c in the default engine mode, smz_js_engine_v8 in v8 mode.
  *
  * Why: --dump-surface lists no native modules and no function `length`
  * (DEC-M0-T009b), so this test is what shows __native_renderer kept the

@@ -3,8 +3,8 @@
 # Register the microtask-order test of card M1-T010 (spec section 4.1,
 # docs/js-binding.md, "Microtask checkpoints", DEC-M1-T010). It runs the real
 # game_loop.c, dom_shim.js and storage_shim.js on js_engine_v8.cc in v8 mode
-# and on js_engine.c in quickjs mode; platform, renderer, audio, video and
-# log calls are stubbed in the test itself.
+# and on js_engine.c in the default engine mode; platform, renderer, audio,
+# video and log calls are stubbed in the test itself.
 add_executable(test_microtasks
     ${CMAKE_CURRENT_LIST_DIR}/test_microtasks.c
     ${CMAKE_SOURCE_DIR}/src/engine/game_loop.c)

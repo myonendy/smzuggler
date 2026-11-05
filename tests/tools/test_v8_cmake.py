@@ -92,7 +92,9 @@ class V8CMakeTest(unittest.TestCase):
     def test_unknown_engine_is_rejected(self):
         r = self.configure("-DSMZ_JS_ENGINE=spidermonkey")
         self.assertNotEqual(r.returncode, 0)
-        self.assertIn("SMZ_JS_ENGINE must be quickjs or v8", r.stderr)
+        self.assertIn("SMZ_JS_ENGINE must be", r.stderr)
+        self.assertIn("or v8", r.stderr)
+        self.assertIn("not 'spidermonkey'", r.stderr)
 
     def test_pinned_complete_install_passes_check(self):
         fake_install(self.tmp / "v8", cmake_pin())

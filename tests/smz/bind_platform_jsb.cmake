@@ -2,7 +2,7 @@
 # Copyright (C) 2026 The smzuggler contributors
 # Registers the bind_platform jsb port test (card M1-T014, DEC-SETUP-009).
 # In v8 mode it runs on smz_js_engine_v8, so the port really runs on V8; in
-# quickjs mode on js_engine.c, whose adopted runtime smz_jsb_quickjs supplies
+# default mode on js_engine.c, whose adopted runtime smz_jsb supplies
 # (linked by the root CMakeLists.txt for every target building js_engine.c).
 # The test replaces the Platform functions, so it needs SDL3 only for quit().
 if(SMZ_JS_ENGINE STREQUAL "v8")

@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-11-04: port the native audio bridge to jsb.
+ * Modified 2026-11-05: remove the transitional QuickJS wrapper.
  *
  * Implements the native mixer bridge for src/shims/webaudio_shim.js, backing
  * the AudioContext, AudioBufferSourceNode and AudioParam compat-surface rows.
@@ -18,9 +19,6 @@
 #include "audio/audio_engine.h"
 #include "io/file_io.h"
 
-#ifdef SMZ_JSB_ADOPT
-#include "jsb/jsb_adopt.h"
-#endif
 #include <stdio.h>
 #include <string.h>
 
@@ -549,11 +547,3 @@ bool bind_audio_define(jsb_runtime *rt)
     }
     return true;
 }
-
-#ifdef SMZ_JSB_ADOPT
-/* Transitional main-thread entry; the engine owns the adopted runtime. */
-void bind_audio_register(struct JSContext *ctx)
-{
-    (void)bind_audio_define(jsb_runtime_of(ctx));
-}
-#endif
