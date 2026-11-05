@@ -4,6 +4,8 @@
 // inside a TryCatch so jsb_clear_exception can drop an error.
 // Modified 2026-11-05: share the ArrayBuffer brand check and define native
 // functions non-enumerably (card M1-T026b).
+// Modified 2026-11-05: install non-constructable functions whose only own
+// properties are length and name (card M1-T026c).
 //
 // V8 implementation of the jsb seam declared in src/jsb/jsb.h.
 //
@@ -511,6 +513,10 @@ bool jsb_set_fn(jsb_ctx *ctx, jsb_val *obj, const char *name, jsb_fn fn) {
 }
 
 // See jsb.h: jsb_set_fn_n. V8 takes the `length` when making the function.
+// kThrow makes the function non-constructable, so unlike a plain V8 function
+// it has no `prototype`, `arguments` or `caller` own properties; QuickJS's
+// JS_CFUNC_DEF functions have only `length` and `name` too. `name` is set
+// below and `length` is the `length` argument.
 bool jsb_set_fn_n(jsb_ctx *ctx, jsb_val *obj, const char *name, jsb_fn fn,
                   int length) {
     if (length < 0 || length > 255) {
@@ -526,7 +532,8 @@ bool jsb_set_fn_n(jsb_ctx *ctx, jsb_val *obj, const char *name, jsb_fn fn,
     v8::Local<v8::External> data = v8::External::New(
         ctx->isolate, reinterpret_cast<void *>(fn));
     v8::Local<v8::Function> func;
-    if (!v8::Function::New(ctx->context, trampoline, data, length)
+    if (!v8::Function::New(ctx->context, trampoline, data, length,
+                           v8::ConstructorBehavior::kThrow)
              .ToLocal(&func))
         return false;
     v8::Local<v8::String> key = utf8(ctx->isolate, name);

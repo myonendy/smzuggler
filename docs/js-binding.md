@@ -131,7 +131,10 @@ the pre-port binary's in both engine modes.
 
 `jsb_set_fn_n` defines functions writable, configurable and non-enumerable, as
 `JS_CFUNC_DEF` did, so `Object.keys(__native_input)` is empty without a
-post-definition script.
+post-definition script. On V8 the functions are also non-constructable
+(`ConstructorBehavior::kThrow`), so their only own properties are `length`
+and `name`, as with `JS_CFUNC_DEF`; a plain V8 function would also expose
+`prototype`, `arguments` and `caller`.
 
 `bind_io_define` gets the same property attributes from `jsb_set_fn_n`; it needs
 no setup script either.
@@ -585,6 +588,10 @@ The v8-mode library serves every caller that needs only `js_engine.h`, starting 
 ### Code cache
 Card M1-T012 (§4.1 item 4, §5.6). `js_engine_eval_file_cached`, and `js_engine_eval_file`
 once a cache dir is set, keep V8's compiled code in `<dir>/<sha256>.bin`.
+The `js_engine_on_v8` variant of `tests/test_js_engine.c` asserts that layout:
+it looks for `.bin` files under the configured (and the default XDG) cache
+directory, never a `.jsc` beside a script including a `..` script path, and
+expects a source edit to take effect even when the mtime is preserved.
 
 - **Directory**: the one given to `js_engine_set_cache_dir`, else
   `js_codecache_default_dir()` (`$XDG_CACHE_HOME/smzuggler-rt/v8cache`, falling back to

@@ -1,12 +1,16 @@
 /*
  * Copyright (c) 2026 General Arcade (Pte. Ltd.)
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
+ * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-05: assert V8's `<cache>/<sha256>.bin` code-cache layout
+ * in test_jsc_cache_dir (card M1-T026c).
  */
 
 #include "engine/js_engine.h"
 #include "test_paths.h"
 
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -651,6 +655,42 @@ static char *eval_cached_value(const char *cache_dir, const char *game_root,
     return out;
 }
 
+#ifdef SMZ_JS_ENGINE_V8
+/* Counts V8 code-cache files directly under `dir`. Why: in v8 mode the engine
+   keeps one `<sha256>.bin` per source in that directory and creates no
+   subdirectories, so these tests can assert the layout the QuickJS branch
+   asserted with `.jsc` files (card M1-T026c). A missing directory counts as
+   zero. Main thread only; it reads directory entries and retains nothing. */
+static int count_bin_caches(const char *dir)
+{
+#ifdef _WIN32
+    char pattern[TEST_PATH_MAX];
+    struct _finddata_t entry;
+    intptr_t find;
+    int count = 0;
+    snprintf(pattern, sizeof(pattern), "%s\\*.bin", dir);
+    find = _findfirst(pattern, &entry);
+    if (find == -1) return 0;
+    do {
+        if ((entry.attrib & _A_SUBDIR) == 0) count++;
+    } while (_findnext(find, &entry) == 0);
+    _findclose(find);
+    return count;
+#else
+    DIR *d = opendir(dir);
+    struct dirent *entry;
+    int count = 0;
+    if (!d) return 0;
+    while ((entry = readdir(d)) != NULL) {
+        size_t len = strlen(entry->d_name);
+        if (len > 4 && strcmp(entry->d_name + len - 4, ".bin") == 0) count++;
+    }
+    closedir(d);
+    return count;
+#endif
+}
+#endif
+
 static void test_jsc_cache_dir(void)
 {
     char game[TEST_PATH_MAX], cache[TEST_PATH_MAX], plugins[TEST_PATH_MAX];
@@ -675,8 +715,13 @@ static void test_jsc_cache_dir(void)
     {
         char *v = eval_cached_value(cache, game, script);
         if (!v || strcmp(v, "first") != 0) FAIL("script did not run");
+#ifdef SMZ_JS_ENGINE_V8
+        else if (count_bin_caches(cache) == 0) FAIL("no .bin under the cache dir");
+        else if (file_exists(beside)) FAIL(".bin written beside the script");
+#else
         else if (!file_exists(cached)) FAIL("no .jsc under the cache dir");
         else if (file_exists(beside)) FAIL(".jsc written beside the script");
+#endif
         else PASS();
         free(v);
     }
@@ -693,8 +738,15 @@ static void test_jsc_cache_dir(void)
         ok = ok && test_utime(script, &times) == 0;
         char *v = ok ? eval_cached_value(cache, game, script) : NULL;
         if (!ok) FAIL("could not rewrite the script");
+#ifdef SMZ_JS_ENGINE_V8
+        /* The key hashes the source, so a preserved mtime cannot mask the
+           edit with the old cache. */
+        else if (!v || strcmp(v, "second") != 0) FAIL("mtime-masked source edit reused a cache");
+        else if (file_exists(beside)) FAIL(".bin written beside the script");
+#else
         else if (!v || strcmp(v, "first") != 0) FAIL("cache was not reused");
         else if (file_exists(beside)) FAIL(".jsc written beside the script");
+#endif
         else PASS();
         free(v);
     }
@@ -702,13 +754,21 @@ static void test_jsc_cache_dir(void)
     TEST(jsc_cache_dir_key_stays_inside_cache_dir);
     {
         char outside[TEST_PATH_MAX], via_dotdot[TEST_PATH_MAX], key[TEST_PATH_MAX];
+        int bins_before = 0;
         snprintf(outside, sizeof(outside), "%s", test_tmp_path("rmmz_jsc_outside.js"));
         snprintf(via_dotdot, sizeof(via_dotdot), "%s/../rmmz_jsc_outside.js", game);
         snprintf(key, sizeof(key), "%s/__/rmmz_jsc_outside.jsc", cache);
         write_text(outside, "var jscValue = 'outside';\n");
+#ifdef SMZ_JS_ENGINE_V8
+        bins_before = count_bin_caches(cache);
+#endif
         char *v = eval_cached_value(cache, game, via_dotdot);
         if (!v || strcmp(v, "outside") != 0) FAIL("script did not run");
+#ifdef SMZ_JS_ENGINE_V8
+        else if (count_bin_caches(cache) <= bins_before) FAIL("'..' cache not inside the cache dir");
+#else
         else if (!file_exists(key)) FAIL("'..' key not kept inside the cache dir");
+#endif
         else if (file_exists(test_tmp_path("rmmz_jsc_outside.jsc"))) FAIL(".jsc beside the script");
         else PASS();
         free(v);
@@ -718,12 +778,38 @@ static void test_jsc_cache_dir(void)
     TEST(jsc_default_cache_beside_script);
     {
         test_rm_rf(test_tmp_path("rmmz_jsc_cache"));
+#ifdef SMZ_JS_ENGINE_V8
+#if defined(__linux__) && !defined(__ANDROID__)
+        const char *saved_xdg = getenv("XDG_CACHE_HOME");
+        char saved_xdg_buf[TEST_PATH_MAX];
+        char default_cache[TEST_PATH_MAX];
+        if (saved_xdg) snprintf(saved_xdg_buf, sizeof(saved_xdg_buf), "%s", saved_xdg);
+        test_rm_rf(test_tmp_path("rmmz_jsc_default_cache"));
+        snprintf(default_cache, sizeof(default_cache), "%s/smzuggler-rt/v8cache",
+                 test_tmp_path("rmmz_jsc_default_cache"));
+        setenv("XDG_CACHE_HOME", test_tmp_path("rmmz_jsc_default_cache"), 1);
+#endif
+#endif
         char *v = eval_cached_value(NULL, NULL, script);
+#ifdef SMZ_JS_ENGINE_V8
+#if defined(__linux__) && !defined(__ANDROID__)
+        int default_bins = count_bin_caches(default_cache);
+        if (saved_xdg) setenv("XDG_CACHE_HOME", saved_xdg_buf, 1);
+        else unsetenv("XDG_CACHE_HOME");
+#endif
+        if (!v || strcmp(v, "second") != 0) FAIL("script did not run");
+#if defined(__linux__) && !defined(__ANDROID__)
+        else if (default_bins == 0) FAIL("default .bin not under XDG_CACHE_HOME");
+#endif
+        else if (file_exists(beside)) FAIL(".bin written beside the script");
+#else
         if (!v || strcmp(v, "second") != 0) FAIL("script did not run");
         else if (!file_exists(beside)) FAIL("default .jsc not beside the script");
         else if (file_exists(cached)) FAIL("default wrote into the cache dir");
+#endif
         else PASS();
         free(v);
+        test_rm_rf(test_tmp_path("rmmz_jsc_default_cache"));
     }
 
     test_rm_rf(game);

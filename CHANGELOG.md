@@ -42,6 +42,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Make V8 jsb functions non-constructable, assert V8's `.bin` code-cache layout and report a throwing nextTick once. (M1-T026c)
 - Share the ArrayBuffer brand check in jsb and define native functions non-enumerably. (M1-T026b)
 - Build V8 against the host libstdc++ (`use_sysroot = false`) and link v8 mode with lld, which the monolith's CREL relocations need. (M1-T001)
 - Build the pinned V8 on GitHub Actions by hand (`v8-build.yml`) and bootstrap depot_tools in `build_v8.sh`. (M1-T001)

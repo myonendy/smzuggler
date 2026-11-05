@@ -2,6 +2,8 @@
 // Copyright (C) 2026 The smzuggler contributors
 // Modified 2026-11-04: bound JS recursion below the available main thread stack.
 // Modified 2026-11-04: explicit microtask checkpoints and exception-safe nextTick priority.
+// Modified 2026-11-05: report a throwing tick once, without repeating the
+// Error message in the stack line (card M1-T026c).
 //
 // The engine API of src/engine/js_engine.h implemented on V8 (spec section
 // 4.1, item 3). Built instead of js_engine.c when SMZ_JS_ENGINE=v8.
@@ -203,6 +205,20 @@ bool install_console(JSEngine *engine, v8::Local<v8::Context> context) {
         .FromMaybe(false);
 }
 
+// Removes the leading `String(exc)` line from a V8 stack when the stack starts
+// with the same text. Why: report_exception emits String(exc) first, as
+// js_engine.c does, and V8's stack repeats it on its first line; QuickJS's
+// stack holds frames only. Without this, one throw reaches an error listener
+// twice with the message (the throwing-nextTick test counts such lines).
+std::string stack_without_message(const std::string &stack,
+                                  const std::string &message) {
+    if (message.empty() || stack.compare(0, message.size(), message) != 0)
+        return stack;
+    if (stack.size() == message.size()) return std::string();
+    if (stack[message.size()] != '\n') return stack;
+    return stack.substr(message.size() + 1);
+}
+
 // Reports a caught exception the way js_engine.c does: its String() form,
 // then its `stack`. V8's SyntaxError stack has no frame, so the location
 // from the message is added in stack-frame form (`    at file:line:col`).
@@ -210,13 +226,14 @@ void report_exception(JSEngine *engine, v8::Local<v8::Context> context,
                       const v8::TryCatch &tc) {
     v8::Isolate *isolate = engine->isolate;
     v8::Local<v8::Value> exc = tc.Exception();
-    emit(engine, "error", to_utf8(isolate, exc));
+    std::string message = to_utf8(isolate, exc);
+    emit(engine, "error", message);
     if (!exc->IsNativeError()) return;
     v8::Local<v8::Value> stack;
     if (!exc.As<v8::Object>()->Get(context, v8_str(isolate, "stack")).ToLocal(&stack) ||
         !stack->IsString())
         return;
-    std::string text = to_utf8(isolate, stack);
+    std::string text = stack_without_message(to_utf8(isolate, stack), message);
     v8::Local<v8::Message> msg = tc.Message();
     if (text.find('\n') == std::string::npos && !msg.IsEmpty()) {
         text += "\n    at " + to_utf8(isolate, msg->GetScriptResourceName()) + ":" +
