@@ -3,15 +3,18 @@
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-10-30: use the configurable runtime identity.
+ * Modified 2026-11-04: port to the jsb seam (spec section 4.1); the
+ * JS-visible API is unchanged.
  *
  * Platform bindings for browser window operations; main thread only.
  * See docs/DECISIONS.md (DEC-M0-T001) for identity ownership.
+ * jsb handles are call-scoped and never stored here; see docs/js-binding.md
+ * (handle and lifetime rules).
  */
 
 #include "bindings/bind_platform.h"
 #include "platform/platform.h"
 
-#include <quickjs.h>
 #include <SDL3/SDL.h>
 #include <stdio.h>
 
@@ -19,129 +22,164 @@ static Platform *s_platform = NULL;
 
 /* Fullscreen */
 
-/* setFullscreen(bool) */
-static JSValue js_platform_set_fullscreen(JSContext *ctx, JSValueConst this_val,
-                                          int argc, JSValueConst *argv)
+/* setFullscreen(bool): the window side of the Fullscreen API
+ * (requestFullscreen/exitFullscreen, MDN:
+ * https://developer.mozilla.org/en-US/docs/Web/API/Fullscreen_API).
+ * The argument is coerced with ToBoolean. Without a window it does nothing;
+ * with one, a missing argument is a TypeError. */
+static void js_platform_set_fullscreen(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (!s_platform) return JS_UNDEFINED;
-    if (argc < 1) return JS_ThrowTypeError(ctx, "setFullscreen requires a boolean");
+    if (!s_platform) return;
+    if (jsb_arg_count(ctx) < 1) {
+        jsb_throw_type(ctx, "setFullscreen requires a boolean");
+        return;
+    }
 
-    int fs = JS_ToBool(ctx, argv[0]);
-    if (fs < 0) return JS_EXCEPTION;
-    platform_set_fullscreen(s_platform, fs != 0);
-    return JS_UNDEFINED;
+    bool fs = jsb_arg_truthy(ctx, 0);
+    platform_set_fullscreen(s_platform, fs);
 }
 
-/* isFullscreen() -> bool */
-static JSValue js_platform_is_fullscreen(JSContext *ctx, JSValueConst this_val,
-                                         int argc, JSValueConst *argv)
+/* isFullscreen() -> bool, behind document.fullscreenElement checks; false
+ * without a window. */
+static void js_platform_is_fullscreen(jsb_ctx *ctx)
 {
-    (void)this_val; (void)argc; (void)argv;
-    if (!s_platform) return JS_FALSE;
-    return JS_NewBool(ctx, platform_is_fullscreen(s_platform));
+    if (!s_platform) {
+        jsb_ret_bool(ctx, false);
+        return;
+    }
+    jsb_ret_bool(ctx, platform_is_fullscreen(s_platform));
 }
 
 /* Display information */
 
-/* getDisplaySize() -> {width, height} */
-static JSValue js_platform_get_display_size(JSContext *ctx, JSValueConst this_val,
-                                            int argc, JSValueConst *argv)
+/* Returns a fresh {width, height} object of int32 values (call-scoped
+ * handle), or NULL with an exception pending if a property set threw. */
+static jsb_val *js_platform_size_object(jsb_ctx *ctx, int w, int h)
 {
-    (void)this_val; (void)argc; (void)argv;
+    jsb_val *obj = jsb_new_object(ctx);
+    if (!jsb_set_prop(ctx, obj, "width", jsb_new_i32(ctx, w))) return NULL;
+    if (!jsb_set_prop(ctx, obj, "height", jsb_new_i32(ctx, h))) return NULL;
+    return obj;
+}
+
+/* getDisplaySize() -> {width, height}, behind window.screen.width/height
+ * (MDN: https://developer.mozilla.org/en-US/docs/Web/API/Screen);
+ * 1920x1080 without a window. */
+static void js_platform_get_display_size(jsb_ctx *ctx)
+{
     int w = 1920, h = 1080;
     if (s_platform) platform_get_display_size(s_platform, &w, &h);
 
-    JSValue obj = JS_NewObject(ctx);
-    JS_SetPropertyStr(ctx, obj, "width", JS_NewInt32(ctx, w));
-    JS_SetPropertyStr(ctx, obj, "height", JS_NewInt32(ctx, h));
-    return obj;
+    jsb_val *obj = js_platform_size_object(ctx, w, h);
+    if (obj) jsb_ret_val(ctx, obj);
 }
 
-/* getDisplayScale() -> number */
-static JSValue js_platform_get_display_scale(JSContext *ctx, JSValueConst this_val,
-                                             int argc, JSValueConst *argv)
+/* getDisplayScale() -> number, behind window.devicePixelRatio (MDN:
+ * https://developer.mozilla.org/en-US/docs/Web/API/Window/devicePixelRatio);
+ * 1 without a window. */
+static void js_platform_get_display_scale(jsb_ctx *ctx)
 {
-    (void)this_val; (void)argc; (void)argv;
     float scale = 1.0f;
     if (s_platform) scale = platform_get_display_scale(s_platform);
-    return JS_NewFloat64(ctx, (double)scale);
+    jsb_ret_f64(ctx, (double)scale);
 }
 
-/* getWindowSize() -> {width, height} */
-static JSValue js_platform_get_window_size(JSContext *ctx, JSValueConst this_val,
-                                           int argc, JSValueConst *argv)
+/* getWindowSize() -> {width, height}, behind window.innerWidth/innerHeight;
+ * 0x0 without a window. */
+static void js_platform_get_window_size(jsb_ctx *ctx)
 {
-    (void)this_val; (void)argc; (void)argv;
     int w = 0, h = 0;
     if (s_platform) platform_get_window_size(s_platform, &w, &h);
 
-    JSValue obj = JS_NewObject(ctx);
-    JS_SetPropertyStr(ctx, obj, "width", JS_NewInt32(ctx, w));
-    JS_SetPropertyStr(ctx, obj, "height", JS_NewInt32(ctx, h));
-    return obj;
+    jsb_val *obj = js_platform_size_object(ctx, w, h);
+    if (obj) jsb_ret_val(ctx, obj);
 }
 
 /** Implement the document.title setter on the JS/main thread (MDN:
  * https://developer.mozilla.org/en-US/docs/Web/API/Document/title).
- * Borrow argv[0] as the title, copy it with the runtime suffix, and release
- * the temporary string. Return undefined or a JS conversion exception.
+ * Coerce argument 0 with ToString into a temporary copy, add the runtime
+ * suffix, and free the copy. Return undefined or the conversion exception.
  * Empty titles use the runtime name. Compat row: platform/window title. */
-static JSValue js_platform_set_window_title(JSContext *ctx, JSValueConst this_val,
-                                            int argc, JSValueConst *argv)
+static void js_platform_set_window_title(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (!s_platform || argc < 1) return JS_UNDEFINED;
-    const char *title = JS_ToCString(ctx, argv[0]);
-    if (!title) return JS_EXCEPTION;
+    if (!s_platform || jsb_arg_count(ctx) < 1) return;
+    char *title = jsb_arg_to_str(ctx, 0, NULL);
+    if (!title) return;
     char full[512];
     if (title[0] != '\0') {
         snprintf(full, sizeof(full), "%s [%s]", title, RMMZ_APP_NAME);
     } else {
         snprintf(full, sizeof(full), "%s", RMMZ_APP_NAME);
     }
-    JS_FreeCString(ctx, title);
+    jsb_free_str(title);
     platform_set_window_title(s_platform, full);
-    return JS_UNDEFINED;
 }
 
-/* quit() - push an SDL_EVENT_QUIT event to terminate the game loop. */
-static JSValue js_platform_quit(JSContext *ctx, JSValueConst this_val,
-                                int argc, JSValueConst *argv)
+/* quit() - push an SDL_EVENT_QUIT event to terminate the game loop, as
+ * nw.App.quit / window.close do. Returns undefined; a failed push is
+ * ignored, as before. */
+static void js_platform_quit(jsb_ctx *ctx)
 {
-    (void)ctx; (void)this_val; (void)argc; (void)argv;
+    (void)ctx;
     SDL_Event event;
     SDL_memset(&event, 0, sizeof(event));
     event.type = SDL_EVENT_QUIT;
     SDL_PushEvent(&event);
-    return JS_UNDEFINED;
 }
 
 /* Registration */
 
-static const JSCFunctionListEntry js_platform_funcs[] = {
-    JS_CFUNC_DEF("setFullscreen",    1, js_platform_set_fullscreen),
-    JS_CFUNC_DEF("isFullscreen",     0, js_platform_is_fullscreen),
-    JS_CFUNC_DEF("getDisplaySize",   0, js_platform_get_display_size),
-    JS_CFUNC_DEF("getDisplayScale",  0, js_platform_get_display_scale),
-    JS_CFUNC_DEF("getWindowSize",    0, js_platform_get_window_size),
-    JS_CFUNC_DEF("setWindowTitle",   1, js_platform_set_window_title),
-    JS_CFUNC_DEF("quit",             0, js_platform_quit),
+/* One __native_platform function and its pre-port arity (`length`). */
+typedef struct {
+    const char *name;
+    int length;
+    jsb_fn fn;
+} PlatformFuncDef;
+
+static const PlatformFuncDef js_platform_funcs[] = {
+    { "setFullscreen",    1, js_platform_set_fullscreen },
+    { "isFullscreen",     0, js_platform_is_fullscreen },
+    { "getDisplaySize",   0, js_platform_get_display_size },
+    { "getDisplayScale",  0, js_platform_get_display_scale },
+    { "getWindowSize",    0, js_platform_get_window_size },
+    { "setWindowTitle",   1, js_platform_set_window_title },
+    { "quit",             0, js_platform_quit },
 };
 
-void bind_platform_register(JSContext *ctx, Platform *platform)
+/* jsb_define_module init: adds js_platform_funcs to `module` in table order.
+ * Returns false with an exception pending if a function could not be set. */
+static bool js_platform_module_init(jsb_ctx *ctx, jsb_val *module)
+{
+    size_t n = sizeof(js_platform_funcs) / sizeof(js_platform_funcs[0]);
+    for (size_t i = 0; i < n; i++) {
+        const PlatformFuncDef *def = &js_platform_funcs[i];
+        if (!jsb_set_fn_n(ctx, module, def->name, def->fn, def->length))
+            return false;
+    }
+    return true;
+}
+
+/* jsb_runtime_setup callback that defines the global __native_platform.
+ * `user` is unused. */
+static bool js_platform_setup(jsb_ctx *ctx, void *user)
+{
+    (void)user;
+    return jsb_define_module(ctx, "__native_platform", js_platform_module_init);
+}
+
+bool bind_platform_define(jsb_runtime *rt, Platform *platform)
 {
     s_platform = platform;
 
-    JSValue global = JS_GetGlobalObject(ctx);
-    JSValue obj = JS_NewObject(ctx);
-
-    JS_SetPropertyFunctionList(ctx, obj, js_platform_funcs,
-                               sizeof(js_platform_funcs) / sizeof(js_platform_funcs[0]));
-
-    JS_SetPropertyStr(ctx, global, "__native_platform", obj);
-    JS_FreeValue(ctx, global);
+    if (!jsb_runtime_setup(rt, js_platform_setup, NULL)) return false;
 
     /* storage_shim.js builds process.platform/arch/env/hrtime from this. */
-    bind_platform_register_process(ctx);
+    return bind_platform_define_process(rt);
 }
+
+#ifdef SMZ_JSB_ADOPT
+void bind_platform_register(struct JSContext *ctx, Platform *platform)
+{
+    (void)bind_platform_define(jsb_runtime_of(ctx), platform);
+}
+#endif

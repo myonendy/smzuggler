@@ -1,19 +1,39 @@
 /*
  * Copyright (c) 2026 General Arcade (Pte. Ltd.)
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
+ * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-04: ported from QuickJS to the jsb seam (spec section 4.1).
+ *
+ * __native_input: hands queued keyboard, mouse, wheel and text events and
+ * the polled gamepad state to dom_shim.js, which turns them into DOM events
+ * and navigator.getGamepads() results (docs/js-binding.md, "bind_input").
+ *
+ * smzuggler: the port keeps Outsider's structure line by line so upstream
+ * fixes re-apply by hand (docs/UPSTREAM.md). Every jsb_val here is a
+ * call-scoped handle, never kept past the native call that made it (spec
+ * section 15.8, docs/js-binding.md "Handle and lifetime rules"). Main
+ * thread only.
  */
 
 #include "bindings/bind_input.h"
 #include "input/input_manager.h"
 
-#include <quickjs.h>
+#ifdef SMZ_JSB_ADOPT
+#include "jsb/jsb_adopt.h"
+#endif
+
+#include <stdio.h>
 #include <string.h>
 
-/* Build a DOM-style JS event object from an InputEvent. */
-
-static JSValue input_event_to_js(JSContext *ctx, const InputEvent *ev)
+/* Build a DOM-style JS event object from an InputEvent.
+ *
+ * Why: dom_shim.js dispatches these as KeyboardEvent, MouseEvent, WheelEvent
+ * and a text input event; the field names follow UI Events
+ * (https://w3c.github.io/uievents/). `ev` is borrowed. Returns a call-scoped
+ * handle. Property-set failures are ignored, as upstream ignored them. */
+static jsb_val *input_event_to_js(jsb_ctx *ctx, const InputEvent *ev)
 {
-    JSValue obj = JS_NewObject(ctx);
+    jsb_val *obj = jsb_new_object(ctx);
 
     /* Common: event type string */
     const char *type_str;
@@ -27,137 +47,191 @@ static JSValue input_event_to_js(JSContext *ctx, const InputEvent *ev)
         case INPUT_TEXT:       type_str = "textinput";   break;
         default:               type_str = "unknown";     break;
     }
-    JS_SetPropertyStr(ctx, obj, "type", JS_NewString(ctx, type_str));
+    jsb_set_prop(ctx, obj, "type", jsb_new_str(ctx, type_str));
 
     if (ev->type == INPUT_TEXT) {
-        JS_SetPropertyStr(ctx, obj, "text", JS_NewString(ctx, ev->key));
+        jsb_set_prop(ctx, obj, "text", jsb_new_str(ctx, ev->key));
     }
 
     /* Keyboard fields */
     if (ev->type == INPUT_KEY_DOWN || ev->type == INPUT_KEY_UP) {
-        JS_SetPropertyStr(ctx, obj, "keyCode",  JS_NewInt32(ctx, ev->keyCode));
-        JS_SetPropertyStr(ctx, obj, "key",      JS_NewString(ctx, ev->key));
-        JS_SetPropertyStr(ctx, obj, "code",     JS_NewString(ctx, ev->code));
-        JS_SetPropertyStr(ctx, obj, "repeat",   JS_NewBool(ctx, ev->repeat));
-        JS_SetPropertyStr(ctx, obj, "shiftKey", JS_NewBool(ctx, ev->shiftKey));
-        JS_SetPropertyStr(ctx, obj, "ctrlKey",  JS_NewBool(ctx, ev->ctrlKey));
-        JS_SetPropertyStr(ctx, obj, "altKey",   JS_NewBool(ctx, ev->altKey));
-        JS_SetPropertyStr(ctx, obj, "metaKey",  JS_NewBool(ctx, ev->metaKey));
+        jsb_set_prop(ctx, obj, "keyCode",  jsb_new_i32(ctx, ev->keyCode));
+        jsb_set_prop(ctx, obj, "key",      jsb_new_str(ctx, ev->key));
+        jsb_set_prop(ctx, obj, "code",     jsb_new_str(ctx, ev->code));
+        jsb_set_prop(ctx, obj, "repeat",   jsb_new_bool(ctx, ev->repeat));
+        jsb_set_prop(ctx, obj, "shiftKey", jsb_new_bool(ctx, ev->shiftKey));
+        jsb_set_prop(ctx, obj, "ctrlKey",  jsb_new_bool(ctx, ev->ctrlKey));
+        jsb_set_prop(ctx, obj, "altKey",   jsb_new_bool(ctx, ev->altKey));
+        jsb_set_prop(ctx, obj, "metaKey",  jsb_new_bool(ctx, ev->metaKey));
     }
 
     /* Mouse fields */
     if (ev->type == INPUT_MOUSE_DOWN || ev->type == INPUT_MOUSE_UP ||
         ev->type == INPUT_MOUSE_MOVE || ev->type == INPUT_WHEEL) {
-        JS_SetPropertyStr(ctx, obj, "clientX", JS_NewInt32(ctx, ev->mouseX));
-        JS_SetPropertyStr(ctx, obj, "clientY", JS_NewInt32(ctx, ev->mouseY));
-        JS_SetPropertyStr(ctx, obj, "pageX",   JS_NewInt32(ctx, ev->mouseX));
-        JS_SetPropertyStr(ctx, obj, "pageY",   JS_NewInt32(ctx, ev->mouseY));
-        JS_SetPropertyStr(ctx, obj, "screenX", JS_NewInt32(ctx, ev->mouseX));
-        JS_SetPropertyStr(ctx, obj, "screenY", JS_NewInt32(ctx, ev->mouseY));
-        JS_SetPropertyStr(ctx, obj, "button",  JS_NewInt32(ctx, ev->button));
+        jsb_set_prop(ctx, obj, "clientX", jsb_new_i32(ctx, ev->mouseX));
+        jsb_set_prop(ctx, obj, "clientY", jsb_new_i32(ctx, ev->mouseY));
+        jsb_set_prop(ctx, obj, "pageX",   jsb_new_i32(ctx, ev->mouseX));
+        jsb_set_prop(ctx, obj, "pageY",   jsb_new_i32(ctx, ev->mouseY));
+        jsb_set_prop(ctx, obj, "screenX", jsb_new_i32(ctx, ev->mouseX));
+        jsb_set_prop(ctx, obj, "screenY", jsb_new_i32(ctx, ev->mouseY));
+        jsb_set_prop(ctx, obj, "button",  jsb_new_i32(ctx, ev->button));
     }
 
     /* Wheel fields */
     if (ev->type == INPUT_WHEEL) {
-        JS_SetPropertyStr(ctx, obj, "deltaX", JS_NewFloat64(ctx, ev->wheelDeltaX));
-        JS_SetPropertyStr(ctx, obj, "deltaY", JS_NewFloat64(ctx, ev->wheelDeltaY));
-        JS_SetPropertyStr(ctx, obj, "deltaZ", JS_NewFloat64(ctx, 0.0));
-        JS_SetPropertyStr(ctx, obj, "deltaMode", JS_NewInt32(ctx, 0));
+        jsb_set_prop(ctx, obj, "deltaX", jsb_new_f64(ctx, ev->wheelDeltaX));
+        jsb_set_prop(ctx, obj, "deltaY", jsb_new_f64(ctx, ev->wheelDeltaY));
+        jsb_set_prop(ctx, obj, "deltaZ", jsb_new_f64(ctx, 0.0));
+        jsb_set_prop(ctx, obj, "deltaMode", jsb_new_i32(ctx, 0));
     }
 
     return obj;
 }
 
-/* pollEvents() -> Array of event objects */
-
-static JSValue js_input_poll_events(JSContext *ctx, JSValueConst this_val,
-                                     int argc, JSValueConst *argv)
+/* pollEvents() -> Array of event objects
+ *
+ * Why: dom_shim.js drains the input_manager queue once per frame and
+ * dispatches each event to its listeners. Arguments are ignored. At most
+ * INPUT_MAX_EVENTS events are read, so the call-scoped handles made here
+ * stay bounded without a scope per iteration. */
+static void js_input_poll_events(jsb_ctx *ctx)
 {
-    (void)this_val; (void)argc; (void)argv;
-
     InputEvent events[INPUT_MAX_EVENTS];
     int count = input_manager_poll_events(events, INPUT_MAX_EVENTS);
 
-    JSValue arr = JS_NewArray(ctx);
+    jsb_val *arr = jsb_new_array(ctx);
     for (int i = 0; i < count; i++) {
-        JS_SetPropertyUint32(ctx, arr, (uint32_t)i,
-                             input_event_to_js(ctx, &events[i]));
+        jsb_set_index(ctx, arr, (uint32_t)i,
+                      input_event_to_js(ctx, &events[i]));
     }
-    return arr;
+    jsb_ret_val(ctx, arr);
 }
 
-/* getGamepad(index) -> Gamepad-like object | null */
-
-static JSValue js_input_get_gamepad(JSContext *ctx, JSValueConst this_val,
-                                     int argc, JSValueConst *argv)
+/* Build the Gamepad-like object for `gp` (borrowed, connected).
+ *
+ * Why: mirrors the W3C Gamepad interface behind the shim's
+ * navigator.getGamepads() (https://w3c.github.io/gamepad/). As upstream had
+ * it, `timestamp` is always 0 and `touched` follows `pressed`. Returns a
+ * call-scoped handle. */
+static jsb_val *gamepad_to_js(jsb_ctx *ctx, const GamepadState *gp)
 {
-    (void)this_val;
-    if (argc < 1) return JS_NULL;
-
-    int32_t index;
-    if (JS_ToInt32(ctx, &index, argv[0]))
-        return JS_EXCEPTION;
-
-    const GamepadState *gp = input_manager_get_gamepad(index);
-    if (!gp || !gp->connected) return JS_NULL;
-
-    JSValue obj = JS_NewObject(ctx);
-    JS_SetPropertyStr(ctx, obj, "id",        JS_NewString(ctx, gp->id));
-    JS_SetPropertyStr(ctx, obj, "index",     JS_NewInt32(ctx, gp->index));
-    JS_SetPropertyStr(ctx, obj, "connected", JS_NewBool(ctx, true));
-    JS_SetPropertyStr(ctx, obj, "mapping",   JS_NewString(ctx, "standard"));
-    JS_SetPropertyStr(ctx, obj, "timestamp", JS_NewFloat64(ctx, 0.0));
+    jsb_val *obj = jsb_new_object(ctx);
+    jsb_set_prop(ctx, obj, "id",        jsb_new_str(ctx, gp->id));
+    jsb_set_prop(ctx, obj, "index",     jsb_new_i32(ctx, gp->index));
+    jsb_set_prop(ctx, obj, "connected", jsb_new_bool(ctx, true));
+    jsb_set_prop(ctx, obj, "mapping",   jsb_new_str(ctx, "standard"));
+    jsb_set_prop(ctx, obj, "timestamp", jsb_new_f64(ctx, 0.0));
 
     /* Buttons array: each element has { pressed, value } */
-    JSValue buttons = JS_NewArray(ctx);
+    jsb_val *buttons = jsb_new_array(ctx);
     for (int i = 0; i < INPUT_GAMEPAD_BUTTONS; i++) {
-        JSValue btn = JS_NewObject(ctx);
-        JS_SetPropertyStr(ctx, btn, "pressed",
-                          JS_NewBool(ctx, gp->buttons[i].pressed));
-        JS_SetPropertyStr(ctx, btn, "value",
-                          JS_NewFloat64(ctx, gp->buttons[i].value));
-        JS_SetPropertyStr(ctx, btn, "touched",
-                          JS_NewBool(ctx, gp->buttons[i].pressed));
-        JS_SetPropertyUint32(ctx, buttons, (uint32_t)i, btn);
+        jsb_val *btn = jsb_new_object(ctx);
+        jsb_set_prop(ctx, btn, "pressed",
+                     jsb_new_bool(ctx, gp->buttons[i].pressed));
+        jsb_set_prop(ctx, btn, "value",
+                     jsb_new_f64(ctx, gp->buttons[i].value));
+        jsb_set_prop(ctx, btn, "touched",
+                     jsb_new_bool(ctx, gp->buttons[i].pressed));
+        jsb_set_index(ctx, buttons, (uint32_t)i, btn);
     }
-    JS_SetPropertyStr(ctx, obj, "buttons", buttons);
+    jsb_set_prop(ctx, obj, "buttons", buttons);
 
     /* Axes array */
-    JSValue axes = JS_NewArray(ctx);
+    jsb_val *axes = jsb_new_array(ctx);
     for (int i = 0; i < INPUT_GAMEPAD_AXES; i++) {
-        JS_SetPropertyUint32(ctx, axes, (uint32_t)i,
-                             JS_NewFloat64(ctx, gp->axes[i]));
+        jsb_set_index(ctx, axes, (uint32_t)i,
+                      jsb_new_f64(ctx, gp->axes[i]));
     }
-    JS_SetPropertyStr(ctx, obj, "axes", axes);
+    jsb_set_prop(ctx, obj, "axes", axes);
 
     return obj;
 }
 
-/* getGamepadCount() -> int (number of gamepad slots) */
-
-static JSValue js_input_get_gamepad_count(JSContext *ctx, JSValueConst this_val,
-                                           int argc, JSValueConst *argv)
+/* getGamepad(index) -> Gamepad-like object | null
+ *
+ * Why: backs the shim's navigator.getGamepads(). `index` is coerced with
+ * ToInt32 (so "1" works) and a conversion that throws propagates. No
+ * argument, a slot outside 0..INPUT_MAX_GAMEPADS-1 or a disconnected pad
+ * gives null. */
+static void js_input_get_gamepad(jsb_ctx *ctx)
 {
-    (void)this_val; (void)argc; (void)argv;
-    return JS_NewInt32(ctx, INPUT_MAX_GAMEPADS);
+    if (jsb_arg_count(ctx) < 1) {
+        jsb_ret_val(ctx, jsb_new_null(ctx));
+        return;
+    }
+
+    int32_t index;
+    if (!jsb_arg_to_i32(ctx, 0, &index))
+        return;
+
+    const GamepadState *gp = input_manager_get_gamepad(index);
+    if (!gp || !gp->connected) {
+        jsb_ret_val(ctx, jsb_new_null(ctx));
+        return;
+    }
+    jsb_ret_val(ctx, gamepad_to_js(ctx, gp));
+}
+
+/* getGamepadCount() -> int (number of gamepad slots)
+ *
+ * Why: the shim sizes navigator.getGamepads() with it. Arguments ignored. */
+static void js_input_get_gamepad_count(jsb_ctx *ctx)
+{
+    jsb_ret_i32(ctx, INPUT_MAX_GAMEPADS);
 }
 
 /* Registration */
 
-static const JSCFunctionListEntry js_input_funcs[] = {
-    JS_CFUNC_DEF("pollEvents",      0, js_input_poll_events),
-    JS_CFUNC_DEF("getGamepad",      1, js_input_get_gamepad),
-    JS_CFUNC_DEF("getGamepadCount", 0, js_input_get_gamepad_count),
-};
-
-void bind_input_register(JSContext *ctx)
+/* Fills __native_input in upstream's function-list order, with its arities
+ * as each function's `length`. Returns false with a JS exception pending. */
+static bool input_module_init(jsb_ctx *ctx, jsb_val *module)
 {
-    JSValue global = JS_GetGlobalObject(ctx);
-    JSValue input_obj = JS_NewObject(ctx);
-
-    JS_SetPropertyFunctionList(ctx, input_obj, js_input_funcs,
-                               sizeof(js_input_funcs) / sizeof(js_input_funcs[0]));
-
-    JS_SetPropertyStr(ctx, global, "__native_input", input_obj);
-    JS_FreeValue(ctx, global);
+    return jsb_set_fn_n(ctx, module, "pollEvents",
+                        js_input_poll_events, 0) &&
+           jsb_set_fn_n(ctx, module, "getGamepad",
+                        js_input_get_gamepad, 1) &&
+           jsb_set_fn_n(ctx, module, "getGamepadCount",
+                        js_input_get_gamepad_count, 0);
 }
+
+/* jsb_runtime_setup callback that defines the module; `user` is unused. */
+static bool input_define_setup(jsb_ctx *ctx, void *user)
+{
+    (void)user;
+    return jsb_define_module(ctx, "__native_input", input_module_init);
+}
+
+/* smzuggler: upstream's function list defined the functions non-enumerable
+ * (writable, configurable); jsb_set_fn_n assigns them, which makes them
+ * enumerable. This restores the old attributes so the JS API stays
+ * byte-for-byte. Run once by bind_input_define, after the module exists. */
+static const char input_hide_fns_js[] =
+    "(function (m) {\n"
+    "  Object.getOwnPropertyNames(m).forEach(function (k) {\n"
+    "    Object.defineProperty(m, k, { enumerable: false });\n"
+    "  });\n"
+    "})(__native_input);\n";
+
+bool bind_input_define(jsb_runtime *rt)
+{
+    if (!rt) {
+        fprintf(stderr, "bind_input_define: no jsb runtime\n");
+        return false;
+    }
+    if (!jsb_runtime_setup(rt, input_define_setup, NULL))
+        return false;
+    char err[256];
+    if (!jsb_runtime_eval(rt, input_hide_fns_js, "bind_input.c", err,
+                          sizeof err)) {
+        fprintf(stderr, "bind_input_define: %s\n", err);
+        return false;
+    }
+    return true;
+}
+
+#ifdef SMZ_JSB_ADOPT
+void bind_input_register(struct JSContext *ctx)
+{
+    bind_input_define(jsb_runtime_of(ctx));
+}
+#endif

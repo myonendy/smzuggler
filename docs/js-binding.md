@@ -94,6 +94,22 @@ in a `TryCatch` that it resets. On V8 `jsb_throw_internal` makes an `Error` whos
 | `JS_ThrowInternalError`, `JS_ThrowOutOfMemory` | `jsb_throw_internal` (`"out of memory"`) |
 | `JS_GetVersion` | `jsb_engine_version` |
 
+## Ported bindings
+
+Each port defines its module in `bind_<x>_define(jsb_runtime *rt, ...)`; the old
+`bind_<x>_register(struct JSContext *, ...)` stays as a wrapper under `SMZ_JSB_ADOPT`
+until M1-T026. A `tests/smz/test_bind_<x>_jsb.c` test pins the JS API to the pre-port
+binary's in both engine modes.
+
+| Binding | Module and functions (`length`) | jsb calls used | Buffers | Callbacks |
+| --- | --- | --- | --- | --- |
+| `bind_input.c` (M1-T015) | `__native_input`: `pollEvents` (0), `getGamepad` (1), `getGamepadCount` (0) | `jsb_define_module`, `jsb_set_fn_n`, `jsb_new_object/array/str/i32/f64/bool/null`, `jsb_set_prop`, `jsb_set_index`, `jsb_arg_count`, `jsb_arg_to_i32` (`getGamepad` coerces its index), `jsb_ret_val/i32`, `jsb_runtime_eval` | none | none |
+
+`jsb_set_fn_n` assigns functions, so they come out enumerable, while `JS_CFUNC_DEF` made
+them non-enumerable. `bind_input_define` restores that with a one-line
+`Object.defineProperty` script after the module exists, so `Object.keys(__native_input)`
+stays empty as before.
+
 ## API
 
 ### Host side
@@ -269,6 +285,23 @@ that a message cannot break out of its literal, missing and throwing dispatchers
 auto-save outcome, and in v8 mode that a throwing jsb callback is logged with its stack.
 The older `tests/test_error_handler.c` still calls QuickJS directly and runs on QuickJS
 in both modes until M1-T027 ports it.
+
+## Ported bindings
+Each port keeps its JS API byte-for-byte (names, order, `length`, results, errors) and
+adds `bind_<x>_define(jsb_runtime *rt, ...)`; the old `bind_<x>_register(struct JSContext
+*, ...)` stays as a one-line wrapper under `#ifdef SMZ_JSB_ADOPT` until M1-T026
+(DEC-M1-T014-JSB-ADOPT). Each has a `tests/smz/test_bind_<x>_jsb.c` ctest run in both modes.
+
+| Binding | Globals | Functions (`length`) | jsb calls used | Buffers | Callbacks |
+| --- | --- | --- | --- | --- | --- |
+| `bind_platform.c` (M1-T014) | `__native_platform`, `__native_process` | `setFullscreen` (1), `isFullscreen`, `getDisplaySize`, `getDisplayScale`, `getWindowSize`, `setWindowTitle` (1), `quit` (0 for the rest); process: `platform`, `arch`, `engine` strings, `environ`, `hrtime` (0) | `jsb_define_module`, `jsb_runtime_setup`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_truthy`, `jsb_arg_to_str`/`jsb_free_str`, `jsb_new_object`/`array`/`i32`/`f64`/`str`, `jsb_set_prop`, `jsb_set_index`, `jsb_ret_*`, `jsb_throw_type`, `jsb_throw_internal`, `jsb_engine_version` | none | none |
+
+* **bind_platform.** The `__native_process` helpers stay inline in `bind_platform.h`
+  (`bind_platform_define_process(rt)`), so window-less tests need no SDL;
+  `bind_platform_register_process(struct JSContext *)` is their transitional wrapper.
+  `bind_platform_define` also defines `__native_process`, as the old register did. The
+  `Platform *` is kept in a file static (jsb modules have no user pointer); no jsb handle
+  is stored. `engine` is `jsb_engine_version()`, the running engine's version.
 
 ## Handle rules (§15.8)
 These are the rules for code that touches V8 handles, in jsb and elsewhere (WebGL has
