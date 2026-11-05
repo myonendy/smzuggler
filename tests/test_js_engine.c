@@ -717,7 +717,7 @@ static void test_jsc_cache_dir(void)
         if (!v || strcmp(v, "first") != 0) FAIL("script did not run");
 #ifdef SMZ_JS_ENGINE_V8
         else if (count_bin_caches(cache) == 0) FAIL("no .bin under the cache dir");
-        else if (file_exists(beside)) FAIL(".bin written beside the script");
+        else if (count_bin_caches(plugins) != 0) FAIL(".bin written beside the script");
 #else
         else if (!file_exists(cached)) FAIL("no .jsc under the cache dir");
         else if (file_exists(beside)) FAIL(".jsc written beside the script");
@@ -742,7 +742,7 @@ static void test_jsc_cache_dir(void)
         /* The key hashes the source, so a preserved mtime cannot mask the
            edit with the old cache. */
         else if (!v || strcmp(v, "second") != 0) FAIL("mtime-masked source edit reused a cache");
-        else if (file_exists(beside)) FAIL(".bin written beside the script");
+        else if (count_bin_caches(plugins) != 0) FAIL(".bin written beside the script");
 #else
         else if (!v || strcmp(v, "first") != 0) FAIL("cache was not reused");
         else if (file_exists(beside)) FAIL(".jsc written beside the script");
@@ -754,13 +754,14 @@ static void test_jsc_cache_dir(void)
     TEST(jsc_cache_dir_key_stays_inside_cache_dir);
     {
         char outside[TEST_PATH_MAX], via_dotdot[TEST_PATH_MAX], key[TEST_PATH_MAX];
-        int bins_before = 0;
+        int bins_before = 0, root_bins_before = 0;
         snprintf(outside, sizeof(outside), "%s", test_tmp_path("rmmz_jsc_outside.js"));
         snprintf(via_dotdot, sizeof(via_dotdot), "%s/../rmmz_jsc_outside.js", game);
         snprintf(key, sizeof(key), "%s/__/rmmz_jsc_outside.jsc", cache);
         write_text(outside, "var jscValue = 'outside';\n");
 #ifdef SMZ_JS_ENGINE_V8
         bins_before = count_bin_caches(cache);
+        root_bins_before = count_bin_caches(test_tmp_root());
 #endif
         char *v = eval_cached_value(cache, game, via_dotdot);
         if (!v || strcmp(v, "outside") != 0) FAIL("script did not run");
@@ -769,7 +770,11 @@ static void test_jsc_cache_dir(void)
 #else
         else if (!file_exists(key)) FAIL("'..' key not kept inside the cache dir");
 #endif
+#ifdef SMZ_JS_ENGINE_V8
+        else if (count_bin_caches(test_tmp_root()) > root_bins_before) FAIL(".bin written beside the script");
+#else
         else if (file_exists(test_tmp_path("rmmz_jsc_outside.jsc"))) FAIL(".jsc beside the script");
+#endif
         else PASS();
         free(v);
         remove(outside);
@@ -801,7 +806,7 @@ static void test_jsc_cache_dir(void)
 #if defined(__linux__) && !defined(__ANDROID__)
         else if (default_bins == 0) FAIL("default .bin not under XDG_CACHE_HOME");
 #endif
-        else if (file_exists(beside)) FAIL(".bin written beside the script");
+        else if (count_bin_caches(plugins) != 0) FAIL(".bin written beside the script");
 #else
         if (!v || strcmp(v, "second") != 0) FAIL("script did not run");
         else if (!file_exists(beside)) FAIL("default .jsc not beside the script");

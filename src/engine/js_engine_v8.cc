@@ -220,8 +220,14 @@ std::string stack_without_message(const std::string &stack,
 }
 
 // Reports a caught exception the way js_engine.c does: its String() form,
-// then its `stack`. V8's SyntaxError stack has no frame, so the location
-// from the message is added in stack-frame form (`    at file:line:col`).
+// then its `stack`. V8's stack repeats the message on its first line, which
+// is stripped; the frame lines are then emitted as they are. A stack with no
+// frame at all (V8's SyntaxError stack is the message alone) gets the
+// location from the TryCatch message instead, because otherwise the error
+// listener would see no source position. "Frameless" is decided before the
+// message is stripped: a single-frame stack loses its only newline in that
+// step and must not be mistaken for a frameless one, or the location would
+// be emitted twice.
 void report_exception(JSEngine *engine, v8::Local<v8::Context> context,
                       const v8::TryCatch &tc) {
     v8::Isolate *isolate = engine->isolate;
@@ -233,14 +239,16 @@ void report_exception(JSEngine *engine, v8::Local<v8::Context> context,
     if (!exc.As<v8::Object>()->Get(context, v8_str(isolate, "stack")).ToLocal(&stack) ||
         !stack->IsString())
         return;
-    std::string text = stack_without_message(to_utf8(isolate, stack), message);
+    std::string raw = to_utf8(isolate, stack);
+    bool frameless = raw.find('\n') == std::string::npos;
+    std::string text = stack_without_message(raw, message);
     v8::Local<v8::Message> msg = tc.Message();
-    if (text.find('\n') == std::string::npos && !msg.IsEmpty()) {
-        text += "\n    at " + to_utf8(isolate, msg->GetScriptResourceName()) + ":" +
-                std::to_string(msg->GetLineNumber(context).FromMaybe(0)) + ":" +
-                std::to_string(msg->GetStartColumn(context).FromMaybe(0) + 1);
+    if (frameless && !msg.IsEmpty()) {
+        text = "    at " + to_utf8(isolate, msg->GetScriptResourceName()) + ":" +
+               std::to_string(msg->GetLineNumber(context).FromMaybe(0)) + ":" +
+               std::to_string(msg->GetStartColumn(context).FromMaybe(0) + 1);
     }
-    emit(engine, "error", text);
+    if (!text.empty()) emit(engine, "error", text);
 }
 
 // Counts promise reaction jobs for js_engine_execute_pending_jobs: V8 runs
