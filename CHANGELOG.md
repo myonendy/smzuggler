@@ -42,6 +42,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Document the blocked M1 V8 drive preflight and the owner battery rerun recipe. (M1-T032)
 - Remove the former engine and build exclusively on V8. (M1-T027)
 - Make V8 jsb functions non-constructable, assert V8's `.bin` code-cache layout and report a throwing nextTick once. (M1-T026c)
 - Share the ArrayBuffer brand check in jsb and define native functions non-enumerably. (M1-T026b)
