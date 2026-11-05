@@ -63,7 +63,8 @@ static bool read_matrix_arg(jsb_ctx *ctx, const char *name, float m[16])
     return true;
 }
 
-/* Return a uint32 handle to JS as a Number, as JS_NewUint32 did. */
+/* Return a uint32 handle to JS as a Number (effect instances can use the
+   top bit, so this is unsigned). */
 static void ret_u32(jsb_ctx *ctx, uint32_t value)
 {
     jsb_ret_val(ctx, jsb_new_u32(ctx, value));

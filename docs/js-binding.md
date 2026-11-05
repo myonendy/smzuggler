@@ -692,7 +692,8 @@ Path resolution and path string conversion exceptions are cleared and return 0;
 scale conversion errors still propagate. Paths are allocated by jsb and freed
 before backend loading; no JS handles or callbacks survive a call.
 
-The new test runs the original registration entry for the pre-port capture and
-then `bind_effekseer_define(js_engine_get_jsb(engine))` for both seam backends.
+The new test calls `bind_effekseer_define(js_engine_get_jsb(engine))` on both
+seam backends (the adopted QuickJS runtime in quickjs mode, the V8 backend in v8
+mode) and pins the capture above without opening a device.
 The `--dump-surface` effekseer row is unchanged (empty diff); native method arities
 are absent from that inventory, so the test above supplies the parity evidence.

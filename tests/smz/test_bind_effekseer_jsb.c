@@ -72,7 +72,7 @@ int main(void)
     file_io_set_game_root("effekseer-jsb-fixture");
     JSEngine *engine = js_engine_init();
     assert(engine);
-    bind_effekseer_register(js_engine_get_context(engine));
+    assert(bind_effekseer_define(js_engine_get_jsb(engine)));
     check_shape(engine);
     check_results(engine);
     check_errors(engine);

@@ -39,6 +39,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Port the `__native_effekseer` binding to the jsb seam with unchanged names, function arities, results and errors. (M1-T022)
 - Port native file I/O bindings to jsb with API parity coverage. (M1-T016)
 - Port native audio bindings to jsb while preserving function arities, coercion, results and errors. (M1-T019)
 - Port native image loading, cache access and APNG decoding through jsb with API contract checks. (M1-T017)
