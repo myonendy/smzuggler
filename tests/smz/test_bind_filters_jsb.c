@@ -2,7 +2,7 @@
  * Copyright (C) 2026 The smzuggler contributors
  * Pins the __native_filters binding to its pre-port JS API without a device.
  * See docs/js-binding.md: handles are call-scoped; no buffer bytes are kept.
- * Runs on the selected engine: the adopted QuickJS runtime or V8.
+ * Runs on V8.
  */
 #include "bindings/bind_filters.h"
 #include "engine/js_engine.h"

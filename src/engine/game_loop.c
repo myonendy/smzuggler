@@ -27,8 +27,9 @@
  *   loop calls inside JS itself.
  * - Phase order and the microtask checkpoints are the game's timing
  *   contract; do not move them. Chrome runs a checkpoint after every task:
- *   in v8 mode each timer and rAF callback is followed by one (the DOM dispatcher), and every phase call is followed by one in both modes
- *   (run_checkpoint). docs/decisions/DEC-M1-T010.md, has the exact order.
+ *   each timer and rAF callback is followed by one (the DOM dispatcher), and
+ *   every phase call is followed by one (run_checkpoint).
+ *   docs/decisions/DEC-M1-T010.md, has the exact order.
  */
 
 #include "engine/game_loop.h"

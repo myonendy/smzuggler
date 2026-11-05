@@ -95,6 +95,11 @@ if(RMMZ_RENDER_BACKEND STREQUAL "gpu")
     endif()
 endif()
 
+# Import V8's CMake module first: it is the one place that names the pinned
+# V8 version (SMZ_V8_VERSION_PIN), so the checks and defaults below never
+# repeat the pin and drift from tools/v8/build_v8.sh.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/V8.cmake)
+
 # V8 is the sole engine. A legacy SMZ_JS_ENGINE argument is only a migration
 # diagnostic: v8 is accepted when SMZ_V8_DIR is also given, anything else is
 # rejected. Normal builds omit the selector entirely.
@@ -107,7 +112,7 @@ if(DEFINED SMZ_JS_ENGINE)
         message(FATAL_ERROR
             "SMZ_JS_ENGINE=v8 needs SMZ_V8_DIR, the V8 install prefix. "
             "Build it with tools/v8/build_v8.sh and pass "
-            "-DSMZ_V8_DIR=$SMZ_DEPS_DIR/v8/13.6.233.8 (docs/build-v8.md).")
+            "-DSMZ_V8_DIR=$SMZ_DEPS_DIR/v8/${SMZ_V8_VERSION_PIN} (docs/build-v8.md).")
     endif()
 endif()
 
@@ -116,15 +121,14 @@ endif()
 set(_smz_v8_default "$ENV{SMZ_V8_DIR}")
 if(NOT _smz_v8_default)
     if(DEFINED ENV{SMZ_DEPS_DIR})
-        set(_smz_v8_default "$ENV{SMZ_DEPS_DIR}/v8/13.6.233.8")
+        set(_smz_v8_default "$ENV{SMZ_DEPS_DIR}/v8/${SMZ_V8_VERSION_PIN}")
     else()
-        set(_smz_v8_default "$ENV{HOME}/.cache/smzuggler-dev/deps/v8/13.6.233.8")
+        set(_smz_v8_default "$ENV{HOME}/.cache/smzuggler-dev/deps/v8/${SMZ_V8_VERSION_PIN}")
     endif()
 endif()
 if(NOT SMZ_V8_DIR)
     set(SMZ_V8_DIR "${_smz_v8_default}" CACHE PATH "V8 install prefix from tools/v8/build_v8.sh" FORCE)
 endif()
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/V8.cmake)
 smz_import_v8()
 
 # Platform-specific system libraries and compiler settings.

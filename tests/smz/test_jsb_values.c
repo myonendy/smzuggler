@@ -5,10 +5,10 @@
  * elements, error kinds, jsb_clear_exception and function `length`.
  *
  * Why: binding ports must keep Outsider's JS API byte-for-byte, so each
- * call must act like the QuickJS one it replaces, on both backends. Built
- * against smz_jsb (V8 in v8 mode) and the transitional backend (tests/smz/
- * jsb_values.cmake); a JS script checks the results and returns "ok" or
- * the list of failures. Checks use assert() with NDEBUG undefined.
+ * call must act like the QuickJS one it replaced, now on V8. Built against
+ * smz_jsb (tests/smz/jsb_values.cmake); a JS script checks the results and
+ * returns "ok" or the list of failures. Checks use assert() with NDEBUG
+ * undefined.
  */
 
 #include "jsb.h"

@@ -23,9 +23,9 @@ one call. Strings are copied in and out (caller buffers). A `jsb_callback` has o
 `jsb_runtime_destroy` releases any left. See
 [docs/js-binding.md](../../docs/js-binding.md) for the handle rules (§15.8).
 
-**Tests.** `tests/smz/test_jsb_core.c` (ctest `jsb_core`, v8 mode) and the C11 header check
-`tests/smz/test_jsb_header.c` (both modes), registered by `tests/smz/jsb_core.cmake`.
-`tests/smz/test_jsb_callbacks.c` (ctest `jsb_callbacks`, both modes) covers persistent
+**Tests.** `tests/smz/test_jsb_core.c` (ctest `jsb_core`, on V8) and the C11 header check
+`tests/smz/test_jsb_header.c` (on V8), registered by `tests/smz/jsb_core.cmake`.
+`tests/smz/test_jsb_callbacks.c` (ctest `jsb_callbacks`, on V8) covers persistent
 callbacks.
 
 **Compat-table rows.** None: jsb is internal and implements no web API itself.

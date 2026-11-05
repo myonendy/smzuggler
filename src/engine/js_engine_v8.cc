@@ -813,8 +813,7 @@ bool js_engine_eval(JSEngine *engine, const char *script, const char *filename) 
                       nullptr, nullptr, nullptr);
 }
 
-// See js_engine.h. The copy is malloc'd so js_engine_free_string can free it
-// the same way in both engine modes.
+// See js_engine.h. The copy is malloc'd so js_engine_free_string can free it.
 char *js_engine_eval_string(JSEngine *engine, const char *script, const char *filename) {
     if (!engine || !script) return nullptr;
     std::string result;

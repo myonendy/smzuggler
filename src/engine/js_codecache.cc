@@ -4,11 +4,11 @@
 // The on-disk store of V8 code caches: key hashing, the cache directory and
 // whole-file reads and atomic writes (spec sections 4.1 item 4 and 5.6).
 //
-// Why: v8 mode must never write next to a game's scripts, and a code cache
-// is only valid for its exact source, V8 build and flags. This file names a
-// cache by the sha256 of all three and keeps it under the host's cache
-// directory, where Chromium (and so NW.js) keeps its own code cache. It has
-// no V8 dependency, so it builds and is tested in both engine modes. See
+// Why: the runtime must never write next to a game's scripts, and a code
+// cache is only valid for its exact source, V8 build and flags. This file
+// names a cache by the sha256 of all three and keeps it under the host's
+// cache directory, where Chromium (and so NW.js) keeps its own code cache.
+// It has no V8 dependency, so it builds and is tested independently. See
 // src/engine/js_codecache.h, docs/js-binding.md, "Code cache", and
 // docs/data-dirs.md.
 //

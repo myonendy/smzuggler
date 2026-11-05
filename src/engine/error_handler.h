@@ -50,7 +50,7 @@ void error_handler_show_error_dialog(const char *title, const char *message);
 /* Report a JS error given as text: log message and stack (scrubbed), call
    window.onerror and 'error' listeners through the DOM shim, and show an
    error dialog when fatal is true. Why: V8 leaves no pending exception for C
-   to fetch, so this is the entry point that works in both engine modes.
+   to fetch, so this is the engine-neutral entry point for reporting one.
    engine is a borrowed JSEngine* (NULL: log and dialog only); message is the
    thrown value's String() form (NULL: "Unknown error"); stack may be NULL.
    Message and stack are cut at 4096 bytes each for JS and the dialog. The
@@ -60,15 +60,13 @@ void error_handler_show_error_dialog(const char *title, const char *message);
 void error_handler_report_js_error(void *engine, const char *message,
                                    const char *stack, bool fatal);
 
-
-
 /* A jsb_error_fn (src/jsb/jsb.h) for jsb_set_error_handler(rt,
    error_handler_on_jsb_error, NULL): exceptions thrown by jsb callbacks
    (audio onended, video events) are logged here, scrubbed, instead of on
    stderr. They are logged only, not passed to window.onerror: a jsb error
    handler must not run JS. Borrows message (NULL: "Unknown error") and stack
    (may be NULL or empty); user is unused. Main thread. Declared without
-   jsb.h so this header and error_handler.c build in both engine modes. */
+   jsb.h so this header and error_handler.c have no seam dependency. */
 void error_handler_on_jsb_error(const char *message, const char *stack, void *user);
 
 /* Crash recovery: run the DOM shim's __error_handler_autoSave through
