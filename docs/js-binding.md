@@ -1,17 +1,20 @@
 <!--
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
+Modified 2026-11-04: document the Canvas2D binding port and baseline.
 Modified 2026-11-01: add persistent callbacks.
 Modified 2026-11-01: document the V8 script watchdog.
 Modified 2026-11-01: document how the game loop calls into JS.
 Modified 2026-11-01: document the error handler's js_engine.h path.
 Modified 2026-11-01: document microtask checkpoints and nextTick order.
 Modified 2026-11-04: document the V8 code cache.
+Modified 2026-11-04: document the bind_io port and parity checks.
 Modified 2026-11-04: document main thread stack sizing.
 Modified 2026-11-04: document the font and audio binding ports and buffer validation.
 Modified 2026-11-04: document the image binding and its buffer ownership.
 Modified 2026-11-04: document the font binding port and buffer validation.
 Modified 2026-11-04: document the video binding port and parity checks.
+Modified 2026-11-04: document the Effekseer binding port and parity capture.
 How native C bindings talk to the JS engine through jsb.h, and the handle rules.
 -->
 # JS binding: the `jsb` seam
@@ -107,10 +110,14 @@ binary's in both engine modes.
 
 | Binding | Module and functions (`length`) | jsb calls used | Buffers | Callbacks |
 | --- | --- | --- | --- | --- |
+| `bind_io.c` (M1-T016) | `__native_io`: `readFileSync` (1), `readFileBinary` (1), `writeFileSync` (2), `writeFileBinary` (2), `mkdirSync` (1), `existsSync` (1), `isDirSync` (1), `readdirSync` (1), `unlinkSync` (1), `renameSync` (2), `getGameRoot` (0), `resolvePath` (1) | `jsb_define_module`, `jsb_set_fn_n`, `jsb_arg_count/to_str/val/bytes`, `jsb_free_str`, `jsb_get_prop`, `jsb_val_type`, `jsb_clear_exception`, `jsb_new_array/str/str_len/buffer_copy`, `jsb_set_index`, `jsb_ret_val/bool/str/undefined`, `jsb_throw_type/internal`, `jsb_runtime_setup/eval` | Reads copy native bytes into engine-owned ArrayBuffers; writes borrow bytes only during the call and accept ArrayBuffers only | none |
 | `bind_input.c` (M1-T015) | `__native_input`: `pollEvents` (0), `getGamepad` (1), `getGamepadCount` (0) | `jsb_define_module`, `jsb_set_fn_n`, `jsb_new_object/array/str/i32/f64/bool/null`, `jsb_set_prop`, `jsb_set_index`, `jsb_arg_count`, `jsb_arg_to_i32` (`getGamepad` coerces its index), `jsb_ret_val/i32`, `jsb_runtime_eval` | none | none |
 | `bind_font.c` (M1-T018) | `__native_font`: `loadFont` (2), `loadFontFile` (2), `hasFont` (1), `getMetrics` (2), `measureText` (3), `fontCount` (0), `fontNames` (0) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_to_str/f64`, `jsb_free_str`, `jsb_arg_bytes`, `jsb_clear_exception`, `jsb_throw_type`, `jsb_new_object/array/str/f64/null`, `jsb_set_prop/index`, `jsb_ret_val/bool/i32/f64` | Borrowed ArrayBuffer bytes during `loadFont`; both font caches copy them before return. File bytes are owned and freed by the binding. | none |
 | `bind_audio.c` (M1-T019) | `__native_audio`: `init`, `shutdown`, `isInitialized`, `stopAll`, `getActiveVoiceCount` (0); `load`, `loadStream`, `loadFromMemory`, `freeSource`, `stop`, `stopBus`, `pause`, `resume`, `pauseBus`, `resumeBus`, `isPlaying`, `isPaused`, `getVolume`, `getPosition`, `getDuration` (1); `setVolume`, `setPitch`, `setPan`, `setBusVolume`, `seek` (2); `fadeVolume`, `fadeBusVolume` (3); `play` (6) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_to_str/u32/i32/f64`, `jsb_arg_truthy`, `jsb_free_str`, `jsb_arg_bytes`, `jsb_clear_exception`, `jsb_throw_type/range`, `jsb_new_u32/i32`, `jsb_set_prop`, `jsb_ret_val/bool/i32/f64` | ArrayBuffer-only `loadFromMemory`; borrowed bytes are copied by SoLoud before return. | none |
 | `bind_video.c` (M1-T020) | `__native_video`: `open`, `close`, `play`, `pause`, `getState` (1); `setVolume`, `setLoop`, `setVisible` (2) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_to_str/i32/f64`, `jsb_arg_truthy`, `jsb_free_str`, `jsb_new_object/bool/f64/i32/null`, `jsb_set_prop`, `jsb_ret_val/i32/undefined`, `jsb_throw_type` | none | none |
+| `bind_canvas2d.c` (M1-T021) | `__native_canvas2d`: 27 methods, with upstream names and arities (baseline below) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_to_u32/i32/f64/str`, `jsb_free_str`, `jsb_arg_bytes`, `jsb_clear_exception`, `jsb_throw_type/range/internal`, `jsb_new_object/i32/u32/null/buffer_copy`, `jsb_set_prop`, `jsb_ret_val/bool/f64` | Input ArrayBuffer bytes are borrowed only after coercions finish; rendering/font services copy them. Pixel results are engine-owned copies. File bytes and coerced strings are freed by the binding. | none |
+| `bind_effekseer.c` (M1-T022) | `__native_effekseer`: `init` (3); `shutdown`, `isInitialized`, `stopAll`, `beginDraw`, `endDraw`, `resetBackground`, `getLoadedCount`, `getPlayingCount` (0); `load`, `setSpeed` (2); `play`, `setPosition`, `setRotation`, `setScale` (4); `release`, `isLoaded`, `stop`, `stopRoot`, `exists`, `setProjectionMatrix`, `setCameraMatrix`, `update`, `drawHandle`, `setRestorationOfStatesFlag`, `setBackground` (1) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count/val/to_str/to_i32/to_u32/to_f64/truthy`, `jsb_free_str`, `jsb_is_array`, `jsb_get_index`, `jsb_val_to_f64`, `jsb_clear_exception`, `jsb_new_u32`, `jsb_ret_val/bool/i32`, `jsb_throw_type` | none; matrices are plain Arrays read with Number coercion, copied to 16 native floats during the call | none |
+
 
 
 `jsb_set_fn_n` assigns functions, so they come out enumerable, while `JS_CFUNC_DEF` made
@@ -118,6 +125,28 @@ them non-enumerable. `bind_input_define` restores that with a one-line
 `Object.defineProperty` script after the module exists, so `Object.keys(__native_input)`
 stays empty as before.
 
+`bind_io_define` restores the same property attributes for `__native_io`.
+The `bind_io_jsb` ctest checks all twelve names and arities above, string and
+ArrayBuffer round trips (including embedded NULs and empty buffers), directory
+arrays, boolean filesystem results, undefined write results, coercion, and exact
+binding error names/messages. It uses the adopted engine in quickjs mode and
+`smz_js_engine_v8` in v8 mode. Engine-generated Symbol conversion messages retain
+each engine's spelling. No JS handle or borrowed buffer survives a native call.
+
+The retained I/O parity test records these pre-port expectations:
+
+| Check | Expected value |
+| --- | --- |
+| Own names and arities | The twelve functions in the `bind_io.c` row, in that order; all have `typeof === "function"` |
+| Function properties | Writable, configurable, non-enumerable; `Object.keys(__native_io)` is empty |
+| Text round trip | `h\u00e9\u0000x` has length 4, with character codes 233 and 0 at indices 1 and 2 |
+| Binary round trip | ArrayBuffer of length 3, bytes `1,2,255`; empty ArrayBuffers round-trip with length 0 |
+| Writes and directory reads | Writes return `undefined`; `readdirSync` returns an array of entry names |
+| Filesystem predicates and mutations | Boolean results, including `false` for missing paths in predicates, rename and unlink |
+| Path results | `getGameRoot` returns the configured root; `resolvePath('a/b%20c.txt')` returns that root plus `/a/b c.txt` |
+| Missing arguments (functions with nonzero arity) | TypeError: `<function> requires a path argument`, except writes require `path and data arguments` and rename requires `oldPath and newPath arguments` |
+| Invalid binary data | `TypeError: writeFileBinary: second argument must be an ArrayBuffer` |
+| Missing read targets | InternalError: `failed to read file: <resolved path>`, `failed to read binary file: <resolved path>`, or `failed to read directory: <resolved path>` |
 
 `bind_font_define` also restores non-enumerable function properties. Its setup script
 captures the intrinsic ArrayBuffer byte-length getter and wraps `loadFont` with a
@@ -697,3 +726,62 @@ outstanding because `SMZ_V8_DIR` is unset and the pinned V8 install is not in
 the dependency cache on this machine. The policy gate requires a direct
 `CHANGELOG.md` edit for this card even though AGENTS.md section 6 says forge
 writes that line from the final report; the edit is kept so the gate passes.
+### Canvas2D port baseline (M1-T021)
+
+`bind_canvas2d_define` defines the module on the supplied engine runtime. The
+transitional register wrapper adopts the existing engine context. All calls run
+on the main thread; no jsb handle or borrowed buffer survives a native call.
+The ArrayBuffer-only check is the same as bind_image's: a value with a `byteOffset`
+is a view and is rejected, and plain or spoofed objects fail in `jsb_arg_bytes`;
+either way the binding throws upstream's own TypeError. Numeric/string coercions run in upstream order
+before buffer validation, so user code cannot detach an already borrowed pointer.
+The setup script also restores non-enumerability for all 27 methods.
+
+The new `bind_canvas2d_jsb` ctest uses real CPU Canvas2D services without a graphics
+device and calls `bind_canvas2d_define(js_engine_get_jsb(engine))`: the adopted
+QuickJS engine in quickjs mode, `smz_js_engine_v8` in v8 mode. Its literal expected
+errors and values are the pre-port binary baseline, including every missing-arg
+TypeError; see `tests/smz/test_bind_canvas2d_jsb.c` for the full byte strings.
+
+| Check | Pre-port expected value |
+| --- | --- |
+| Own names, in order | `create,destroy,resize,getSize,setFillColor,setStrokeColor,setGlobalAlpha,setCompositeOp,setLineWidth,setTextAlign,setTextBaseline,save,restore,fillRect,clearRect,strokeRect,drawImage,drawImageHandle,getImageData,putImageData,getPixels,loadFont,loadFontFile,setFont,fillText,strokeText,measureText` |
+| Function lengths, same order | `2,1,3,1,5,5,2,2,2,2,2,1,1,5,5,5,12,10,5,6,1,2,2,3,4,4,2` |
+| Types and descriptors | All `function`; writable/configurable, non-enumerable; function own names `length,name` |
+| Create / size / pixel copies | Numeric handle; `{"width":2,"height":3}`; ArrayBuffer of 24 bytes; getImageData returns an ArrayBuffer |
+| Missing handle | getSize/getPixels: `null`; measureText: `0`; getImageData: zeroed RGBA bytes |
+| Empty rectangle / missing font | getImageData: `null`; loadFont/loadFontFile: `false` |
+| Other functions | `undefined`; putImageData followed by getImageData preserves `1,2,3,4` |
+| Missing arguments | `TypeError` with the original per-method `requires` message (all 27 in the test) |
+| Wrong buffer | `TypeError: <method>: second arg must be ArrayBuffer` for drawImage, putImageData and loadFont |
+| Invalid dimensions | Original RangeError dimensions/buffer-mismatch/64-MiB-limit messages, including dimensions and byte count |
+| Throwing conversions | Original user exception type/message, before buffer validation |
+
+`--dump-surface` has no native canvas2d rows and does not report function lengths;
+the ctest supplies that coverage. The pre/post inventory comparison is recorded
+with the validation results for this card.
+### Effekseer parity capture (M1-T022)
+
+The pre-port QuickJS binding has 26 own methods, in the order pinned by
+`test_bind_effekseer_jsb.c`, with lengths
+`3,0,0,2,1,1,4,1,1,0,4,4,4,2,1,1,1,1,0,1,0,1,1,0,0,0`.
+Every method is a function with a writable, configurable, non-enumerable property.
+Without initialization, `isInitialized`, `isLoaded` and `exists` return false;
+`load`, `getLoadedCount` and `getPlayingCount` return 0; `play` returns -1.
+Other operations return undefined. Tracking-backend `init` returns true and
+`shutdown` returns undefined. No test opens a graphics device.
+
+Missing `load` arguments throw `TypeError: load requires a path argument`.
+Non-Array matrices throw `TypeError: setProjectionMatrix expects a 16-element array`
+or `TypeError: setCameraMatrix expects a 16-element array`. Arrays of any length
+are accepted; missing entries coerce to NaN, and all 16 entries are read in order.
+Numeric conversion and element getter exceptions retain their type and message.
+Path resolution and path string conversion exceptions are cleared and return 0;
+scale conversion errors still propagate. Paths are allocated by jsb and freed
+before backend loading; no JS handles or callbacks survive a call.
+
+The new test calls `bind_effekseer_define(js_engine_get_jsb(engine))` on both
+seam backends (the adopted QuickJS runtime in quickjs mode, the V8 backend in v8
+mode) and pins the capture above without opening a device.
+The `--dump-surface` effekseer row is unchanged (empty diff); native method arities
+are absent from that inventory, so the test above supplies the parity evidence.

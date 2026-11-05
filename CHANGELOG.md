@@ -40,6 +40,9 @@ All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
 - Port the native video binding to jsb with API parity tests. (M1-T020)
+- `__native_canvas2d` is defined through the jsb seam by `bind_canvas2d_define`, with its JS API unchanged. (M1-T021)
+- Port the `__native_effekseer` binding to the jsb seam with unchanged names, function arities, results and errors. (M1-T022)
+- Port native file I/O bindings to jsb with API parity coverage. (M1-T016)
 - Port native audio bindings to jsb while preserving function arities, coercion, results and errors. (M1-T019)
 - Port native image loading, cache access and APNG decoding through jsb with API contract checks. (M1-T017)
 - Port native font loading and measurement to jsb while preserving the JavaScript API. (M1-T018)
