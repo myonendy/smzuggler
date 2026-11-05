@@ -41,6 +41,7 @@ All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
 - Port the `__native_tilemap` binding to the jsb seam with unchanged names, function arities, results and errors. (M1-T025)
+- Port the `__native_filters` binding to the jsb seam with unchanged names, function arities, results and errors. (M1-T024)
 - Port the `__native_renderer` binding to the jsb seam with unchanged names, function arities, results and errors. (M1-T023)
 - Port the native video binding to jsb with API parity tests. (M1-T020)
 - `__native_canvas2d` is defined through the jsb seam by `bind_canvas2d_define`, with its JS API unchanged. (M1-T021)

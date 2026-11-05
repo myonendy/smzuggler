@@ -15,6 +15,7 @@ Modified 2026-11-04: document the image binding and its buffer ownership.
 Modified 2026-11-04: document the font binding port and buffer validation.
 Modified 2026-11-04: document the video binding port and parity checks.
 Modified 2026-11-04: document the Effekseer binding port and parity capture.
+Modified 2026-11-05: document the filters binding port and parity capture.
 Modified 2026-11-04: document the renderer binding port and parity checks.
 How native C bindings talk to the JS engine through jsb.h, and the handle rules.
 -->
@@ -118,6 +119,7 @@ binary's in both engine modes.
 | `bind_video.c` (M1-T020) | `__native_video`: `open`, `close`, `play`, `pause`, `getState` (1); `setVolume`, `setLoop`, `setVisible` (2) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_to_str/i32/f64`, `jsb_arg_truthy`, `jsb_free_str`, `jsb_new_object/bool/f64/i32/null`, `jsb_set_prop`, `jsb_ret_val/i32/undefined`, `jsb_throw_type` | none | none |
 | `bind_canvas2d.c` (M1-T021) | `__native_canvas2d`: 27 methods, with upstream names and arities (baseline below) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_to_u32/i32/f64/str`, `jsb_free_str`, `jsb_arg_bytes`, `jsb_clear_exception`, `jsb_throw_type/range/internal`, `jsb_new_object/i32/u32/null/buffer_copy`, `jsb_set_prop`, `jsb_ret_val/bool/f64` | Input ArrayBuffer bytes are borrowed only after coercions finish; rendering/font services copy them. Pixel results are engine-owned copies. File bytes and coerced strings are freed by the binding. | none |
 | `bind_effekseer.c` (M1-T022) | `__native_effekseer`: `init` (3); `shutdown`, `isInitialized`, `stopAll`, `beginDraw`, `endDraw`, `resetBackground`, `getLoadedCount`, `getPlayingCount` (0); `load`, `setSpeed` (2); `play`, `setPosition`, `setRotation`, `setScale` (4); `release`, `isLoaded`, `stop`, `stopRoot`, `exists`, `setProjectionMatrix`, `setCameraMatrix`, `update`, `drawHandle`, `setRestorationOfStatesFlag`, `setBackground` (1) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count/val/to_str/to_i32/to_u32/to_f64/truthy`, `jsb_free_str`, `jsb_is_array`, `jsb_get_index`, `jsb_val_to_f64`, `jsb_clear_exception`, `jsb_new_u32`, `jsb_ret_val/bool/i32`, `jsb_throw_type` | none; matrices are plain Arrays read with Number coercion, copied to 16 native floats during the call | none |
+| `bind_filters.c` (M1-T024) | `__native_filters`: `init`, `shutdown`, `drawQuad`, `endFilter` (0); `deleteShader` (1); `compileShader` (2); `setUniform1f`, `setUniformMat4` (3); `beginFilter`, `setUniform2f`, `setUniformTexture` (4); `setUniform4f` (6); plus the shader-ID values `colorMatrixShader`, `maskShader`, `blurShader`, `alphaShader`, `colorFilterShader` | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_set_prop`, `jsb_arg_count/val/type/to_str/to_u32/to_i32/to_f64`, `jsb_arg_bytes`, `jsb_get_prop`, `jsb_is_array`, `jsb_get_index`, `jsb_val_to_f64`, `jsb_clear_exception`, `jsb_free_str`, `jsb_new_u32`, `jsb_ret_val/bool/undefined`, `jsb_throw_type` | `setUniformMat4` borrows an ArrayBuffer or TypedArray's bytes only for the call; a plain (or short) Array is read with Number coercion into 16 native floats during the call. A DataView or other value stays ignored, as upstream's two probes did | none |
 
 
 
@@ -829,3 +831,35 @@ seam backends (the adopted QuickJS runtime in quickjs mode, the V8 backend in v8
 mode) and pins the capture above without opening a device.
 The `--dump-surface` effekseer row is unchanged (empty diff); native method arities
 are absent from that inventory, so the test above supplies the parity evidence.
+
+### Filters parity capture (M1-T024)
+
+`bind_filters_define` defines `__native_filters` on the supplied runtime: the
+adopted QuickJS engine in quickjs mode and the V8 backend in v8 mode. All
+handles are call-scoped; the mat4 bytes are borrowed only during the call, and
+no callback is kept.
+
+Upstream exposed the compiled shader IDs as ordinary properties of the module.
+`init()` still publishes them, through a short assignment script evaluated on
+the runtime kept from `bind_filters_define`, because jsb reaches objects only
+through the call or setup context. Without a graphics device every compile
+returns 0, so `init()` returns false and the five IDs stay 0.
+
+The pre-port binary was run with the same script as `tests/smz/test_bind_filters_jsb.c`
+(registration switched back to the original `bind_filters_register`), and its
+values are pinned there:
+
+| Check | Pre-port expected value |
+| --- | --- |
+| Own names, in order | `init,shutdown,compileShader,deleteShader,beginFilter,setUniform1f,setUniform2f,setUniformTexture,setUniform4f,setUniformMat4,drawQuad,endFilter,colorMatrixShader,maskShader,blurShader,alphaShader,colorFilterShader` |
+| Function lengths | `0,0,2,1,4,3,4,4,6,3,0,0` |
+| Attributes | Functions are writable, configurable and non-enumerable with own names `length,name`; the five shader IDs are writable, enumerable Numbers starting at 0 |
+| No device | `init()` false; `compileShader` 0; `shutdown`, `deleteShader`, `beginFilter` and every uniform/draw call return undefined |
+| Mat4 forms | Float32Array, ArrayBuffer, a plain 16-element Array, `null`, `{}` and a DataView all return undefined; only the first three reach the renderer |
+| Missing arguments | `TypeError: compileShader requires vertSrc and fragSrc`; `TypeError: beginFilter requires shaderId, inputTexture, w, h` |
+| Unconvertible sources | A Symbol vertex source is ignored and returns 0; an unconvertible fragment source throws `TypeError: compileShader: fragSrc required` |
+| Coercion failures | Symbol and throwing `valueOf`/`toString`/element getter errors keep their original type and message |
+
+`--dump-surface` lists no native filters rows, so pre/post inventories compare
+equal (empty diff); this ctest supplies the API evidence, including function
+lengths, which DEC-M0-T009b leaves out of the inventory.
