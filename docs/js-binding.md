@@ -14,6 +14,7 @@ Modified 2026-11-04: document the font and audio binding ports and buffer valida
 Modified 2026-11-04: document the image binding and its buffer ownership.
 Modified 2026-11-04: document the font binding port and buffer validation.
 Modified 2026-11-04: document the Effekseer binding port and parity capture.
+Modified 2026-11-04: document the renderer binding port and parity checks.
 How native C bindings talk to the JS engine through jsb.h, and the handle rules.
 -->
 # JS binding: the `jsb` seam
@@ -402,6 +403,7 @@ adds `bind_<x>_define(jsb_runtime *rt, ...)`; the old `bind_<x>_register(struct 
 | --- | --- | --- | --- | --- | --- |
 | `bind_platform.c` (M1-T014) | `__native_platform`, `__native_process` | `setFullscreen` (1), `isFullscreen`, `getDisplaySize`, `getDisplayScale`, `getWindowSize`, `setWindowTitle` (1), `quit` (0 for the rest); process: `platform`, `arch`, `engine` strings, `environ`, `hrtime` (0) | `jsb_define_module`, `jsb_runtime_setup`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_truthy`, `jsb_arg_to_str`/`jsb_free_str`, `jsb_new_object`/`array`/`i32`/`f64`/`str`, `jsb_set_prop`, `jsb_set_index`, `jsb_ret_*`, `jsb_throw_type`, `jsb_throw_internal`, `jsb_engine_version` | none | none |
 | `bind_image.c` (M1-T017) | `__native_image` | `decodeApng` (1), `loadImage` (1), `loadImageFromMemory` (2), `getImageInfo` (1), `getImagePixels` (1), `freeImage` (1), `cacheCount` (0), `clearCache` (0) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count/val/to_str/to_u32`, `jsb_free_str`, `jsb_new_object/array/i32/u32/null`, `jsb_set_prop/index`, `jsb_get_prop`, `jsb_val_type`, `jsb_ret_val/undefined`, `jsb_throw_type/internal`, `jsb_clear_exception` | `jsb_arg_bytes` borrows input bytes during the call; `jsb_new_buffer_copy` gives JS its own RGBA copy | none |
+| `bind_renderer.c` (M1-T023) | `__native_renderer` | `init` (2), `shutdown` (0), `resize` (2), `getSize` (0), `beginFrame` (0), `beginFrameTransparent` (0), `endFrame` (0), `createTexture` (2), `updateTexture` (4), `deleteTexture` (1), `setTextureFilter` (2), `createRenderTexture` (2), `deleteRenderTexture` (2), `bindRenderTexture` (3), `unbindRenderTexture` (0), `drawQuad` (11), `drawQuadVertices` (15), `drawQuadVerticesUV` (19), `flush` (0), `setBlendMode` (1), `getDrawCalls` (0), `getQuadCount` (0), `readPixels` (3), `rebindBatch` (0), `setScissor` (4), `clearScissor` (0), `setScreenViewport` (4) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count/val/to_i32/to_u32/to_f64/truthy`, `jsb_arg_bytes`, `jsb_get_prop`, `jsb_val_type`, `jsb_clear_exception`, `jsb_new_object/i32/u32/null/buffer_copy`, `jsb_set_prop`, `jsb_ret_val/bool/i32/undefined`, `jsb_throw_type/range` | `updateTexture` borrows an ArrayBuffer's bytes only during the call (views are rejected, as upstream did); `readPixels` copies the native RGBA buffer into an engine-owned ArrayBuffer and frees the native one | none |
 
 * **bind_image.** Defines the eight functions in upstream order, with their original
   arities and non-enumerable, writable, configurable properties. Strings and handles
@@ -433,6 +435,27 @@ adds `bind_<x>_define(jsb_runtime *rt, ...)`; the old `bind_<x>_register(struct 
   parity for such inputs requires strict ArrayBuffer/TypedArray getters in both
   seam backends, outside this card's owned files. Property reads precede byte
   borrowing so a getter cannot detach already-borrowed storage.
+
+* **bind_renderer.** Defines the 27 functions in upstream order, with their original
+  arities and non-enumerable, writable, configurable properties. Every numeric
+  argument uses the coercing `jsb_arg_to_*` reads the old `JS_To*` calls used, and
+  `setTextureFilter`'s flag uses `jsb_arg_truthy` (`JS_ToBool`). `updateTexture`
+  keeps upstream's ArrayBuffer-only rule: TypedArray and DataView arguments are
+  rejected with `TypeError: updateTexture: fourth arg must be ArrayBuffer`, and the
+  borrowed bytes are used only until the call returns. `readPixels` copies the
+  native RGBA buffer into an engine-owned ArrayBuffer and frees the native one.
+  The renderer itself is a single C-owned global created lazily by `init` and
+  released by `shutdown`; no JS handle or buffer survives a call. The
+  `bind_renderer_jsb` test covers names, order, arities, descriptors, every
+  no-device result, the device-side size/readPixels path, and the exact TypeError
+  and RangeError messages. Pre-port QuickJS measurements are the literal
+  expectations in `tests/smz/test_bind_renderer_jsb.c`: lengths
+  `2,0,2,0,0,0,0,2,4,1,2,2,2,3,0,11,15,19,0,1,0,0,3,0,4,0,4`; `getSize` is
+  `null` without a renderer and `{width,height}` with one; `createRenderTexture`
+  is `{fbo:0,texture:0}` without GL; `readPixels(0,2,2)` is a 16-byte
+  ArrayBuffer; `getDrawCalls` and `getQuadCount` are `0`. `--dump-surface` lists
+  no native module rows (DEC-M0-T009b), so its renderer output is unchanged by
+  the port; the contract test is what pins the API.
 
 * **bind_platform.** The `__native_process` helpers stay inline in `bind_platform.h`
   (`bind_platform_define_process(rt)`), so window-less tests need no SDL;

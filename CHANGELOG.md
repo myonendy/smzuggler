@@ -30,6 +30,7 @@ Modified 2026-11-01: record jsb persistent callbacks.
 Modified 2026-11-01: record the V8 script watchdog.
 Modified 2026-11-01: record the game loop off QuickJS.
 Modified 2026-11-01: record microtask checkpoints after every macrotask.
+Modified 2026-11-04: record the renderer binding port.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 <!-- Records project changes for release review; keep entries free of private data. -->
@@ -39,6 +40,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Port the `__native_renderer` binding to the jsb seam with unchanged names, function arities, results and errors. (M1-T023)
 - `__native_canvas2d` is defined through the jsb seam by `bind_canvas2d_define`, with its JS API unchanged. (M1-T021)
 - Port the `__native_effekseer` binding to the jsb seam with unchanged names, function arities, results and errors. (M1-T022)
 - Port native file I/O bindings to jsb with API parity coverage. (M1-T016)
