@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The smzuggler contributors
-// Modified 2026-11-04: bound JS recursion below the reserved native stack.
+// Modified 2026-11-04: bound JS recursion below the available main thread stack.
 // Modified 2026-11-04: explicit microtask checkpoints and exception-safe nextTick priority.
 //
 // The engine API of src/engine/js_engine.h implemented on V8 (spec section
@@ -52,6 +52,12 @@
 #include <string>
 #include <utility>
 #include <vector>
+
+#if defined(_WIN32)
+#include <windows.h>
+#elif defined(__linux__) || defined(__APPLE__)
+#include <pthread.h>
+#endif
 
 #ifndef SMZ_V8_ICU_DATA_PATH
 #error "SMZ_V8_ICU_DATA_PATH must name icudtl.dat (set by CMakeLists.txt)"
@@ -688,6 +694,41 @@ void flush_rejections(JSEngine *engine, v8::Local<v8::Context> context) {
     }
 }
 
+// Measure remaining native stack at startup on the process main thread.
+// No pointers escape. Returns KiB below the current frame, less 25% (at
+// least 256 KiB) for native calls and exception reporting; zero means failure.
+static size_t main_stack_kib() {
+    volatile char marker = 0;
+    uintptr_t current = reinterpret_cast<uintptr_t>(&marker);
+    uintptr_t bottom = 0;
+#if defined(_WIN32)
+    MEMORY_BASIC_INFORMATION info;
+    if (!VirtualQuery(const_cast<char *>(&marker), &info, sizeof(info))) return 0;
+    bottom = reinterpret_cast<uintptr_t>(info.AllocationBase);
+#elif defined(__APPLE__)
+    pthread_t thread = pthread_self();
+    bottom = reinterpret_cast<uintptr_t>(pthread_get_stackaddr_np(thread)) -
+             pthread_get_stacksize_np(thread);
+#elif defined(__linux__)
+    pthread_attr_t attr;
+    if (pthread_getattr_np(pthread_self(), &attr) != 0) return 0;
+    void *base = nullptr;
+    size_t bytes = 0;
+    int result = pthread_attr_getstack(&attr, &base, &bytes);
+    pthread_attr_destroy(&attr);
+    if (result != 0) return 0;
+    bottom = reinterpret_cast<uintptr_t>(base);
+#else
+    return 0;
+#endif
+    if (current <= bottom) return 0;
+    size_t available = (current - bottom) / 1024;
+    size_t margin = available / 4;
+    if (margin < 256) margin = 256;
+    if (available <= margin || available - margin > INT_MAX) return 0;
+    return available - margin;
+}
+
 }  // namespace
 
 extern "C" {
@@ -698,7 +739,15 @@ JSEngine *js_engine_init(void) {
     // Process-wide flags must precede the first isolate, including cache keys.
     static bool flags_set = false;
     if (!flags_set) {
-        if (!jsb_set_flags("--stack-size=512")) return nullptr;
+        size_t kib = main_stack_kib();
+        if (!kib) {
+            std::fprintf(stderr, "js_engine: cannot determine a safe main thread stack limit\n");
+            return nullptr;
+        }
+        char flag[64];
+        std::snprintf(flag, sizeof(flag), "--stack-size=%zu", kib);
+        if (!jsb_set_flags(flag)) return nullptr;
+        std::fprintf(stderr, "js_engine: main thread %s (KiB)\n", flag);
         flags_set = true;
     }
     JSEngine *engine = new JSEngine();

@@ -8,7 +8,7 @@
  * Modified 2026-10-31: return process.exitCode after a clean quit.
  * Modified 2026-11-01: default logs, .jsc cache and config to host data dirs.
  *
- * Modified 2026-11-04: reserve a runtime thread stack in V8 builds.
+ * Modified 2026-11-04: keep runtime services on the process main thread.
  *
  * Runtime entry point; owns startup and shutdown on the main thread.
  * See docs/DECISIONS.md (DEC-M0-T001) for identity ownership.
@@ -717,45 +717,11 @@ static int runtime_main(int argc, char *argv[])
     return exit_status;
 }
 
-#ifdef SMZ_RUNTIME_STACK_BYTES
-/** Borrowed CLI arguments remain alive until the runtime thread is joined. */
-struct runtime_args { int argc; char **argv; };
-
-/** Own all runtime services on this thread; the caller retains CLI storage.
- * Returns the runtime exit code after JS and graphics teardown. */
-static int SDLCALL runtime_thread(void *data)
-{
-    struct runtime_args *args = data;
-    return runtime_main(args->argc, args->argv);
-}
-#endif
-
-/** Start one runtime with borrowed CLI arguments, joining before they expire.
- * V8 reserves 2 MiB for a 512 KiB JS limit; failure returns a nonzero status. */
+/** Run services on the process main thread with borrowed CLI arguments.
+ * Returns the runtime exit status after JS and graphics teardown. */
 int main(int argc, char *argv[])
 {
-#ifdef SMZ_RUNTIME_STACK_BYTES
-    struct runtime_args args = { argc, argv };
-    SDL_PropertiesID props = SDL_CreateProperties();
-    if (!props) return 1;
-    bool ok = SDL_SetPointerProperty(props, SDL_PROP_THREAD_CREATE_ENTRY_FUNCTION_POINTER,
-                                     runtime_thread) &&
-        SDL_SetPointerProperty(props, SDL_PROP_THREAD_CREATE_USERDATA_POINTER, &args) &&
-        SDL_SetStringProperty(props, SDL_PROP_THREAD_CREATE_NAME_STRING, "runtime") &&
-        SDL_SetNumberProperty(props, SDL_PROP_THREAD_CREATE_STACKSIZE_NUMBER,
-                              SMZ_RUNTIME_STACK_BYTES);
-    SDL_Thread *thread = ok ? SDL_CreateThreadWithProperties(props) : NULL;
-    SDL_DestroyProperties(props);
-    if (!thread) {
-        fprintf(stderr, "Cannot reserve runtime stack: %s\n", SDL_GetError());
-        return 1;
-    }
-    int result = 1;
-    SDL_WaitThread(thread, &result);
-    return result;
-#else
     return runtime_main(argc, argv);
-#endif
 }
 
 #endif /* RMMZ_TEST_DATA_DIR */

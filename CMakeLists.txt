@@ -13,7 +13,7 @@
 # Modified 2026-11-04: link smz_jsb_quickjs (jsb adoption) into everything
 # that builds src/engine/js_engine.c.
 # Modified 2026-11-04: add the V8 code cache store smz_js_codecache.
-# Modified 2026-11-04: reserve the V8 runtime stack and bound JS recursion.
+# Modified 2026-11-04: size V8 recursion for the process main thread.
 # Build orchestration; see docs/DECISIONS.md (DEC-M0-T001).
 
 cmake_minimum_required(VERSION 3.20)
@@ -110,7 +110,6 @@ if(NOT SMZ_JS_ENGINE MATCHES "^(quickjs|v8)$")
     message(FATAL_ERROR "SMZ_JS_ENGINE must be quickjs or v8, not '${SMZ_JS_ENGINE}'")
 endif()
 if(SMZ_JS_ENGINE STREQUAL "v8")
-    add_compile_definitions(SMZ_RUNTIME_STACK_BYTES=2097152)
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/V8.cmake)
     smz_import_v8()
 endif()
@@ -374,7 +373,7 @@ if(SMZ_JS_ENGINE STREQUAL "v8")
     target_link_libraries(smz_js_engine_v8 PUBLIC smz_jsb smz_js_codecache Threads::Threads)
     target_include_directories(smz_js_engine_v8 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_definitions(smz_js_engine_v8
-        PUBLIC SMZ_JS_ENGINE_V8 SMZ_RUNTIME_STACK_BYTES=2097152
+        PUBLIC SMZ_JS_ENGINE_V8
         PRIVATE SMZ_V8_ICU_DATA_PATH="${SMZ_V8_ICU_DATA}")
 endif()
 
