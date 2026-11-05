@@ -35,7 +35,7 @@ jobs:
             os: macos-14
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # A tag gives the release its version; a manual run is labelled "dev".
       - name: Determine version
@@ -139,7 +139,7 @@ jobs:
         shell: bash
         run: tar -czf "${STAGE_DIR}.tar.gz" -C staging "${STAGE_DIR}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}
           path: |
@@ -155,9 +155,9 @@ jobs:
     # which is what makes it safe to use as a rehearsal.
     if: github.ref_type == 'tag'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
