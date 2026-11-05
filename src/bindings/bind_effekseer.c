@@ -1,404 +1,440 @@
 /*
  * Copyright (c) 2026 General Arcade (Pte. Ltd.)
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
+ * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-04: ported to the jsb seam (bind_effekseer_define).
+ *
+ * The __native_effekseer binding: the native bridge under effekseer_shim.js,
+ * which stands in for the Effekseer WebGL runtime RMMZ loads in NW.js. See
+ * docs/js-binding.md, "bind_effekseer", and the handle-lifetime rules there
+ * (spec section 15.8): every jsb_val here is valid only during its call and
+ * is never stored. Main thread only.
  */
 
 #include "bindings/bind_effekseer.h"
 #include "effects/effekseer_backend.h"
 #include "io/file_io.h"
 
-#include <quickjs.h>
+#ifdef SMZ_JSB_ADOPT
+#include "jsb/jsb_adopt.h"
+#endif
+
+#include <stdio.h>
 #include <string.h>
 
 #define PATH_BUF_SIZE 4096
 
-/* Resolve a JS string argument to an absolute path. Returns the JS C-string
-   (caller frees) or NULL with a pending exception. */
-static const char *resolve_effect_path(JSContext *ctx, JSValueConst arg,
-                                       char *out, size_t out_size)
+/* Resolve JS argument `index` to an absolute path in `out` (`out_size`
+   bytes). Returns the argument's string (caller frees with jsb_free_str) or
+   NULL with a pending exception: the ToString error, or a TypeError when the
+   path does not resolve under the game root. */
+static char *resolve_effect_path(jsb_ctx *ctx, int index,
+                                 char *out, size_t out_size)
 {
-    const char *raw = JS_ToCString(ctx, arg);
+    char *raw = jsb_arg_to_str(ctx, index, NULL);
     if (!raw) return NULL;
 
     if (!file_io_resolve_path(raw, out, out_size)) {
-        JS_ThrowTypeError(ctx, "effect path resolution failed: %s", raw);
-        JS_FreeCString(ctx, raw);
+        jsb_throw_type(ctx, "effect path resolution failed: %s", raw);
+        jsb_free_str(raw);
         return NULL;
     }
     return raw;
 }
 
-/* init(screenWidth, screenHeight, maxSprites) -> bool */
-static JSValue js_effekseer_init(JSContext *ctx, JSValueConst this_val,
-                                  int argc, JSValueConst *argv)
+/* Read the Array in argument 0 into the 16 floats of `m`, element by element
+   with Number coercion, in index order (missing entries become NaN). A
+   non-Array is the TypeError "<name> expects a 16-element array". Returns
+   false with the exception pending on any failure. */
+static bool read_matrix_arg(jsb_ctx *ctx, const char *name, float m[16])
 {
-    (void)this_val;
+    jsb_val *arr = jsb_arg_val(ctx, 0);
+    if (jsb_arg_count(ctx) < 1 || !jsb_is_array(ctx, arr)) {
+        jsb_throw_type(ctx, "%s expects a 16-element array", name);
+        return false;
+    }
+
+    for (int i = 0; i < 16; i++) {
+        jsb_val *elem = jsb_get_index(ctx, arr, (uint32_t)i);
+        double v = 0;
+        if (!elem || !jsb_val_to_f64(ctx, elem, &v)) return false;
+        m[i] = (float)v;
+    }
+    return true;
+}
+
+/* Return a uint32 handle to JS as a Number, as JS_NewUint32 did. */
+static void ret_u32(jsb_ctx *ctx, uint32_t value)
+{
+    jsb_ret_val(ctx, jsb_new_u32(ctx, value));
+}
+
+/* init(screenWidth, screenHeight, maxSprites) -> bool
+   Why: creates the renderer the shim draws into (defaults: the 816x624 RMMZ
+   screen, 8000 sprites). Arguments use ToInt32 coercion. */
+static void js_effekseer_init(jsb_ctx *ctx)
+{
     int32_t w = 816, h = 624, max_sprites = 8000;
-    if (argc >= 1 && JS_ToInt32(ctx, &w, argv[0])) return JS_EXCEPTION;
-    if (argc >= 2 && JS_ToInt32(ctx, &h, argv[1])) return JS_EXCEPTION;
-    if (argc >= 3 && JS_ToInt32(ctx, &max_sprites, argv[2])) return JS_EXCEPTION;
-    return JS_NewBool(ctx, effekseer_init(w, h, max_sprites));
+    int argc = jsb_arg_count(ctx);
+    if (argc >= 1 && !jsb_arg_to_i32(ctx, 0, &w)) return;
+    if (argc >= 2 && !jsb_arg_to_i32(ctx, 1, &h)) return;
+    if (argc >= 3 && !jsb_arg_to_i32(ctx, 2, &max_sprites)) return;
+    jsb_ret_bool(ctx, effekseer_init(w, h, max_sprites));
 }
 
-/* shutdown() */
-static JSValue js_effekseer_shutdown(JSContext *ctx, JSValueConst this_val,
-                                      int argc, JSValueConst *argv)
+/* shutdown()
+   Why: frees the renderer and every loaded effect. Arguments are ignored. */
+static void js_effekseer_shutdown(jsb_ctx *ctx)
 {
-    (void)ctx; (void)this_val; (void)argc; (void)argv;
+    (void)ctx;
     effekseer_shutdown();
-    return JS_UNDEFINED;
 }
 
-/* isInitialized() -> bool */
-static JSValue js_effekseer_is_initialized(JSContext *ctx, JSValueConst this_val,
-                                            int argc, JSValueConst *argv)
+/* isInitialized() -> bool
+   Why: lets the shim skip drawing until init succeeded. */
+static void js_effekseer_is_initialized(jsb_ctx *ctx)
 {
-    (void)this_val; (void)argc; (void)argv;
-    return JS_NewBool(ctx, effekseer_is_initialized());
+    jsb_ret_bool(ctx, effekseer_is_initialized());
 }
 
-/* load(path, scale) -> effectHandle */
-static JSValue js_effekseer_load(JSContext *ctx, JSValueConst this_val,
-                                  int argc, JSValueConst *argv)
+/* load(path, scale) -> effectHandle
+   Why: Effekseer.Context.loadEffect for a game-relative path. A path that
+   cannot be converted or resolved returns 0, not a throw; a missing path is
+   a TypeError and a bad scale throws. */
+static void js_effekseer_load(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1) return JS_ThrowTypeError(ctx, "load requires a path argument");
+    if (jsb_arg_count(ctx) < 1) {
+        jsb_throw_type(ctx, "load requires a path argument");
+        return;
+    }
 
     char resolved[PATH_BUF_SIZE];
-    const char *raw = resolve_effect_path(ctx, argv[0], resolved, sizeof(resolved));
+    char *raw = resolve_effect_path(ctx, 0, resolved, sizeof(resolved));
     if (!raw) {
         /* The shim checks for a 0 handle; a throw would bypass that. */
-        JS_FreeValue(ctx, JS_GetException(ctx));
-        return JS_NewUint32(ctx, 0);
+        jsb_clear_exception(ctx);
+        ret_u32(ctx, 0);
+        return;
     }
-    JS_FreeCString(ctx, raw);
+    jsb_free_str(raw);
 
     double scale = 1.0;
-    if (argc >= 2 && JS_ToFloat64(ctx, &scale, argv[1])) return JS_EXCEPTION;
+    if (jsb_arg_count(ctx) >= 2 && !jsb_arg_to_f64(ctx, 1, &scale)) return;
 
     EffectHandle h = effekseer_load(resolved, (float)scale);
-    return JS_NewUint32(ctx, h);
+    ret_u32(ctx, h);
 }
 
-/* release(effectHandle) */
-static JSValue js_effekseer_release(JSContext *ctx, JSValueConst this_val,
-                                     int argc, JSValueConst *argv)
+/* release(effectHandle)
+   Why: frees one loaded effect; no argument is a no-op. */
+static void js_effekseer_release(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1) return JS_UNDEFINED;
+    if (jsb_arg_count(ctx) < 1) return;
     uint32_t handle;
-    if (JS_ToUint32(ctx, &handle, argv[0])) return JS_EXCEPTION;
+    if (!jsb_arg_to_u32(ctx, 0, &handle)) return;
     effekseer_release(handle);
-    return JS_UNDEFINED;
 }
 
-/* isLoaded(effectHandle) -> bool */
-static JSValue js_effekseer_is_loaded(JSContext *ctx, JSValueConst this_val,
-                                       int argc, JSValueConst *argv)
+/* isLoaded(effectHandle) -> bool
+   Why: lets the shim poll whether an effect is ready; no argument is false. */
+static void js_effekseer_is_loaded(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1) return JS_NewBool(ctx, 0);
+    if (jsb_arg_count(ctx) < 1) {
+        jsb_ret_bool(ctx, false);
+        return;
+    }
     uint32_t handle;
-    if (JS_ToUint32(ctx, &handle, argv[0])) return JS_EXCEPTION;
-    return JS_NewBool(ctx, effekseer_is_loaded(handle));
+    if (!jsb_arg_to_u32(ctx, 0, &handle)) return;
+    jsb_ret_bool(ctx, effekseer_is_loaded(handle));
 }
 
-/* play(effectHandle, x, y, z) -> instanceHandle */
-static JSValue js_effekseer_play(JSContext *ctx, JSValueConst this_val,
-                                  int argc, JSValueConst *argv)
+/* play(effectHandle, x, y, z) -> instanceHandle
+   Why: Effekseer.Context.play; EFFECT_INSTANCE_INVALID (-1) without an
+   effect argument or when the effect cannot play. */
+static void js_effekseer_play(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1) return JS_NewInt32(ctx, EFFECT_INSTANCE_INVALID);
+    int argc = jsb_arg_count(ctx);
+    if (argc < 1) {
+        jsb_ret_i32(ctx, EFFECT_INSTANCE_INVALID);
+        return;
+    }
 
     uint32_t effect;
-    if (JS_ToUint32(ctx, &effect, argv[0])) return JS_EXCEPTION;
+    if (!jsb_arg_to_u32(ctx, 0, &effect)) return;
 
     double x = 0, y = 0, z = 0;
-    if (argc >= 2 && JS_ToFloat64(ctx, &x, argv[1])) return JS_EXCEPTION;
-    if (argc >= 3 && JS_ToFloat64(ctx, &y, argv[2])) return JS_EXCEPTION;
-    if (argc >= 4 && JS_ToFloat64(ctx, &z, argv[3])) return JS_EXCEPTION;
+    if (argc >= 2 && !jsb_arg_to_f64(ctx, 1, &x)) return;
+    if (argc >= 3 && !jsb_arg_to_f64(ctx, 2, &y)) return;
+    if (argc >= 4 && !jsb_arg_to_f64(ctx, 3, &z)) return;
 
     EffectInstanceHandle inst = effekseer_play(effect, (float)x, (float)y, (float)z);
-    return JS_NewInt32(ctx, inst);
+    jsb_ret_i32(ctx, inst);
 }
 
-/* stop(instanceHandle) */
-static JSValue js_effekseer_stop(JSContext *ctx, JSValueConst this_val,
-                                  int argc, JSValueConst *argv)
+/* stop(instanceHandle)
+   Why: EffekseerHandle.stop; no argument is a no-op. */
+static void js_effekseer_stop(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1) return JS_UNDEFINED;
+    if (jsb_arg_count(ctx) < 1) return;
     int32_t inst;
-    if (JS_ToInt32(ctx, &inst, argv[0])) return JS_EXCEPTION;
+    if (!jsb_arg_to_i32(ctx, 0, &inst)) return;
     effekseer_stop(inst);
-    return JS_UNDEFINED;
 }
 
-/* stopRoot(instanceHandle) */
-static JSValue js_effekseer_stop_root(JSContext *ctx, JSValueConst this_val,
-                                       int argc, JSValueConst *argv)
+/* stopRoot(instanceHandle)
+   Why: EffekseerHandle.stopRoot; no argument is a no-op. */
+static void js_effekseer_stop_root(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1) return JS_UNDEFINED;
+    if (jsb_arg_count(ctx) < 1) return;
     int32_t inst;
-    if (JS_ToInt32(ctx, &inst, argv[0])) return JS_EXCEPTION;
+    if (!jsb_arg_to_i32(ctx, 0, &inst)) return;
     effekseer_stop_root(inst);
-    return JS_UNDEFINED;
 }
 
-/* stopAll() */
-static JSValue js_effekseer_stop_all(JSContext *ctx, JSValueConst this_val,
-                                      int argc, JSValueConst *argv)
+/* stopAll()
+   Why: Effekseer.Context.stopAll. Arguments are ignored. */
+static void js_effekseer_stop_all(jsb_ctx *ctx)
 {
-    (void)ctx; (void)this_val; (void)argc; (void)argv;
+    (void)ctx;
     effekseer_stop_all();
-    return JS_UNDEFINED;
 }
 
-/* setPosition(instanceHandle, x, y, z) */
-static JSValue js_effekseer_set_position(JSContext *ctx, JSValueConst this_val,
-                                          int argc, JSValueConst *argv)
+/* setPosition(instanceHandle, x, y, z)
+   Why: EffekseerHandle.setLocation; fewer than 4 arguments is a no-op. */
+static void js_effekseer_set_position(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 4) return JS_UNDEFINED;
+    if (jsb_arg_count(ctx) < 4) return;
     int32_t inst;
     double x, y, z;
-    if (JS_ToInt32(ctx, &inst, argv[0])) return JS_EXCEPTION;
-    if (JS_ToFloat64(ctx, &x, argv[1])) return JS_EXCEPTION;
-    if (JS_ToFloat64(ctx, &y, argv[2])) return JS_EXCEPTION;
-    if (JS_ToFloat64(ctx, &z, argv[3])) return JS_EXCEPTION;
+    if (!jsb_arg_to_i32(ctx, 0, &inst)) return;
+    if (!jsb_arg_to_f64(ctx, 1, &x)) return;
+    if (!jsb_arg_to_f64(ctx, 2, &y)) return;
+    if (!jsb_arg_to_f64(ctx, 3, &z)) return;
     effekseer_set_position(inst, (float)x, (float)y, (float)z);
-    return JS_UNDEFINED;
 }
 
-/* setRotation(instanceHandle, x, y, z) */
-static JSValue js_effekseer_set_rotation(JSContext *ctx, JSValueConst this_val,
-                                          int argc, JSValueConst *argv)
+/* setRotation(instanceHandle, x, y, z)
+   Why: EffekseerHandle.setRotation (radians); fewer than 4 is a no-op. */
+static void js_effekseer_set_rotation(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 4) return JS_UNDEFINED;
+    if (jsb_arg_count(ctx) < 4) return;
     int32_t inst;
     double x, y, z;
-    if (JS_ToInt32(ctx, &inst, argv[0])) return JS_EXCEPTION;
-    if (JS_ToFloat64(ctx, &x, argv[1])) return JS_EXCEPTION;
-    if (JS_ToFloat64(ctx, &y, argv[2])) return JS_EXCEPTION;
-    if (JS_ToFloat64(ctx, &z, argv[3])) return JS_EXCEPTION;
+    if (!jsb_arg_to_i32(ctx, 0, &inst)) return;
+    if (!jsb_arg_to_f64(ctx, 1, &x)) return;
+    if (!jsb_arg_to_f64(ctx, 2, &y)) return;
+    if (!jsb_arg_to_f64(ctx, 3, &z)) return;
     effekseer_set_rotation(inst, (float)x, (float)y, (float)z);
-    return JS_UNDEFINED;
 }
 
-/* setScale(instanceHandle, x, y, z) */
-static JSValue js_effekseer_set_scale(JSContext *ctx, JSValueConst this_val,
-                                       int argc, JSValueConst *argv)
+/* setScale(instanceHandle, x, y, z)
+   Why: EffekseerHandle.setScale; fewer than 4 arguments is a no-op. */
+static void js_effekseer_set_scale(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 4) return JS_UNDEFINED;
+    if (jsb_arg_count(ctx) < 4) return;
     int32_t inst;
     double x, y, z;
-    if (JS_ToInt32(ctx, &inst, argv[0])) return JS_EXCEPTION;
-    if (JS_ToFloat64(ctx, &x, argv[1])) return JS_EXCEPTION;
-    if (JS_ToFloat64(ctx, &y, argv[2])) return JS_EXCEPTION;
-    if (JS_ToFloat64(ctx, &z, argv[3])) return JS_EXCEPTION;
+    if (!jsb_arg_to_i32(ctx, 0, &inst)) return;
+    if (!jsb_arg_to_f64(ctx, 1, &x)) return;
+    if (!jsb_arg_to_f64(ctx, 2, &y)) return;
+    if (!jsb_arg_to_f64(ctx, 3, &z)) return;
     effekseer_set_scale(inst, (float)x, (float)y, (float)z);
-    return JS_UNDEFINED;
 }
 
-/* setSpeed(instanceHandle, speed) */
-static JSValue js_effekseer_set_speed(JSContext *ctx, JSValueConst this_val,
-                                       int argc, JSValueConst *argv)
+/* setSpeed(instanceHandle, speed)
+   Why: EffekseerHandle.setSpeed; fewer than 2 arguments is a no-op. */
+static void js_effekseer_set_speed(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 2) return JS_UNDEFINED;
+    if (jsb_arg_count(ctx) < 2) return;
     int32_t inst;
     double speed;
-    if (JS_ToInt32(ctx, &inst, argv[0])) return JS_EXCEPTION;
-    if (JS_ToFloat64(ctx, &speed, argv[1])) return JS_EXCEPTION;
+    if (!jsb_arg_to_i32(ctx, 0, &inst)) return;
+    if (!jsb_arg_to_f64(ctx, 1, &speed)) return;
     effekseer_set_speed(inst, (float)speed);
-    return JS_UNDEFINED;
 }
 
-/* exists(instanceHandle) -> bool */
-static JSValue js_effekseer_exists(JSContext *ctx, JSValueConst this_val,
-                                    int argc, JSValueConst *argv)
+/* exists(instanceHandle) -> bool
+   Why: EffekseerHandle.exists, polled by the shim; no argument is false. */
+static void js_effekseer_exists(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1) return JS_NewBool(ctx, 0);
-    int32_t inst;
-    if (JS_ToInt32(ctx, &inst, argv[0])) return JS_EXCEPTION;
-    return JS_NewBool(ctx, effekseer_exists(inst));
-}
-
-/* setProjectionMatrix(array) - expects a 16-element JS array */
-static JSValue js_effekseer_set_projection_matrix(JSContext *ctx, JSValueConst this_val,
-                                                    int argc, JSValueConst *argv)
-{
-    (void)this_val;
-    if (argc < 1 || !JS_IsArray(argv[0]))
-        return JS_ThrowTypeError(ctx, "setProjectionMatrix expects a 16-element array");
-
-    float m[16];
-    for (int i = 0; i < 16; i++) {
-        JSValue elem = JS_GetPropertyUint32(ctx, argv[0], (uint32_t)i);
-        double v = 0;
-        int rc = JS_ToFloat64(ctx, &v, elem);
-        JS_FreeValue(ctx, elem);
-        if (rc) return JS_EXCEPTION;
-        m[i] = (float)v;
+    if (jsb_arg_count(ctx) < 1) {
+        jsb_ret_bool(ctx, false);
+        return;
     }
+    int32_t inst;
+    if (!jsb_arg_to_i32(ctx, 0, &inst)) return;
+    jsb_ret_bool(ctx, effekseer_exists(inst));
+}
+
+/* setProjectionMatrix(array) - expects a 16-element JS array
+   Why: Effekseer.Context.setProjectionMatrix; read as read_matrix_arg. */
+static void js_effekseer_set_projection_matrix(jsb_ctx *ctx)
+{
+    float m[16];
+    if (!read_matrix_arg(ctx, "setProjectionMatrix", m)) return;
     effekseer_set_projection_matrix(m);
-    return JS_UNDEFINED;
 }
 
-/* setCameraMatrix(array) - expects a 16-element JS array */
-static JSValue js_effekseer_set_camera_matrix(JSContext *ctx, JSValueConst this_val,
-                                                int argc, JSValueConst *argv)
+/* setCameraMatrix(array) - expects a 16-element JS array
+   Why: Effekseer.Context.setCameraMatrix; read as read_matrix_arg. */
+static void js_effekseer_set_camera_matrix(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1 || !JS_IsArray(argv[0]))
-        return JS_ThrowTypeError(ctx, "setCameraMatrix expects a 16-element array");
-
     float m[16];
-    for (int i = 0; i < 16; i++) {
-        JSValue elem = JS_GetPropertyUint32(ctx, argv[0], (uint32_t)i);
-        double v = 0;
-        int rc = JS_ToFloat64(ctx, &v, elem);
-        JS_FreeValue(ctx, elem);
-        if (rc) return JS_EXCEPTION;
-        m[i] = (float)v;
-    }
+    if (!read_matrix_arg(ctx, "setCameraMatrix", m)) return;
     effekseer_set_camera_matrix(m);
-    return JS_UNDEFINED;
 }
 
-/* update(deltaFrames) */
-static JSValue js_effekseer_update(JSContext *ctx, JSValueConst this_val,
-                                    int argc, JSValueConst *argv)
+/* update(deltaFrames)
+   Why: Effekseer.Context.update; advances effects by `deltaFrames` 60 Hz
+   frames (default 1). */
+static void js_effekseer_update(jsb_ctx *ctx)
 {
-    (void)this_val;
     double delta = 1.0;
-    if (argc >= 1 && JS_ToFloat64(ctx, &delta, argv[0])) return JS_EXCEPTION;
+    if (jsb_arg_count(ctx) >= 1 && !jsb_arg_to_f64(ctx, 0, &delta)) return;
     effekseer_update((float)delta);
-    return JS_UNDEFINED;
 }
 
-/* beginDraw() */
-static JSValue js_effekseer_begin_draw(JSContext *ctx, JSValueConst this_val,
-                                        int argc, JSValueConst *argv)
+/* beginDraw()
+   Why: Effekseer.Context.beginDraw. Arguments are ignored. */
+static void js_effekseer_begin_draw(jsb_ctx *ctx)
 {
-    (void)ctx; (void)this_val; (void)argc; (void)argv;
+    (void)ctx;
     effekseer_begin_draw();
-    return JS_UNDEFINED;
 }
 
-/* drawHandle(instanceHandle) */
-static JSValue js_effekseer_draw_handle(JSContext *ctx, JSValueConst this_val,
-                                         int argc, JSValueConst *argv)
+/* drawHandle(instanceHandle)
+   Why: Effekseer.Context.drawHandle; no argument is a no-op. */
+static void js_effekseer_draw_handle(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1) return JS_UNDEFINED;
+    if (jsb_arg_count(ctx) < 1) return;
     int32_t inst;
-    if (JS_ToInt32(ctx, &inst, argv[0])) return JS_EXCEPTION;
+    if (!jsb_arg_to_i32(ctx, 0, &inst)) return;
     effekseer_draw_handle(inst);
-    return JS_UNDEFINED;
 }
 
-/* endDraw() */
-static JSValue js_effekseer_end_draw(JSContext *ctx, JSValueConst this_val,
-                                      int argc, JSValueConst *argv)
+/* endDraw()
+   Why: Effekseer.Context.endDraw. Arguments are ignored. */
+static void js_effekseer_end_draw(jsb_ctx *ctx)
 {
-    (void)ctx; (void)this_val; (void)argc; (void)argv;
+    (void)ctx;
     effekseer_end_draw();
-    return JS_UNDEFINED;
 }
 
-/* setRestorationOfStatesFlag(flag) */
-static JSValue js_effekseer_set_restoration_flag(JSContext *ctx, JSValueConst this_val,
-                                                   int argc, JSValueConst *argv)
+/* setRestorationOfStatesFlag(flag)
+   Why: Effekseer.Context.setRestorationOfStatesFlag; the flag is ToBoolean
+   of the argument, default true. */
+static void js_effekseer_set_restoration_flag(jsb_ctx *ctx)
 {
-    (void)this_val;
     bool flag = true;
-    if (argc >= 1) {
-        int val = JS_ToBool(ctx, argv[0]);
-        if (val < 0) return JS_EXCEPTION;
-        flag = val != 0;
-    }
+    if (jsb_arg_count(ctx) >= 1) flag = jsb_arg_truthy(ctx, 0);
     effekseer_set_restoration_of_states_flag(flag);
-    return JS_UNDEFINED;
 }
 
-/* setBackground(glTexture) */
-static JSValue js_effekseer_set_background(JSContext *ctx, JSValueConst this_val,
-                                            int argc, JSValueConst *argv)
+/* setBackground(glTexture)
+   Why: Effekseer.Context.setBackground for distortion effects. The GL
+   texture name (default 0) is borrowed, not owned. */
+static void js_effekseer_set_background(jsb_ctx *ctx)
 {
-    (void)this_val;
     uint32_t tex = 0;
-    if (argc >= 1 && JS_ToUint32(ctx, &tex, argv[0])) return JS_EXCEPTION;
+    if (jsb_arg_count(ctx) >= 1 && !jsb_arg_to_u32(ctx, 0, &tex)) return;
     effekseer_set_background(tex);
-    return JS_UNDEFINED;
 }
 
-/* resetBackground() */
-static JSValue js_effekseer_reset_background(JSContext *ctx, JSValueConst this_val,
-                                              int argc, JSValueConst *argv)
+/* resetBackground()
+   Why: Effekseer.Context.resetBackground. Arguments are ignored. */
+static void js_effekseer_reset_background(jsb_ctx *ctx)
 {
-    (void)ctx; (void)this_val; (void)argc; (void)argv;
+    (void)ctx;
     effekseer_reset_background();
-    return JS_UNDEFINED;
 }
 
-/* getLoadedCount() -> int */
-static JSValue js_effekseer_get_loaded_count(JSContext *ctx, JSValueConst this_val,
-                                              int argc, JSValueConst *argv)
+/* getLoadedCount() -> int
+   Why: diagnostics for the shim and tests. */
+static void js_effekseer_get_loaded_count(jsb_ctx *ctx)
 {
-    (void)this_val; (void)argc; (void)argv;
-    return JS_NewInt32(ctx, effekseer_get_loaded_count());
+    jsb_ret_i32(ctx, effekseer_get_loaded_count());
 }
 
-/* getPlayingCount() -> int */
-static JSValue js_effekseer_get_playing_count(JSContext *ctx, JSValueConst this_val,
-                                               int argc, JSValueConst *argv)
+/* getPlayingCount() -> int
+   Why: diagnostics for the shim and tests. */
+static void js_effekseer_get_playing_count(jsb_ctx *ctx)
 {
-    (void)this_val; (void)argc; (void)argv;
-    return JS_NewInt32(ctx, effekseer_get_playing_count());
+    jsb_ret_i32(ctx, effekseer_get_playing_count());
 }
 
 /* Registration */
 
-static const JSCFunctionListEntry js_effekseer_funcs[] = {
-    JS_CFUNC_DEF("init", 3, js_effekseer_init),
-    JS_CFUNC_DEF("shutdown", 0, js_effekseer_shutdown),
-    JS_CFUNC_DEF("isInitialized", 0, js_effekseer_is_initialized),
-    JS_CFUNC_DEF("load", 2, js_effekseer_load),
-    JS_CFUNC_DEF("release", 1, js_effekseer_release),
-    JS_CFUNC_DEF("isLoaded", 1, js_effekseer_is_loaded),
-    JS_CFUNC_DEF("play", 4, js_effekseer_play),
-    JS_CFUNC_DEF("stop", 1, js_effekseer_stop),
-    JS_CFUNC_DEF("stopRoot", 1, js_effekseer_stop_root),
-    JS_CFUNC_DEF("stopAll", 0, js_effekseer_stop_all),
-    JS_CFUNC_DEF("setPosition", 4, js_effekseer_set_position),
-    JS_CFUNC_DEF("setRotation", 4, js_effekseer_set_rotation),
-    JS_CFUNC_DEF("setScale", 4, js_effekseer_set_scale),
-    JS_CFUNC_DEF("setSpeed", 2, js_effekseer_set_speed),
-    JS_CFUNC_DEF("exists", 1, js_effekseer_exists),
-    JS_CFUNC_DEF("setProjectionMatrix", 1, js_effekseer_set_projection_matrix),
-    JS_CFUNC_DEF("setCameraMatrix", 1, js_effekseer_set_camera_matrix),
-    JS_CFUNC_DEF("update", 1, js_effekseer_update),
-    JS_CFUNC_DEF("beginDraw", 0, js_effekseer_begin_draw),
-    JS_CFUNC_DEF("drawHandle", 1, js_effekseer_draw_handle),
-    JS_CFUNC_DEF("endDraw", 0, js_effekseer_end_draw),
-    JS_CFUNC_DEF("setRestorationOfStatesFlag", 1, js_effekseer_set_restoration_flag),
-    JS_CFUNC_DEF("setBackground", 1, js_effekseer_set_background),
-    JS_CFUNC_DEF("resetBackground", 0, js_effekseer_reset_background),
-    JS_CFUNC_DEF("getLoadedCount", 0, js_effekseer_get_loaded_count),
-    JS_CFUNC_DEF("getPlayingCount", 0, js_effekseer_get_playing_count),
-};
-
-void bind_effekseer_register(JSContext *ctx)
+/* Fill __native_effekseer in upstream's function-list order, with its
+   arities as each function's `length`. Returns false with a JS exception
+   pending. */
+static bool effekseer_module_init(jsb_ctx *ctx, jsb_val *m)
 {
-    JSValue global = JS_GetGlobalObject(ctx);
-    JSValue obj = JS_NewObject(ctx);
-    JS_SetPropertyFunctionList(ctx, obj, js_effekseer_funcs,
-                               sizeof(js_effekseer_funcs) / sizeof(js_effekseer_funcs[0]));
-    JS_SetPropertyStr(ctx, global, "__native_effekseer", obj);
-    JS_FreeValue(ctx, global);
+    return jsb_set_fn_n(ctx, m, "init", js_effekseer_init, 3) &&
+           jsb_set_fn_n(ctx, m, "shutdown", js_effekseer_shutdown, 0) &&
+           jsb_set_fn_n(ctx, m, "isInitialized", js_effekseer_is_initialized, 0) &&
+           jsb_set_fn_n(ctx, m, "load", js_effekseer_load, 2) &&
+           jsb_set_fn_n(ctx, m, "release", js_effekseer_release, 1) &&
+           jsb_set_fn_n(ctx, m, "isLoaded", js_effekseer_is_loaded, 1) &&
+           jsb_set_fn_n(ctx, m, "play", js_effekseer_play, 4) &&
+           jsb_set_fn_n(ctx, m, "stop", js_effekseer_stop, 1) &&
+           jsb_set_fn_n(ctx, m, "stopRoot", js_effekseer_stop_root, 1) &&
+           jsb_set_fn_n(ctx, m, "stopAll", js_effekseer_stop_all, 0) &&
+           jsb_set_fn_n(ctx, m, "setPosition", js_effekseer_set_position, 4) &&
+           jsb_set_fn_n(ctx, m, "setRotation", js_effekseer_set_rotation, 4) &&
+           jsb_set_fn_n(ctx, m, "setScale", js_effekseer_set_scale, 4) &&
+           jsb_set_fn_n(ctx, m, "setSpeed", js_effekseer_set_speed, 2) &&
+           jsb_set_fn_n(ctx, m, "exists", js_effekseer_exists, 1) &&
+           jsb_set_fn_n(ctx, m, "setProjectionMatrix", js_effekseer_set_projection_matrix, 1) &&
+           jsb_set_fn_n(ctx, m, "setCameraMatrix", js_effekseer_set_camera_matrix, 1) &&
+           jsb_set_fn_n(ctx, m, "update", js_effekseer_update, 1) &&
+           jsb_set_fn_n(ctx, m, "beginDraw", js_effekseer_begin_draw, 0) &&
+           jsb_set_fn_n(ctx, m, "drawHandle", js_effekseer_draw_handle, 1) &&
+           jsb_set_fn_n(ctx, m, "endDraw", js_effekseer_end_draw, 0) &&
+           jsb_set_fn_n(ctx, m, "setRestorationOfStatesFlag", js_effekseer_set_restoration_flag, 1) &&
+           jsb_set_fn_n(ctx, m, "setBackground", js_effekseer_set_background, 1) &&
+           jsb_set_fn_n(ctx, m, "resetBackground", js_effekseer_reset_background, 0) &&
+           jsb_set_fn_n(ctx, m, "getLoadedCount", js_effekseer_get_loaded_count, 0) &&
+           jsb_set_fn_n(ctx, m, "getPlayingCount", js_effekseer_get_playing_count, 0);
 }
+
+/* jsb_runtime_setup callback that defines the module; `user` is unused. */
+static bool effekseer_define_setup(jsb_ctx *ctx, void *user)
+{
+    (void)user;
+    return jsb_define_module(ctx, "__native_effekseer", effekseer_module_init);
+}
+
+/* smzuggler: upstream's function list defined the functions non-enumerable
+ * (writable, configurable); jsb_set_fn_n assigns them, which makes them
+ * enumerable. This restores the old attributes so the JS API stays
+ * byte-for-byte. Run once by bind_effekseer_define, after the module exists. */
+static const char effekseer_hide_fns_js[] =
+    "(function (m) {\n"
+    "  Object.getOwnPropertyNames(m).forEach(function (k) {\n"
+    "    Object.defineProperty(m, k, { enumerable: false });\n"
+    "  });\n"
+    "})(__native_effekseer);\n";
+
+bool bind_effekseer_define(jsb_runtime *rt)
+{
+    if (!rt) {
+        fprintf(stderr, "bind_effekseer_define: no jsb runtime\n");
+        return false;
+    }
+    if (!jsb_runtime_setup(rt, effekseer_define_setup, NULL))
+        return false;
+    char err[256];
+    if (!jsb_runtime_eval(rt, effekseer_hide_fns_js, "bind_effekseer.c",
+                          err, sizeof err)) {
+        fprintf(stderr, "bind_effekseer_define: %s\n", err);
+        return false;
+    }
+    return true;
+}
+
+#ifdef SMZ_JSB_ADOPT
+void bind_effekseer_register(struct JSContext *ctx)
+{
+    bind_effekseer_define(jsb_runtime_of(ctx));
+}
+#endif
