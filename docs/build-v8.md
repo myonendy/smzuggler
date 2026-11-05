@@ -111,7 +111,13 @@ One line of why for each (`--print-args` prints exactly these):
   libstdc++ lacks C++20 parts V8 13.6 uses (`std::bit_cast`,
   `std::make_unique_for_overwrite`) once `use_custom_libcxx` is off
   (DEC-M1-T001-SYSROOT). The build host needs a libstdc++ at least as new as
-  GCC 13's; the linking host's must be the same or newer.
+  GCC 13's; the linking host's must be the same or newer. Without the sysroot,
+  `gn gen` also asks the host's `pkg-config` for glib (`glib-2.0`,
+  `gmodule-2.0`, `gobject-2.0`, `gthread-2.0`, from V8's
+  `//build/config/linux` compiler config), so a local build needs `pkg-config`
+  and the glib headers: Arch `glib2` and `pkgconf`, Debian/Ubuntu
+  `libglib2.0-dev` and `pkg-config`, Fedora `glib2-devel` and `pkgconf`. No
+  other host package is checked by gn for the monolith.
 * `v8_use_external_startup_data = false`: the startup snapshot is linked in, so
   there is no `snapshot_blob.bin` to find at run time.
 * `v8_enable_i18n_support = true`: `Intl` and `toLocaleString` match NW.js

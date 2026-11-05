@@ -42,8 +42,12 @@ jobs:
           pin=$(sed -n 's/^V8_VERSION=//p' tools/v8/build_v8.sh)
           [ "$pin" = "$V8_VERSION" ] || { echo "pin is $pin, workflow says $V8_VERSION"; exit 1; }
           bash tools/v8/build_v8.sh --print-args
-      - name: Install ccache
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ccache
+      # Without V8's sysroot (use_sysroot = false), gn's //build/config/linux
+      # pkg_config("glib") check needs the host's glib development files.
+      - name: Install host build packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ccache libglib2.0-dev pkg-config
       - name: Restore ccache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
