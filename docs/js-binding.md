@@ -5,6 +5,8 @@ Modified 2026-11-01: add persistent callbacks.
 Modified 2026-11-01: document the V8 script watchdog.
 Modified 2026-11-01: document how the game loop calls into JS.
 Modified 2026-11-01: document the error handler's js_engine.h path.
+Modified 2026-11-01: document microtask checkpoints and nextTick order.
+Modified 2026-11-04: document the V8 code cache.
 How native C bindings talk to the JS engine through jsb.h, and the handle rules.
 -->
 # JS binding: the `jsb` seam
@@ -39,6 +41,73 @@ QuickJS. Rules while it lives:
   most 32,767 distinct `jsb_fn`s.
 - Known difference: a string argument holding a lone UTF-16 surrogate is read out in
   QuickJS's encoding of it, where V8 writes U+FFFD.
+
+## Adoption (transitional, removed by M1-T027)
+
+The game runs on `js_engine.c` (QuickJS) in both modes until M1-T027, so binding ports
+need a jsb runtime on *its* context (DEC-M1-T014-JSB-ADOPT). The private header
+`src/jsb/jsb_adopt.h` declares `jsb_runtime_adopt(JSContext *)`, which wraps a context
+without owning it (`js_engine_init` calls it; `js_engine_get_jsb()` returns it), and
+`jsb_runtime_of(JSContext *)`, which the port cards' `bind_<x>_register` wrappers use.
+jsb keeps its runtime in the QuickJS **runtime** opaque; the context opaque stays
+`js_engine.c`'s. `jsb_runtime_destroy` on an adopted runtime frees only jsb's own
+references and must run before the context is freed (`js_engine_shutdown` does).
+
+`smz_jsb_quickjs` is built in both modes and linked by `outsider` and by every test
+target that builds `js_engine.c` (the root `CMakeLists.txt` scans the `tests` targets).
+Its PUBLIC `SMZ_JSB_ADOPT` guards every use of `jsb_adopt.h` outside `src/jsb/`. In
+quickjs mode `smz_jsb` is an alias of it; in v8 mode `smz_jsb` is the V8 backend
+(via `smz_js_engine_v8`, which never sees `SMZ_JSB_ADOPT`). No target links both.
+
+## Seam calls for binding ports (M1-T007b)
+
+In `jsb.h` on both backends (test `jsb_values`); they stay after M1-T027. Coercing reads
+apply the ECMAScript conversions (valueOf runs; a Symbol is a TypeError).
+`jsb_clear_exception` never drops a watchdog termination; on V8 each native call runs
+in a `TryCatch` that it resets. On V8 `jsb_throw_internal` makes an `Error` whose own
+`name` is `"InternalError"`. Added beyond the card's list: `jsb_val_to_i32/u32`
+(bind_tilemap.c coerces elements), `jsb_val_type` and `jsb_engine_version`.
+
+| QuickJS in `src/bindings/` | jsb |
+| --- | --- |
+| `JS_CFUNC_DEF`, `JS_SetPropertyFunctionList`, `JS_NewCFunction` | `jsb_set_fn_n` (arity = `length`) |
+| `JS_GetGlobalObject` | `jsb_define_module` |
+| `JS_NewObject`, `JS_SetPropertyStr`, `JS_GetPropertyStr` | `jsb_new_object`, `jsb_set_prop`, `jsb_get_prop` |
+| `JS_NewAtomLen`, `JS_SetProperty`, `JS_FreeAtom` | `jsb_set_prop` on a NUL-terminated key copy |
+| `JS_NewArray`, `JS_IsArray` | `jsb_new_array`, `jsb_is_array` |
+| `JS_SetPropertyUint32`, `JS_GetPropertyUint32` | `jsb_set_index`, `jsb_get_index` |
+| `JS_NewInt32`, `JS_NewUint32`, `JS_NewFloat64` | `jsb_new_i32`, `jsb_new_u32`, `jsb_new_f64` (or `jsb_ret_*`) |
+| `JS_NewBool`, `JS_TRUE`, `JS_FALSE` | `jsb_new_bool`, `jsb_ret_bool` |
+| `JS_NULL`, `JS_UNDEFINED` | `jsb_new_null`, `jsb_ret_undefined` |
+| `JS_NewString`, `JS_NewStringLen` | `jsb_new_str`, `jsb_new_str_len` |
+| `JS_NewArrayBufferCopy` | `jsb_new_buffer_copy` |
+| `JS_GetArrayBuffer`, `JS_GetTypedArrayBuffer` | `jsb_arg_bytes` |
+| `JS_ToBool` | `jsb_arg_truthy` |
+| `JS_ToInt32`, `JS_ToUint32`, `JS_ToFloat64` | `jsb_arg_to_i32/u32/f64`; elements `jsb_val_to_i32/u32/f64` |
+| `JS_ToCString`, `JS_ToCStringLen`, `JS_FreeCString` | `jsb_arg_to_str`, `jsb_free_str` |
+| `JS_IsNull`, `JS_IsUndefined` | `jsb_val_type` |
+| `JS_IsException`, `JS_EXCEPTION` | false/NULL from the jsb call, then return |
+| `JS_GetException` | `jsb_clear_exception` |
+| `JS_FreeValue` | none: handles are call-scoped (§15.8) |
+| `JS_ThrowTypeError`, `JS_ThrowRangeError` | `jsb_throw_type`, `jsb_throw_range` |
+| `JS_ThrowInternalError`, `JS_ThrowOutOfMemory` | `jsb_throw_internal` (`"out of memory"`) |
+| `JS_GetVersion` | `jsb_engine_version` |
+
+## Ported bindings
+
+Each port defines its module in `bind_<x>_define(jsb_runtime *rt, ...)`; the old
+`bind_<x>_register(struct JSContext *, ...)` stays as a wrapper under `SMZ_JSB_ADOPT`
+until M1-T026. A `tests/smz/test_bind_<x>_jsb.c` test pins the JS API to the pre-port
+binary's in both engine modes.
+
+| Binding | Module and functions (`length`) | jsb calls used | Buffers | Callbacks |
+| --- | --- | --- | --- | --- |
+| `bind_input.c` (M1-T015) | `__native_input`: `pollEvents` (0), `getGamepad` (1), `getGamepadCount` (0) | `jsb_define_module`, `jsb_set_fn_n`, `jsb_new_object/array/str/i32/f64/bool/null`, `jsb_set_prop`, `jsb_set_index`, `jsb_arg_count`, `jsb_arg_to_i32` (`getGamepad` coerces its index), `jsb_ret_val/i32`, `jsb_runtime_eval` | none | none |
+
+`jsb_set_fn_n` assigns functions, so they come out enumerable, while `JS_CFUNC_DEF` made
+them non-enumerable. `bind_input_define` restores that with a one-line
+`Object.defineProperty` script after the module exists, so `Object.keys(__native_input)`
+stays empty as before.
 
 ## API
 
@@ -216,6 +285,23 @@ auto-save outcome, and in v8 mode that a throwing jsb callback is logged with it
 The older `tests/test_error_handler.c` still calls QuickJS directly and runs on QuickJS
 in both modes until M1-T027 ports it.
 
+## Ported bindings
+Each port keeps its JS API byte-for-byte (names, order, `length`, results, errors) and
+adds `bind_<x>_define(jsb_runtime *rt, ...)`; the old `bind_<x>_register(struct JSContext
+*, ...)` stays as a one-line wrapper under `#ifdef SMZ_JSB_ADOPT` until M1-T026
+(DEC-M1-T014-JSB-ADOPT). Each has a `tests/smz/test_bind_<x>_jsb.c` ctest run in both modes.
+
+| Binding | Globals | Functions (`length`) | jsb calls used | Buffers | Callbacks |
+| --- | --- | --- | --- | --- | --- |
+| `bind_platform.c` (M1-T014) | `__native_platform`, `__native_process` | `setFullscreen` (1), `isFullscreen`, `getDisplaySize`, `getDisplayScale`, `getWindowSize`, `setWindowTitle` (1), `quit` (0 for the rest); process: `platform`, `arch`, `engine` strings, `environ`, `hrtime` (0) | `jsb_define_module`, `jsb_runtime_setup`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_truthy`, `jsb_arg_to_str`/`jsb_free_str`, `jsb_new_object`/`array`/`i32`/`f64`/`str`, `jsb_set_prop`, `jsb_set_index`, `jsb_ret_*`, `jsb_throw_type`, `jsb_throw_internal`, `jsb_engine_version` | none | none |
+
+* **bind_platform.** The `__native_process` helpers stay inline in `bind_platform.h`
+  (`bind_platform_define_process(rt)`), so window-less tests need no SDL;
+  `bind_platform_register_process(struct JSContext *)` is their transitional wrapper.
+  `bind_platform_define` also defines `__native_process`, as the old register did. The
+  `Platform *` is kept in a file static (jsb modules have no user pointer); no jsb handle
+  is stored. `engine` is `jsb_engine_version()`, the running engine's version.
+
 ## Handle rules (§15.8)
 These are the rules for code that touches V8 handles, in jsb and elsewhere (WebGL has
 its own GL-object rules in `webgl.md`).
@@ -276,18 +362,39 @@ v8-mode library serves every caller that needs only `js_engine.h`, starting with
   `__error_handler_dispatchRejection` when the shim is loaded). Its count is the number
   of promise reaction jobs, taken from a promise hook; `queueMicrotask` callbacks are
   not counted. It returns -1 if a microtask threw uncaught.
-- **`.jsc` cache**: same paths and mtime rule as `js_engine.c`. The file holds the
-  source and V8's code cache, because a V8 code cache only works with its own source
-  and `js_engine.h` promises that a hit runs what was cached. M1-T012 replaces it with
-  the hashed cache under `$XDG_CACHE_HOME`.
+- **Code cache**: V8 code caches under `$XDG_CACHE_HOME/smzuggler-rt/v8cache/`, never
+  a `.jsc` beside the script; see "Code cache" below.
 - **Watchdog**: see "Watchdog" below.
 - **`js_engine_get_context`** is declared only without `SMZ_JS_ENGINE_V8`. In quickjs
-  mode `js_engine_get_jsb()` returns NULL: the transitional backend creates its own
-  `JSContext` and has no way to adopt the engine's; that needs a change to
-  `jsb_quickjs.c`, so quickjs-mode callers keep `js_engine_get_context` meanwhile.
+  mode `js_engine_get_jsb()` returns the engine's own `JSContext` adopted by the
+  transitional backend (see "Adoption" above), so jsb modules share the game's globals.
 - **Handles** (§15.8): every entry point opens its own `HandleScope`; the engine owns
   exactly two kinds of `Global` (its context and pending rejections) and Resets them in
   `js_engine_shutdown` before the isolate is disposed of.
+
+### Code cache
+Card M1-T012 (§4.1 item 4, §5.6). `js_engine_eval_file_cached`, and `js_engine_eval_file`
+once a cache dir is set, keep V8's compiled code in `<dir>/<sha256>.bin`.
+
+- **Directory**: the one given to `js_engine_set_cache_dir`, else
+  `js_codecache_default_dir()` (`$XDG_CACHE_HOME/smzuggler-rt/v8cache`, falling back to
+  `$HOME/.cache/...`; Linux only). With neither, scripts run uncached.
+- **Key**: `js_codecache_key` hashes the source, a NUL, `V8::GetVersion()`, a NUL and
+  `ScriptCompiler::CachedDataVersionTag()` (which already folds in the flag hash). The
+  key comes from the source text, not the mtime, so an edit always recompiles.
+- **Produce**: on a miss the script compiles normally, runs, and only then
+  `CreateCodeCache` is called, so functions compiled lazily during the first run are in
+  the cache. The file is written to a temporary name and renamed into place.
+- **Consume**: the file is passed as `CachedData` (`BufferNotOwned`; the engine frees
+  the buffer after the compile) with `kConsumeCodeCache`. If V8 sets `rejected`
+  (another build, damaged data) the file is deleted and a fresh cache is written.
+- **Observability**: `js_codecache_get_stats` counts produced, accepted and rejected
+  caches for the process; `tests/smz/test_codecache.c` reads them, since acceptance is
+  invisible from JS.
+- `src/engine/js_codecache.cc` has no V8 dependency (CMake target `smz_js_codecache`),
+  so the key, directory and file handling are tested in quickjs mode too.
+- **Handles**: no `Local` outlives `compile_and_run`'s `HandleScope`; the `CachedData`
+  belongs to the `ScriptCompiler::Source` and is deleted with it.
 
 ### Watchdog
 `js_engine_set_watchdog(engine, ms)` (from `--watchdog <ms>`) stops scripts that run
@@ -356,6 +463,36 @@ timing (DEC-M1-T009).
   microseconds); V8 reuses its compilation cache except for the rAF call, whose
   timestamp changes the source. In v8 mode each eval also re-arms the watchdog, so its
   limit applies per phase rather than per frame.
+
+### Microtask checkpoints
+V8 runs with `MicrotasksPolicy::kExplicit`: promise jobs run only at a checkpoint the
+embedder asks for, never when a script returns. Chrome (and so NW.js) runs one after every
+task, and Node runs the `process.nextTick` queue before promise jobs. Card M1-T010 makes
+the loop do the same (DEC-M1-T010 has the exact order):
+
+- **After each native input event (V8).** The bootstrap polls the input batch once,
+  then invokes the original input dispatcher with one raw event at a time. Each
+  invocation checkpoints after complete delivery, including consumed overlay events,
+  bubbling and default actions. The borrowed poll function is restored on errors.
+  Resize and gamepad phases temporarily wrap document/window dispatch with shared
+  nesting depth. The video update phase also wraps video-element dispatch, so each
+  native-backed `ended` event finishes all synchronous listeners before draining
+  ticks and promises, ahead of the next video event or rAF callback. Temporary
+  wrappers restore inherited dispatch methods as well as own methods on errors.
+  Each phase also retains its engine-driven checkpoint.
+- **After each timer and rAF callback (V8).** Scheduler accessors installed at context
+  creation wrap callbacks as the DOM shim installs its schedulers. Startup registrations
+  are covered before the first frame. Each callback checkpoints in a finally block.
+- **nextTick first (V8).** The context owns a dedicated tick queue. Every native and
+  engine-driven checkpoint exhausts ticks before draining promises, then repeats if
+  promises queued more ticks. A throwing tick is reported, then remaining ticks
+  drain before promises; watchdog termination stops the drain. The process shim
+  keeps its other properties.
+
+The exact orders and QuickJS phase-level differences are recorded in
+[DEC-M1-T010](decisions/DEC-M1-T010.md). `tests/smz/test_microtasks.c` runs the real
+loop and DOM input dispatcher, registering startup timers and rAF callbacks before
+any frame. It also checks promises queued before ticks and ticks queued by promises.
 
 `tests/smz/test_game_loop_js.c` (ctest `game_loop_js`, both engine modes) runs the real
 `game_loop.c` with the platform, renderer, audio, video and log calls stubbed. It checks

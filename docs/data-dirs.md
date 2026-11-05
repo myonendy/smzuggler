@@ -1,6 +1,7 @@
 <!--
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
+Modified 2026-11-04: document the v8-mode code cache directory.
 Host-owned directories for logs, the bytecode cache and runtime config.
 The game folder is never written; see spec §5.3, §5.6 and §13.
 -->
@@ -41,6 +42,16 @@ it on the next launch that has a usable state path.
 Disposable data. QuickJS `.jsc` bytecode lives in the `jsc/` child, keyed by
 each script's path relative to the game root (U10). Clearing it only costs a
 recompile on the next load.
+
+In v8 mode (`SMZ_JS_ENGINE=v8`) the `.jsc` files are replaced by V8 code caches in the
+`v8cache/` child: `$XDG_CACHE_HOME/smzuggler-rt/v8cache/<sha256>.bin` (M1-T012, spec
+§4.1 item 4 and §5.6). The name is the sha256 of the script source, V8's version
+string and V8's flag hash (`ScriptCompiler::CachedDataVersionTag`), so an edited
+script, a V8 upgrade or a flag change simply gets a new file. A file V8 rejects is
+deleted and rewritten. Nothing is ever written next to a script. A directory passed
+to `js_engine_set_cache_dir` replaces `v8cache/`; on platforms without XDG and with
+no such directory, scripts run uncached. Old keys are not pruned yet: clearing the
+directory is always safe.
 
 Fallback: `$HOME/.cache/smzuggler-rt/`.
 

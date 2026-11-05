@@ -4,12 +4,15 @@
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-11-01: eval_file honours the bytecode cache dir when set.
  * Modified 2026-11-01: add js_engine_get_jsb (NULL here; see js_engine.h).
+ * Modified 2026-11-04: adopt the context into a jsb runtime at init
+ * (src/jsb/jsb_adopt.h, transitional until M1-T027); get_jsb returns it.
  *
  * QuickJS runtime and the optional .jsc cache. See docs/data-dirs.md.
  * Engine state is owned by the caller on the main thread.
  */
 
 #include "engine/js_engine.h"
+#include "jsb_adopt.h"
 
 #include <quickjs.h>
 #include <stdint.h>
@@ -57,6 +60,9 @@ struct JSEngine {
        the game folder can stay read-only: see js_engine_set_cache_dir(). */
     char *cache_dir;
     char *cache_game_root;
+
+    /* The context adopted by jsb (jsb_adopt.h); freed before ctx. */
+    jsb_runtime *jsb;
 };
 
 static uint64_t monotonic_ms(void)
@@ -343,6 +349,17 @@ JSEngine *js_engine_init(void)
     engine->rt = rt;
     engine->ctx = ctx;
 
+    /* Ported bindings define their modules through this runtime, in the
+       game's own globals; it uses the runtime opaque, not the context's. */
+    engine->jsb = jsb_runtime_adopt(ctx);
+    if (!engine->jsb) {
+        fprintf(stderr, "Failed to adopt the JS context into jsb\n");
+        JS_FreeContext(ctx);
+        JS_FreeRuntime(rt);
+        free(engine);
+        return NULL;
+    }
+
     JS_SetContextOpaque(ctx, engine);
 
     /* Without a tracker QuickJS drops unhandled rejections silently. */
@@ -366,6 +383,9 @@ void js_engine_shutdown(JSEngine *engine)
     free(engine->rej_reasons);
     free(engine->cache_dir);
     free(engine->cache_game_root);
+    /* jsb's references go first: an adopted runtime must not outlive the
+       context it wraps. */
+    jsb_runtime_destroy(engine->jsb);
     if (engine->ctx) JS_FreeContext(engine->ctx);
     if (engine->rt)  JS_FreeRuntime(engine->rt);
     free(engine);
@@ -755,13 +775,12 @@ void js_engine_set_console_callback(JSEngine *engine, JSConsoleCallback cb, void
     engine->console_userdata = userdata;
 }
 
-/** No jsb runtime in quickjs mode: the transitional QuickJS jsb backend
- * creates its own JSContext and cannot adopt this engine's, so a runtime it
- * made would not share the game's globals. Returns NULL; see js_engine.h. */
+/** Returns the jsb runtime adopted from this engine's context at init, so
+ * jsb modules share the game's globals; NULL for a NULL engine. Borrowed:
+ * js_engine_shutdown frees it before the context. See js_engine.h. */
 struct jsb_runtime *js_engine_get_jsb(JSEngine *engine)
 {
-    (void)engine;
-    return NULL;
+    return engine ? engine->jsb : NULL;
 }
 
 JSContext *js_engine_get_context(JSEngine *engine)

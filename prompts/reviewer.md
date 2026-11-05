@@ -7,22 +7,35 @@ Reject (verdict FAIL) if ANY of these hold:
 2. Tests are weak: they don't exercise the specified behaviour, assert trivially, mirror the
    implementation, or the implementation special-cases the test inputs / hardcodes outputs.
 3. Hollow work: placeholder logic, swallowed errors, fake data presented as real.
-4. Architecture violations of docs/ARCHITECTURE.md or docs/spec/SPEC.md "non-negotiable" rules,
-   even ones the layer gate can't see (hidden global state, nondeterminism in sim code,
-   rendering in logic, function pointers in reload-surviving state, etc.).
-5. Messy code: duplicated logic, god functions, unclear names, magic numbers without reason,
-   missing *why* comments on non-obvious code, docs not updated.
-6. Scope creep or token waste visible in the diff (unrelated refactors, dead code, giant files).
+4. Architecture violations of ARCHITECTURE.md (its relevant parts are in the context pack) or
+   docs/spec/SPEC.md "non-negotiable" rules: wrong thread or owner, hidden global state,
+   engine-specific code outside its seam, a QuickJS call where `js_engine.h` must be used.
+5. Privacy or game material (AGENTS.md section 4) that the gates can't see: a game name or
+   ID outside `src/smzuggler/game_profile.c`, game data or saves in a test fixture, a
+   personal path in prose. Licence headers per spec §12 on new and changed files (U cards:
+   upstream's header only).
+6. Messy code: duplicated logic (including a helper copied from another file), functions over
+   60 lines, unclear names, magic numbers without reason, missing *why* comments on
+   non-obvious code, docs the card lists not updated.
+7. Scope creep or token waste visible in the diff (unrelated refactors, dead code, giant files).
+Also list, with severity "nit" (never a reason to FAIL), a COMMIT SUBJECT in the worker's
+report that doesn't say what changed; forge falls back to the card title.
 Nits that don't matter must NOT cause FAIL; list them with severity "nit".
 Be specific: each blocking issue names a file, the problem, and the exact fix.
-Keep exploration minimal: read only files in the diff and what they directly depend on.
-The context pack below already holds the spec sections and decisions this card
-names; don't re-read docs/spec/SPEC.md or docs/DECISIONS.md whole to find them.
+Keep exploration minimal: the diff is below; open only files it touches and what they
+directly depend on. The context pack below already holds the spec sections, decisions and
+architecture parts this card needs. Never open docs/spec/SPEC.md, docs/compat-surface.md,
+docs/DECISIONS.md or CHANGELOG.md whole; grep them.
+Missing CHANGELOG.md or docs/DECISIONS.md edits are not issues: forge writes the changelog
+line from the report, and decisions are optional files under docs/decisions/.
 
 ## Task card
 {{CARD}}
 
 {{CONTEXT}}
+
+## The worker's final report (claims to check, not facts)
+{{REPORT}}
 
 ## Diff (merge-base...HEAD)
 ```diff

@@ -29,6 +29,7 @@ Modified 2026-11-01: record the V8 build script and proposed pin.
 Modified 2026-11-01: record jsb persistent callbacks.
 Modified 2026-11-01: record the V8 script watchdog.
 Modified 2026-11-01: record the game loop off QuickJS.
+Modified 2026-11-01: record microtask checkpoints after every macrotask.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 <!-- Records project changes for release review; keep entries free of private data. -->
@@ -38,6 +39,15 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- `__native_input` (bind_input.c) is defined through the jsb seam by `bind_input_define`, with its JS API unchanged. (M1-T015)
+- bind_platform (`__native_platform`, `__native_process`) runs on the jsb seam through `bind_platform_define`, with its JS API unchanged and a both-modes ctest (M1-T014)
+- jsb can adopt the engine's QuickJS context (`js_engine_get_jsb()` works in quickjs mode) and has value, coercion, array, error and function-length calls for binding ports. (M1-T007b)
+- Store V8 code caches by source, version and flags in the host cache directory. (M1-T012)
+- Preserve nextTick priority after callback exceptions while reporting failures. (M1-T010)
+- Run a microtask checkpoint after every macrotask: after each input-phase dispatch, and
+  in v8 mode after each timer and rAF callback through the new
+  `__smz_microtaskCheckpoint()`; `process.nextTick` jobs now run before promise jobs
+  (DEC-M1-T010, `tests/smz/test_microtasks.c`).
 - Move `error_handler.c`'s window.onerror dispatch and crash auto-save off QuickJS onto
   `js_engine.h`, add the engine-neutral `error_handler_report_js_error(engine, message,
   stack, fatal)` and `error_handler_on_jsb_error`, a `jsb_error_fn` for jsb callback

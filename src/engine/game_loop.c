@@ -4,6 +4,9 @@
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-11-01: call into JS only through js_engine.h, with no QuickJS
  * calls, so the loop runs unchanged on both engines (card M1-T009).
+ * Modified 2026-11-01: a microtask checkpoint after every macrotask, with
+ * process.nextTick jobs ahead of promise jobs (card M1-T010).
+ * Modified 2026-11-04: move V8 callback and tick integration to context startup.
  */
 
 /*
@@ -21,8 +24,10 @@
  *   docs/js-binding.md "Handle rules"). Every call into JS goes through
  *   js_engine.h to the helper in kLoopJs, which keeps the JS functions the
  *   loop calls inside JS itself.
- * - Phase order and the two job drains (after timers, after rAF) are the
- *   game's timing contract; do not move them.
+ * - Phase order and the microtask checkpoints are the game's timing
+ *   contract; do not move them. Chrome runs a checkpoint after every task:
+ *   in v8 mode each timer and rAF callback is followed by one (the DOM dispatcher), and every phase call is followed by one in both modes
+ *   (run_checkpoint). docs/decisions/DEC-M1-T010.md, has the exact order.
  */
 
 #include "engine/game_loop.h"
@@ -107,7 +112,10 @@ static void control_shutdown(GameLoop *loop);
      'v'  a value follows (probe result, drained control replies)
      'e'  the probe threw: its message follows
    Keeping the functions in JS keeps the loop free of engine handles, so the
-   same code runs on QuickJS and on V8 (docs/js-binding.md, "Game loop"). */
+   same code runs on QuickJS and on V8 (docs/js-binding.md, "Game loop").
+
+   V8 owns nextTick priority and checkpoints; QuickJS retains its phase-level
+   tick queue. See docs/decisions/DEC-M1-T010.md for ordering. */
 static const char kLoopJs[] =
     "(function (g) {\n"
     "  'use strict';\n"
@@ -116,6 +124,25 @@ static const char kLoopJs[] =
     "               '__dom_updateGamepads', '__dom_flushTimers',\n"
     "               '__dom_flushAnimationFrames'];\n"
     "  var phases = {}, controlEval, outbox = [];\n"
+    "  var ticks = [], tickJob = false;\n"
+    "  /** Main-thread QuickJS fallback: exhaust owned callbacks before phase jobs. */\n"
+    "  function drainTicks() {\n"
+    "    tickJob = false;\n"
+    "    while (ticks.length) {\n"
+    "      var t = ticks.shift();\n"
+    "      try { t.fn.apply(undefined, t.args); } catch (e) {\n"
+    "        /** Re-throw tick errors as tasks so later ticks still run. */\n"
+    "        g.setTimeout(function () { throw e; }, 0);\n"
+    "      }\n"
+    "    }\n"
+    "  }\n"
+    "  /** Queue Node callbacks in QuickJS; V8 supplies its own queue at startup. */\n"
+    "  function nextTick(fn) {\n"
+    "    if (typeof fn !== 'function') throw new TypeError('nextTick callback must be a function');\n"
+    "    ticks.push({fn: fn, args: Array.prototype.slice.call(arguments, 1)});\n"
+    "    if (!tickJob) { tickJob = true; Promise.resolve().then(drainTicks); }\n"
+    "  }\n"
+    "  if (!g.__smz_microtaskCheckpoint && g.process) g.process.nextTick = nextTick;\n"
     "  function report(e) {\n"
     "    var msg = 'Unknown error', stack = null;\n"
     "    try { msg = String(e); } catch (ignored) {}\n"
@@ -138,7 +165,9 @@ static const char kLoopJs[] =
     "      for (var i = 0; i < NAMES.length; i++) phases[NAMES[i]] = g[NAMES[i]];\n"
     "      return 't';\n"
     "    },\n"
-    "    phase: function (a) { return invoke(phases[a[0]], g, a.slice(1)); },\n"
+    "    phase: function (a) {\n"
+    "      try { return invoke(phases[a[0]], g, a.slice(1)); } finally { drainTicks(); }\n"
+    "    },\n"
     "    call: function (a) { return invoke(g[a[0]], g, a.slice(1)); },\n"
     "    controlInit: function () {\n"
     "      g.__native_control_send = function (text) {\n"
@@ -654,21 +683,34 @@ static bool host_close_quits(GameLoop *loop)
     return quit;
 }
 
+/* Calls the phase function `name` like call_phase, then runs a microtask
+   checkpoint. Why: each native event dispatch is a task in Chrome, so the
+   jobs it queued run before the next dispatch (DEC-M1-T010). The phase op
+   has already drained the process.nextTick queue. Main thread only. */
+static void dispatch_phase(GameLoop *loop, const char *name, int argc,
+                           double a, double b)
+{
+    call_phase(loop, name, argc, a, b);
+    js_engine_execute_pending_jobs(loop->engine);
+}
+
 /* Phase 1 after SDL polling: a resize, queued input events and gamepads go
-   to dom_shim.js. Skipped while the JS side is unavailable. */
+   to dom_shim.js, each followed by a checkpoint. Skipped while the JS side
+   is unavailable. */
 static void run_input_phase(GameLoop *loop)
 {
     if (!loop->js_funcs_cached) return;
     int rw, rh;
     if (platform_check_resize(loop->platform, &rw, &rh)) {
-        call_phase(loop, "__dom_setWindowSize", 2, rw, rh);
+        dispatch_phase(loop, "__dom_setWindowSize", 2, rw, rh);
     }
-    call_phase(loop, "__dom_flushInputEvents", 0, 0, 0);
-    call_phase(loop, "__dom_updateGamepads", 0, 0, 0);
+    dispatch_phase(loop, "__dom_flushInputEvents", 0, 0, 0);
+    dispatch_phase(loop, "__dom_updateGamepads", 0, 0, 0);
 }
 
 /* Phase 4: rAF callbacks with the loop's elapsed time (ms since
-   game_loop_create) as their DOMHighResTimeStamp, then a job drain. */
+   game_loop_create) as their DOMHighResTimeStamp, then a checkpoint (in v8
+   mode each callback has also had its own; see kLoopJs). */
 static void run_raf_phase(GameLoop *loop)
 {
     if (loop->js_funcs_cached) {
@@ -812,7 +854,8 @@ bool game_loop_step(GameLoop *loop)
     phase_end = SDL_GetPerformanceCounter();
     loop->stats.timers_ms = ticks_to_ms(loop, phase_end - phase_start);
 
-    /* --- Phase 3: Microtasks/Jobs --- */
+    /* --- Phase 3: Microtasks/Jobs: the checkpoint after the timer phase
+       (in v8 mode each timer callback has also had its own) --- */
     phase_start = phase_end;
     js_engine_execute_pending_jobs(loop->engine);
     phase_end = SDL_GetPerformanceCounter();

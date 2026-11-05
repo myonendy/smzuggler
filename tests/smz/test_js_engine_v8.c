@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-04: quickjs-mode get_jsb is now the adopted runtime
+ * (card M1-T007b), so its assertion expects non-NULL.
  *
  * Stack-trace locations and the jsb accessor of js_engine.h, in both engine
  * modes (card M1-T007, spec section 4.1).
@@ -161,14 +163,14 @@ static void test_get_jsb_shares_globals(void)
     js_engine_shutdown(engine);
 }
 #else
-/* quickjs mode has no jsb runtime for the engine yet (js_engine.h). */
+/* quickjs mode adopts the engine's context into a jsb runtime (js_engine.h). */
 static void test_get_jsb_quickjs(void)
 {
     JSEngine *engine = js_engine_init();
     note("engine starts");
     assert(engine != NULL);
-    note("quickjs get_jsb is NULL and get_context remains");
-    assert(js_engine_get_jsb(engine) == NULL);
+    note("quickjs get_jsb is not NULL and get_context remains");
+    assert(js_engine_get_jsb(engine) != NULL);
     assert(js_engine_get_context(engine) != NULL);
     js_engine_shutdown(engine);
 }

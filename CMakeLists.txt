@@ -10,6 +10,9 @@
 # Modified 2026-11-01: build smz_jsb on the transitional QuickJS backend in quickjs mode.
 # Modified 2026-11-01: build js_engine.h on V8 as smz_js_engine_v8 in v8 mode.
 # Modified 2026-11-01: add the script watchdog thread to smz_js_engine_v8.
+# Modified 2026-11-04: link smz_jsb_quickjs (jsb adoption) into everything
+# that builds src/engine/js_engine.c.
+# Modified 2026-11-04: add the V8 code cache store smz_js_codecache.
 # Build orchestration; see docs/DECISIONS.md (DEC-M0-T001).
 
 cmake_minimum_required(VERSION 3.20)
@@ -264,6 +267,7 @@ target_link_libraries(outsider PRIVATE
     SDL3::SDL3
     ${RMMZ_GL_LIB}
     qjs
+    smz_jsb_quickjs
     soloud
     ${RMMZ_SYS_LIBS}
 )
@@ -322,29 +326,48 @@ endif()
 # library that C bindings and tests link. Its real backend is V8; in quickjs
 # mode the transitional QuickJS backend (DEC-SETUP-008, removed by M1-T027)
 # stands in, so ported bindings stay testable in both engine modes.
+#
+# smz_jsb_quickjs is that QuickJS backend. It is built in both modes while
+# src/engine/js_engine.c exists, because js_engine.c adopts its context
+# through it (src/jsb/jsb_adopt.h, DEC-M1-T014-JSB-ADOPT; removed by
+# M1-T027). Its PUBLIC SMZ_JSB_ADOPT guards every use of jsb_adopt.h
+# outside src/jsb/. In quickjs mode smz_jsb is an alias of it, so no target
+# carries two copies; in v8 mode smz_jsb is the V8 backend and no target
+# links both.
+add_library(smz_jsb_quickjs STATIC src/jsb/jsb_quickjs.c)
+target_link_libraries(smz_jsb_quickjs PUBLIC qjs)
+target_include_directories(smz_jsb_quickjs PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/jsb)
+target_compile_definitions(smz_jsb_quickjs PUBLIC SMZ_JSB_ADOPT)
+set_target_properties(smz_jsb_quickjs PROPERTIES
+    C_STANDARD 11 C_STANDARD_REQUIRED ON)
+if(NOT MSVC)
+    target_compile_options(smz_jsb_quickjs PRIVATE -Wall -Wextra)
+endif()
 if(SMZ_JS_ENGINE STREQUAL "v8")
     add_library(smz_jsb STATIC src/jsb/jsb_v8.cc)
     target_link_libraries(smz_jsb PUBLIC smz::v8)
+    target_include_directories(smz_jsb PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/jsb)
 else()
-    add_library(smz_jsb STATIC src/jsb/jsb_quickjs.c)
-    target_link_libraries(smz_jsb PUBLIC qjs)
-    set_target_properties(smz_jsb PROPERTIES
-        C_STANDARD 11 C_STANDARD_REQUIRED ON)
-    if(NOT MSVC)
-        target_compile_options(smz_jsb PRIVATE -Wall -Wextra)
-    endif()
+    add_library(smz_jsb ALIAS smz_jsb_quickjs)
 endif()
-target_include_directories(smz_jsb PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/jsb)
 
 # js_engine.h on V8 (spec section 4.1, docs/js-binding.md). Built in v8 mode
 # instead of js_engine.c for everything that uses only js_engine.h; the
 # runtime keeps js_engine.c until game_loop.c, error_handler.c and the
 # bindings stop calling QuickJS (M1-T009, M1-T011, M1-T016..T025).
+# smz_js_codecache, the on-disk store of its code caches (spec sections 4.1
+# item 4 and 5.6), has no V8 dependency and is built in both modes so its
+# tests run in either.
+add_library(smz_js_codecache STATIC src/engine/js_codecache.cc)
+target_include_directories(smz_js_codecache PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+if(NOT MSVC)
+    target_compile_options(smz_js_codecache PRIVATE -Wall -Wextra)
+endif()
 if(SMZ_JS_ENGINE STREQUAL "v8")
     add_library(smz_js_engine_v8 STATIC src/engine/js_engine_v8.cc
         src/engine/js_watchdog.cc)
     find_package(Threads REQUIRED)
-    target_link_libraries(smz_js_engine_v8 PUBLIC smz_jsb Threads::Threads)
+    target_link_libraries(smz_js_engine_v8 PUBLIC smz_jsb smz_js_codecache Threads::Threads)
     target_include_directories(smz_js_engine_v8 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_definitions(smz_js_engine_v8
         PUBLIC SMZ_JS_ENGINE_V8
@@ -355,4 +378,14 @@ endif()
 if(RMMZ_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+    # Every test that builds js_engine.c needs the jsb runtime it adopts.
+    # Linked from here so tests/CMakeLists.txt and its sources stay as
+    # upstream has them.
+    get_property(_smz_test_targets DIRECTORY tests PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(_smz_target IN LISTS _smz_test_targets)
+        get_target_property(_smz_sources ${_smz_target} SOURCES)
+        if(_smz_sources MATCHES "src/engine/js_engine\\.c")
+            target_link_libraries(${_smz_target} PRIVATE smz_jsb_quickjs)
+        endif()
+    endforeach()
 endif()

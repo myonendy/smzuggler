@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The smzuggler contributors
+// Modified 2026-11-04: explicit microtask checkpoints and exception-safe nextTick priority.
 //
 // The engine API of src/engine/js_engine.h implemented on V8 (spec section
 // 4.1, item 3). Built instead of js_engine.c when SMZ_JS_ENGINE=v8.
@@ -28,7 +29,11 @@
 //   calls the thread-safe Isolate::RequestInterrupt. Everything else, the
 //   location report and TerminateExecution, runs on the main thread inside
 //   the interrupt (docs/js-binding.md, "Watchdog").
+// - Compiled code is cached only through js_codecache.h, under the cache
+//   directory; nothing is ever written next to a script (spec section 5.6,
+//   docs/js-binding.md, "Code cache").
 
+#include "engine/js_codecache.h"
 #include "engine/js_engine.h"
 #include "engine/js_watchdog.h"
 
@@ -36,9 +41,8 @@
 
 #include <v8.h>
 
-#include <sys/stat.h>
-
 #include <atomic>
+#include <climits>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -48,10 +52,6 @@
 #include <utility>
 #include <vector>
 
-#ifdef _WIN32
-#include <direct.h>
-#endif
-
 #ifndef SMZ_V8_ICU_DATA_PATH
 #error "SMZ_V8_ICU_DATA_PATH must name icudtl.dat (set by CMakeLists.txt)"
 #endif
@@ -60,10 +60,6 @@ namespace {
 
 // Isolate data slot holding the JSEngine (slot 0 is jsb's runtime).
 constexpr uint32_t kEngineSlot = 1;
-
-// First bytes of a V8 .jsc file, after the source mtime. A QuickJS .jsc left
-// by a quickjs-mode build lacks it and is simply recompiled and replaced.
-constexpr char kJscMagic[8] = {'S', 'M', 'Z', 'V', '8', 'J', 'C', '1'};
 
 // A rejected promise with no handler yet, held until the next checkpoint.
 struct Rejection {
@@ -88,6 +84,8 @@ struct JSEngine {
     int jobs_run = 0;
     // Set by the message listener when a microtask threw uncaught.
     bool job_failed = false;
+    // Nested dispatch from a promise must leave ticks to the outer checkpoint.
+    bool checkpoint_running = false;
     // Watchdog limit (0 = off) and its timer thread, which exists only
     // while the limit is on; see js_engine_set_watchdog.
     unsigned watchdog_ms = 0;
@@ -101,8 +99,9 @@ struct JSEngine {
     // Nesting of engine entry points (an eval from a native called by JS
     // nests); only the outermost arms the watchdog and cancels termination.
     int depth = 0;
-    // .jsc location (empty = beside each script) and the game root that
-    // keys it, as in js_engine.c.
+    // Code cache directory set by js_engine_set_cache_dir (empty = the
+    // default, js_codecache_default_dir), and the game root that script
+    // names are made relative to.
     std::string cache_dir;
     std::string cache_game_root;
 };
@@ -264,9 +263,210 @@ void on_uncaught(v8::Local<v8::Message> message, v8::Local<v8::Value> error) {
                                         isolate->GetCurrentContext()).FromMaybe(0)));
 }
 
+// Exhausts the engine-owned nextTick queue on the main thread, retrying after
+// reported callback exceptions so remaining ticks still precede promises.
+// Each attempt owns its handles; returns whether any ticks ran. Termination
+// stops retries so the watchdog can return control to the host.
+bool drain_ticks(v8::Isolate *isolate, v8::Local<v8::Context> context) {
+    bool ran = false;
+    for (;;) {
+        v8::HandleScope scope(isolate);
+        v8::TryCatch caught(isolate);
+        v8::Local<v8::Value> drain, result;
+        if (!context->Global()->Get(context, v8_str(isolate, "__smz_drainTicks")).ToLocal(&drain) ||
+            !drain->IsFunction()) return ran;
+        if (drain.As<v8::Function>()->Call(context, context->Global(), 0, nullptr)
+                .ToLocal(&result)) return ran || result->BooleanValue(isolate);
+        engine_of(isolate)->job_failed = true;
+        if (caught.HasTerminated()) return ran;
+        report_exception(engine_of(isolate), context, caught);
+        ran = true;
+    }
+}
+
+// Implements Node's checkpoint ordering: exhaust ticks, drain promises,
+// then repeat if promises queued ticks. Main thread; no handles escape.
+void run_checkpoint(v8::Isolate *isolate, v8::Local<v8::Context> context) {
+    JSEngine *engine = engine_of(isolate);
+    if (engine->checkpoint_running) return;
+    engine->checkpoint_running = true;
+    drain_ticks(isolate, context);
+    do {
+        isolate->PerformMicrotaskCheckpoint();
+    } while (drain_ticks(isolate, context));
+    engine->checkpoint_running = false;
+}
+
+// Installs the dedicated tick queue before any application script executes.
+// The process setter preserves the storage shim's remaining Node properties.
+// Functions implement https://nodejs.org/api/process.html#processnexttickcallback-args
+// on the main thread; the closure owns callbacks until drained.
+const char kTickBootstrap[] = R"JS(
+/** Own Node ticks for the lifetime of this main-thread context. */
+(function (g) {
+    var ticks = [], processValue;
+    /** Queue a Node callback and owned argument array; reject non-functions. */
+    function nextTick(fn) {
+        if (typeof fn !== 'function') throw new TypeError('nextTick callback must be a function');
+        ticks.push([fn, Array.prototype.slice.call(arguments, 1)]);
+    }
+    /** Exhaust ticks before promises; errors propagate to the host checkpoint. */
+    g.__smz_drainTicks = function () {
+        var ran = ticks.length > 0;
+        while (ticks.length) {
+            var t = ticks.shift();
+            t[0].apply(undefined, t[1]);
+        }
+        return ran;
+    };
+    Object.defineProperty(g, 'process', {
+        configurable: true,
+        /** Return the shim's process object without transferring ownership. */
+        get: function () { return processValue; },
+        /** Adopt the shim object while supplying the engine's tick priority. */
+        set: function (value) {
+            processValue = value;
+            if (value) value.nextTick = nextTick;
+        }
+    });
+ })(globalThis);
+/** Install callback boundaries before DOM shims and application registration. */
+(function (g) {
+    /** Register host schedulers before shims load so startup callbacks are covered. */
+    function scheduler(name) {
+        var schedule;
+        Object.defineProperty(g, name, {
+            configurable: true,
+            /** Return the scheduler wrapper; the closure retains the shim function. */
+            get: function () { return schedule; },
+            /** Wrap callback invocation on the main thread, preserving arguments. */
+            set: function (fn) {
+                if (typeof fn !== 'function') { schedule = fn; return; }
+                /** Schedule an owned callback with a finally checkpoint. */
+                schedule = function (cb) {
+                    var args = Array.prototype.slice.call(arguments);
+                    if (typeof cb === 'function') {
+                        /** Finish this macrotask even when the callback throws. */
+                        args[0] = function () {
+                            try { return cb.apply(this, arguments); }
+                            finally { g.__smz_microtaskCheckpoint(); }
+                        };
+                    }
+                    return fn.apply(this, args);
+                };
+            }
+        });
+    }
+    scheduler('setTimeout');
+    scheduler('setInterval');
+    scheduler('requestAnimationFrame');
+ })(globalThis);
+/** Preserve synchronous listeners while separating native input, resize, gamepad and video events. */
+(function (g) {
+    /** Deliver each polled event completely, including overlay default actions.
+     * Main-thread-only; restore the borrowed poll function even on exceptions.
+     * The dispatcher owns translation; singleton batches define task boundaries.
+     */
+    function inputTasks(fn, receiver, args) {
+        if (typeof g.__native_input === 'undefined') return fn.apply(receiver, args);
+        var input = g.__native_input, poll = input.pollEvents;
+        var events = poll.call(input), result;
+        if (!events || !events.length) return;
+        try {
+            for (var i = 0; i < events.length; i++) {
+                var batch = [events[i]];
+                /** Lend the current raw event to the existing DOM dispatcher. */
+                input.pollEvents = function () { return batch; };
+                try { result = fn.apply(receiver, args); }
+                finally {
+                    input.pollEvents = poll;
+                    g.__smz_microtaskCheckpoint();
+                }
+            }
+        } finally { input.pollEvents = poll; }
+        return result;
+    }
+    /** Adopt a native phase, retaining its original dispatcher in this context. */
+    function nativePhase(name) {
+        var phase;
+        Object.defineProperty(g, name, {
+            configurable: true,
+            /** Return the phase wrapper without transferring its ownership. */
+            get: function () { return phase; },
+            /** Preserve the phase's arguments and return value, including errors. */
+            set: function (fn) {
+                if (typeof fn !== 'function') { phase = fn; return; }
+                /** Intercept event invocation only while native events are delivered. */
+                phase = function () {
+                    if (name === '__dom_flushInputEvents')
+                        return inputTasks(fn, this, arguments);
+                    var depth = 0, restores = [];
+                    /** Wrap one target; nested synchronous dispatch shares the depth. */
+                    function intercept(target) {
+                        if (!target || typeof target.dispatchEvent !== 'function') return;
+                        var dispatch = target.dispatchEvent;
+                        restores.push([target, dispatch, Object.prototype.hasOwnProperty.call(target, 'dispatchEvent')]);
+                        /** Checkpoint after all listeners and nested dispatch complete. */
+                        target.dispatchEvent = function () {
+                            depth++;
+                            try { return dispatch.apply(this, arguments); }
+                            finally { if (--depth === 0) g.__smz_microtaskCheckpoint(); }
+                        };
+                    }
+                    intercept(g);
+                    intercept(g.document);
+                    if (name === '__dom_updateVideos' && g.HTMLVideoElement)
+                        intercept(g.HTMLVideoElement.prototype);
+                    try { return fn.apply(this, arguments); }
+                    finally {
+                        for (var i = restores.length - 1; i >= 0; i--) {
+                            if (restores[i][2]) restores[i][0].dispatchEvent = restores[i][1];
+                            else delete restores[i][0].dispatchEvent;
+                        }
+                    }
+                };
+            }
+        });
+    }
+    nativePhase('__dom_flushInputEvents');
+    nativePhase('__dom_updateGamepads');
+    nativePhase('__dom_updateVideos');
+    nativePhase('__dom_setWindowSize');
+})(globalThis);
+)JS";
+
+// __smz_microtaskCheckpoint(): runs a V8 microtask checkpoint from inside
+// JS. Why: dom_shim.js runs a whole frame's timers (or rAF callbacks) in
+// one call, while Chrome runs a checkpoint after each of them (HTML "clean
+// up after running script"); the bootstrap calls this after each
+// callback (card M1-T010, DEC-M1-T010). It is the same nested checkpoint
+// Node's runMicrotasks() makes under kExplicit. V8 ignores the call while
+// microtasks are already running, so a job cannot re-enter the queue.
+// Unhandled rejections are left for the checkpoint of
+// js_engine_execute_pending_jobs, which reports them. Returns undefined.
+void microtask_checkpoint(const v8::FunctionCallbackInfo<v8::Value> &info) {
+    v8::Isolate *isolate = info.GetIsolate();
+    v8::HandleScope scope(isolate);  // spec section 15.8: one per native call
+    run_checkpoint(isolate, isolate->GetCurrentContext());
+}
+
+// Defines __smz_microtaskCheckpoint on the global object, not enumerable
+// so that scripts listing window properties do not see it. Returns false
+// if V8 could not create or define it.
+bool install_checkpoint(v8::Isolate *isolate, v8::Local<v8::Context> context) {
+    v8::Local<v8::Function> fn;
+    if (!v8::Function::New(context, microtask_checkpoint).ToLocal(&fn)) return false;
+    return context->Global()
+        ->DefineOwnProperty(context, v8_str(isolate, "__smz_microtaskCheckpoint"), fn,
+                            v8::DontEnum)
+        .FromMaybe(false);
+}
+
 // jsb_runtime_setup callback of js_engine_init: the runtime's isolate and
 // context are entered here, which is the only way jsb exposes them. Keeps
-// the context, installs console and the isolate callbacks.
+// the context, installs console, __smz_microtaskCheckpoint and the isolate
+// callbacks. Microtasks run only at explicit checkpoints (kExplicit), never
+// when a script returns, so the game loop decides when they run.
 bool adopt_runtime(jsb_ctx *, void *user) {
     JSEngine *engine = static_cast<JSEngine *>(user);
     engine->isolate = v8::Isolate::GetCurrent();
@@ -277,7 +477,12 @@ bool adopt_runtime(jsb_ctx *, void *user) {
     engine->isolate->SetPromiseHook(promise_hook);
     engine->isolate->SetPromiseRejectCallback(on_promise_reject);
     engine->isolate->AddMessageListener(on_uncaught);
-    return install_console(engine, context);
+    if (!install_console(engine, context) || !install_checkpoint(engine->isolate, context))
+        return false;
+    v8::Local<v8::Script> bootstrap;
+    v8::Local<v8::Value> result;
+    return v8::Script::Compile(context, v8_str(engine->isolate, kTickBootstrap))
+               .ToLocal(&bootstrap) && bootstrap->Run(context).ToLocal(&result);
 }
 
 // Returns `file:line:col` of the innermost JS frame, or "<unknown>" when
@@ -340,14 +545,18 @@ void end_entry(JSEngine *engine) {
 // Compiles and runs `source` (borrowed, `len` bytes of UTF-8) as a classic
 // script named `name`, line and column offsets 0, so V8's 1-based stack
 // positions match the file. `cache` (ownership taken, may be NULL) is a V8
-// code cache to consume; when `cache_out` is not NULL a fresh code cache of
-// the compiled script is stored there (caller deletes). The result goes to
-// `result_out` when not NULL. Errors are reported, except a watchdog
-// termination, which on_watchdog_interrupt already reported; returns false
-// on them. Call through run_source.
+// code cache to consume with kConsumeCodeCache; `*rejected` (when not NULL)
+// tells whether V8 refused it and compiled from source instead. When
+// `cache_out` is not NULL and no cache was accepted, a fresh code cache is
+// made after the script has run, so it includes the functions the first run
+// compiled lazily (caller deletes it; it stays NULL if the script failed).
+// The result goes to `result_out` when not NULL. Errors are reported, except
+// a watchdog termination, which on_watchdog_interrupt already reported;
+// returns false on them. Call through run_source.
 bool compile_and_run(JSEngine *engine, const char *source, size_t len, const char *name,
                      v8::ScriptCompiler::CachedData *cache,
-                     v8::ScriptCompiler::CachedData **cache_out, std::string *result_out) {
+                     v8::ScriptCompiler::CachedData **cache_out, std::string *result_out,
+                     bool *rejected) {
     v8::Isolate *isolate = engine->isolate;
     v8::Isolate::Scope isolate_scope(isolate);
     v8::HandleScope scope(isolate);
@@ -359,19 +568,22 @@ bool compile_and_run(JSEngine *engine, const char *source, size_t len, const cha
                                    origin, cache);
     v8::Local<v8::Script> script;
     v8::Local<v8::Value> result;
-    if (!v8::ScriptCompiler::Compile(context, &src,
-                                     cache ? v8::ScriptCompiler::kConsumeCodeCache
-                                           : v8::ScriptCompiler::kNoCompileOptions)
-             .ToLocal(&script)) {
+    bool compiled = v8::ScriptCompiler::Compile(context, &src,
+                                                cache ? v8::ScriptCompiler::kConsumeCodeCache
+                                                      : v8::ScriptCompiler::kNoCompileOptions)
+                        .ToLocal(&script);
+    bool refused = cache && src.GetCachedData()->rejected;
+    if (rejected) *rejected = refused;
+    if (!compiled) {
         if (!tc.HasTerminated()) report_exception(engine, context, tc);
         return false;
     }
-    if (cache_out)
-        *cache_out = v8::ScriptCompiler::CreateCodeCache(script->GetUnboundScript());
     if (!script->Run(context).ToLocal(&result)) {
         if (!tc.HasTerminated()) report_exception(engine, context, tc);
         return false;
     }
+    if (cache_out && (!cache || refused))
+        *cache_out = v8::ScriptCompiler::CreateCodeCache(script->GetUnboundScript());
     if (result_out) *result_out = to_utf8(isolate, result);
     return true;
 }
@@ -380,9 +592,11 @@ bool compile_and_run(JSEngine *engine, const char *source, size_t len, const cha
 // the watchdog covers it and a termination is cancelled afterwards.
 bool run_source(JSEngine *engine, const char *source, size_t len, const char *name,
                 v8::ScriptCompiler::CachedData *cache,
-                v8::ScriptCompiler::CachedData **cache_out, std::string *result_out) {
+                v8::ScriptCompiler::CachedData **cache_out, std::string *result_out,
+                bool *rejected = nullptr) {
     begin_entry(engine);
-    bool ok = compile_and_run(engine, source, len, name, cache, cache_out, result_out);
+    bool ok = compile_and_run(engine, source, len, name, cache, cache_out, result_out,
+                              rejected);
     end_entry(engine);
     return ok;
 }
@@ -398,14 +612,6 @@ bool read_file(const char *path, std::string *out) {
     bool ok = !std::ferror(f);
     std::fclose(f);
     return ok;
-}
-
-// Writes `data` to `path`, replacing it. Returns false on any I/O error.
-bool write_file(const std::string &path, const std::string &data) {
-    FILE *f = std::fopen(path.c_str(), "wb");
-    if (!f) return false;
-    bool ok = std::fwrite(data.data(), 1, data.size(), f) == data.size();
-    return std::fclose(f) == 0 && ok;
 }
 
 // Returns the name a script gets in stack traces: its path relative to the
@@ -430,94 +636,27 @@ std::string trimmed(const char *s) {
     return std::string(s, len);
 }
 
-// The cache key of `filepath`: relative to `root` when inside it, else the
-// whole path, with drive colons dropped and ".." segments turned into "__"
-// so the key cannot leave the cache dir. Same rule as js_engine.c, so both
-// modes put a script's .jsc at the same path.
-std::string cache_key(const std::string &root, const char *filepath) {
-    const char *rel = filepath;
-    size_t rlen = root.size();
-    if (rlen && std::strncmp(filepath, root.c_str(), rlen) == 0 && is_sep(filepath[rlen]))
-        rel = filepath + rlen;
-    while (is_sep(*rel)) rel++;
-    std::string key;
-    bool seg_start = true;
-    for (const char *p = rel; *p; p++) {
-        if (seg_start && p[0] == '.' && p[1] == '.' && (!p[2] || is_sep(p[2]))) {
-            key += "__";
-            p++;
-            seg_start = false;
-        } else if (is_sep(*p)) {
-            if (!seg_start) key += '/';
-            seg_start = true;
-        } else {
-            key += (*p == ':') ? '_' : *p;
-            seg_start = false;
-        }
-    }
-    return key;
+// The directory code caches go to: the one given to js_engine_set_cache_dir,
+// else js_codecache_default_dir; "" when neither is known (scripts then run
+// uncached, still never writing next to themselves).
+std::string codecache_dir(const JSEngine *engine) {
+    if (!engine->cache_dir.empty()) return engine->cache_dir;
+    char dir[4096];
+    return js_codecache_default_dir(dir, sizeof dir) ? std::string(dir) : std::string();
 }
 
-// Creates every missing parent directory of `path`, reporting failures on
-// stderr (the later write then fails and the script runs uncached).
-void make_parent_dirs(const std::string &path) {
-    for (size_t i = 1; i < path.size(); i++) {
-        if (!is_sep(path[i]) || is_sep(path[i - 1]) || path[i - 1] == ':') continue;
-        std::string dir = path.substr(0, i);
-        struct stat st;
-        if (stat(dir.c_str(), &st) == 0) continue;
-#ifdef _WIN32
-        int rc = _mkdir(dir.c_str());
-#else
-        int rc = mkdir(dir.c_str(), 0755);
-#endif
-        if (rc != 0) std::fprintf(stderr, "js_engine: cannot create cache dir %s\n", dir.c_str());
-    }
-}
-
-// The .jsc path of `filepath`: beside it by default, or under the cache dir
-// keyed by cache_key (parent directories are created).
-std::string cache_path(const JSEngine *engine, const char *filepath) {
-    if (engine->cache_dir.empty()) return std::string(filepath) + "c";
-    std::string path = engine->cache_dir + "/" +
-                       cache_key(engine->cache_game_root, filepath) + "c";
-    make_parent_dirs(path);
-    return path;
-}
-
-// Byte layout of a V8 .jsc: int64 source mtime, kJscMagic, uint64 source
-// length, the source, then V8's code cache. The source is kept because a V8
-// code cache is only usable with its own source text, and js_engine.h
-// promises that a cache hit (same mtime) runs what was cached.
-constexpr size_t kJscHeader = sizeof(int64_t) + sizeof kJscMagic + sizeof(uint64_t);
-
-// Splits `jsc` into its source and code cache when its header is valid and
-// records `mtime`. Returns false for a stale or foreign file.
-bool parse_jsc(const std::string &jsc, int64_t mtime, std::string *source,
-               std::string *code) {
-    if (jsc.size() < kJscHeader) return false;
-    int64_t stored;
-    uint64_t src_len;
-    std::memcpy(&stored, jsc.data(), sizeof stored);
-    std::memcpy(&src_len, jsc.data() + sizeof stored + sizeof kJscMagic, sizeof src_len);
-    if (stored != mtime || std::memcmp(jsc.data() + sizeof stored, kJscMagic, sizeof kJscMagic) != 0 ||
-        src_len > jsc.size() - kJscHeader)
-        return false;
-    source->assign(jsc, kJscHeader, src_len);
-    code->assign(jsc, kJscHeader + src_len, std::string::npos);
-    return true;
-}
-
-// Builds a .jsc file image; see kJscHeader for the layout.
-std::string build_jsc(int64_t mtime, const std::string &source,
-                      const v8::ScriptCompiler::CachedData *code) {
-    uint64_t src_len = source.size();
-    std::string out(reinterpret_cast<const char *>(&mtime), sizeof mtime);
-    out.append(kJscMagic, sizeof kJscMagic);
-    out.append(reinterpret_cast<const char *>(&src_len), sizeof src_len);
-    out += source;
-    out.append(reinterpret_cast<const char *>(code->data), static_cast<size_t>(code->length));
-    return out;
+// The code cache path of `source` under `dir`: keyed by its sha256, this
+// V8's version and CachedDataVersionTag (which hashes the V8 flags), so an
+// edited script, a V8 upgrade or new flags never meet an old cache. "" if
+// the path does not fit.
+std::string codecache_path(const std::string &dir, const std::string &source) {
+    char key[JS_CODECACHE_KEY_LEN + 1];
+    char path[4096];
+    if (!js_codecache_key(source.data(), source.size(), v8::V8::GetVersion(),
+                          v8::ScriptCompiler::CachedDataVersionTag(), key) ||
+        !js_codecache_path(dir.c_str(), key, path, sizeof path))
+        return std::string();
+    return std::string(path);
 }
 
 // Reports every rejection still unhandled after a checkpoint through the
@@ -608,8 +747,8 @@ char *js_engine_eval_string(JSEngine *engine, const char *script, const char *fi
 // See js_engine.h.
 void js_engine_free_string(char *str) { std::free(str); }
 
-// See js_engine.h. Uses the .jsc cache when a cache dir is set, so the game
-// folder is read-only, as in js_engine.c.
+// See js_engine.h. Uses the code cache when a cache dir is set, as
+// js_engine.c uses its .jsc cache then.
 bool js_engine_eval_file(JSEngine *engine, const char *filepath) {
     if (!engine || !filepath) return false;
     if (!engine->cache_dir.empty()) return js_engine_eval_file_cached(engine, filepath);
@@ -622,31 +761,41 @@ bool js_engine_eval_file(JSEngine *engine, const char *filepath) {
                       origin_name(engine, filepath).c_str(), nullptr, nullptr, nullptr);
 }
 
-// See js_engine.h. The cache is a V8 code cache stored with its source
-// (see kJscHeader); V8 checks the code cache itself and recompiles silently
-// when it rejects it (other V8 version or flags).
+// See js_engine.h. In v8 mode the cache is V8's code cache in the cache dir
+// (codecache_path), never a .jsc beside the script, and it is keyed by the
+// source text itself rather than its mtime. A file V8 rejects (another
+// build or flags, or a damaged file) is deleted and replaced by a fresh
+// cache. The file buffer is not owned by V8's CachedData (the Source in
+// compile_and_run deletes only the CachedData), so it is freed here.
 bool js_engine_eval_file_cached(JSEngine *engine, const char *filepath) {
     if (!engine || !filepath) return false;
-    struct stat st;
-    std::string jsc_path = cache_path(engine, filepath);
-    int64_t mtime = stat(filepath, &st) == 0 ? static_cast<int64_t>(st.st_mtime) : -1;
-    std::string jsc, source, code;
-    std::string name = origin_name(engine, filepath);
-    if (mtime >= 0 && read_file(jsc_path.c_str(), &jsc) && parse_jsc(jsc, mtime, &source, &code)) {
-        auto *cached = new v8::ScriptCompiler::CachedData(
-            reinterpret_cast<const uint8_t *>(code.data()), static_cast<int>(code.size()));
-        return run_source(engine, source.data(), source.size(), name.c_str(), cached,
-                          nullptr, nullptr);
-    }
+    std::string source;
     if (!read_file(filepath, &source)) {
         std::fprintf(stderr, "Failed to open file: %s\n", filepath);
         return false;
     }
+    std::string name = origin_name(engine, filepath);
+    std::string dir = codecache_dir(engine);
+    std::string path = dir.empty() ? dir : codecache_path(dir, source);
+    if (path.empty())
+        return run_source(engine, source.data(), source.size(), name.c_str(), nullptr,
+                          nullptr, nullptr);
+    uint8_t *data = nullptr;
+    size_t len = 0;
+    v8::ScriptCompiler::CachedData *cached = nullptr;
+    if (js_codecache_read(path.c_str(), &data, &len) && len <= INT_MAX)
+        cached = new v8::ScriptCompiler::CachedData(
+            data, static_cast<int>(len), v8::ScriptCompiler::CachedData::BufferNotOwned);
     v8::ScriptCompiler::CachedData *fresh = nullptr;
-    bool ok = run_source(engine, source.data(), source.size(), name.c_str(), nullptr,
-                         &fresh, nullptr);
-    if (fresh && mtime >= 0 && !write_file(jsc_path, build_jsc(mtime, source, fresh)))
-        std::fprintf(stderr, "js_engine: cannot write %s\n", jsc_path.c_str());
+    bool rejected = false;
+    bool ok = run_source(engine, source.data(), source.size(), name.c_str(), cached, &fresh,
+                         nullptr, &rejected);
+    js_codecache_free(data);
+    if (cached) js_codecache_note(rejected ? JS_CODECACHE_REJECTED : JS_CODECACHE_ACCEPTED);
+    if (rejected) js_codecache_discard(path.c_str());
+    if (fresh && js_codecache_write(path.c_str(), fresh->data,
+                                    static_cast<size_t>(fresh->length)))
+        js_codecache_note(JS_CODECACHE_PRODUCED);
     delete fresh;
     return ok;
 }
@@ -702,7 +851,7 @@ int js_engine_execute_pending_jobs(JSEngine *engine) {
     engine->jobs_run = 0;
     engine->job_failed = false;
     begin_entry(engine);
-    isolate->PerformMicrotaskCheckpoint();
+    run_checkpoint(isolate, context);
     bool stopped = engine->terminated;
     if (!stopped) flush_rejections(engine, context);
     end_entry(engine);

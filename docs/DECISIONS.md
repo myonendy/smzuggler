@@ -13,6 +13,7 @@ Modified 2026-11-01: record jsb persistent callback handles.
 Modified 2026-11-01: record the V8 script watchdog design.
 Modified 2026-11-01: record how the game loop reaches JS without QuickJS.
 Modified 2026-11-01: record how the error handler reaches JS without QuickJS.
+Modified 2026-11-01: record the microtask checkpoint order.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 
@@ -69,11 +70,12 @@ No game files are in the repo. Tests and tools find the game through
 never at the Steam install. Fixture saves are read from
 `$XDG_DATA_HOME/smzuggler-rt/fixtures/` (§14.10) and never committed.
 
-## DEC-SETUP-008 — Transitional QuickJS backend for jsb during M1 (proposed)
+## DEC-SETUP-008 — Transitional QuickJS backend for jsb during M1
 §4.1 says the `jsb` seam has one implementation (V8). To port the 12 bindings one card at a
 time with every test green, M1 adds a transitional QuickJS backend (`src/jsb/jsb_quickjs.c`,
 card M1-T004) and an `SMZ_JS_ENGINE` build option; M1-T027 removes both. This needs the
 owner's approval (docs/SPEC_ISSUES.md SI-11). The alternative is a single big-bang port card.
+Owner approved 2026-11-04, with DEC-M1-T014-JSB-ADOPT (how the ports reach the engine's context).
 
 ## DEC-SETUP-009 — Where new tests live
 Upstream registers each test by hand in `tests/CMakeLists.txt`, and forge treats edits to
@@ -532,3 +534,12 @@ which only QuickJS API can do and which only the QuickJS-era `tests/test_error_h
 calls (it must keep passing until M1-T027 ports it). It is now a quickjs-mode `static
 inline` in `error_handler.h` that hands the text to `error_handler_report_js_error`, so
 `error_handler.c` has no QuickJS code; M1-T027 deletes it with QuickJS.
+
+## DEC-M1-T013-MAIN-THREAD — V8's stack size follows the main thread; no runtime thread
+
+Owner ruling, 2026-11-04. Spec §4.1 item 6 asks to set V8's `--stack-size` to match the
+main thread's stack. The runtime (SDL window, event pump, graphics context and JS) stays on
+the process main thread in every engine mode. M1-T013 reads the main thread's stack limit at
+startup and passes V8 a `--stack-size` below it with a safety margin. Rejected: starting a
+dedicated thread with a chosen stack size, which breaks the documented thread model and is
+unsafe where SDL video must run on the main thread.
