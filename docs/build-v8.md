@@ -145,3 +145,10 @@ The Linux x64 build runs by hand as `.github/workflows/v8-build.yml`
 (`workflow_dispatch` only). It uploads `v8-<version>-linux-x64.tar.xz` and its
 `.sha256` as a workflow artifact; publishing it as a release asset is still a
 later card.
+
+A free runner job stops at 6 hours, so the build is resumable: the build step
+is capped at 320 minutes, and the ccache directory is saved with
+`actions/cache/save` even when the step fails or times out, then restored at
+the start of the next run. `SMZ_V8_CC_WRAPPER=ccache` makes `build_v8.sh` add
+`cc_wrapper = "ccache"` to `args.gn`; it changes no generated code. Rerunning
+the workflow after a timeout recompiles only what the cache lacks.

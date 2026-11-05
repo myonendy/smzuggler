@@ -15,6 +15,8 @@
 #   SMZ_DEPS_DIR  dependency cache (default ~/.cache/smzuggler-dev/deps). All
 #                 writes, including depot_tools' own caches, stay inside it.
 #   SMZ_JOBS      ninja parallelism (default: ninja's own choice).
+#   SMZ_V8_CC_WRAPPER  compiler launcher written as GN cc_wrapper (e.g. ccache);
+#                 unset by default.
 # Result: $SMZ_DEPS_DIR/v8/<version>/{include/,lib/libv8_monolith.a,
 #         share/icudtl.dat,args.gn,v8-config.cmake}.
 set -euo pipefail
@@ -53,6 +55,10 @@ v8_enable_webassembly = true
 symbol_level = 0
 treat_warnings_as_errors = false
 EOF
+    # Optional compiler launcher (e.g. ccache in CI); changes no generated code.
+    if [ -n "${SMZ_V8_CC_WRAPPER:-}" ]; then
+        echo "cc_wrapper = \"$SMZ_V8_CC_WRAPPER\""
+    fi
 }
 
 # Clone depot_tools once and keep every tool cache inside the deps dir.
@@ -154,7 +160,7 @@ main() {
     case "${1:-}" in
         --print-args) [ $# -eq 1 ] || die "--print-args takes no operands"
                       gn_args; return ;;
-        -h|--help) sed -n '5,19p' "$0"; return ;;
+        -h|--help) sed -n '5,21p' "$0"; return ;;
         '') ;;
         *) die "unknown option '$1' (try --help)" ;;
     esac

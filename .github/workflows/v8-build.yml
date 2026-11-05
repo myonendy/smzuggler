@@ -4,6 +4,9 @@
 # Build the pinned V8 monolith with tools/v8/build_v8.sh and upload the
 # install as an artifact (docs/build-v8.md, "How CI gets V8"). Run by hand
 # only: a build takes hours and is needed once per pin or GN-arg change.
+# Resumable: the build step is capped well under the 6-hour job limit and the
+# ccache directory is saved even on failure or timeout, so a rerun picks up
+# where the last one stopped. The gn out dir path is fixed by build_v8.sh.
 name: V8 build
 'on':
   workflow_dispatch:
@@ -19,6 +22,13 @@ jobs:
     env:
       V8_VERSION: 13.6.233.8
       SMZ_DEPS_DIR: ${{ github.workspace }}/.v8-deps
+      SMZ_V8_CC_WRAPPER: ccache
+      CCACHE_DIR: ${{ github.workspace }}/.v8-ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_COMPILERCHECK: content
+      CCACHE_COMPRESS: '1'
+      CCACHE_MAXSIZE: 6G
+      CCACHE_SLOPPINESS: time_macros,include_file_mtime,include_file_ctime,pch_defines
     steps:
       # The checkout and build need 30+ GB; drop preinstalled SDKs we never use.
       - name: Free disk space
@@ -37,8 +47,29 @@ jobs:
           pin=$(sed -n 's/^V8_VERSION=//p' tools/v8/build_v8.sh)
           [ "$pin" = "$V8_VERSION" ] || { echo "pin is $pin, workflow says $V8_VERSION"; exit 1; }
           bash tools/v8/build_v8.sh --print-args
+      - name: Install ccache
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ccache
+      - name: Restore ccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .v8-ccache
+          key: v8-ccache-${{ env.V8_VERSION }}-linux-x64-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: v8-ccache-${{ env.V8_VERSION }}-linux-x64-
       - name: Build V8
-        run: SMZ_JOBS=$(nproc) bash tools/v8/build_v8.sh
+        timeout-minutes: 325
+        run: |
+          ccache -z
+          # Stop on our own before the step and job limits so the cache saves.
+          SMZ_JOBS=$(nproc) timeout -k 2m 315m bash tools/v8/build_v8.sh
+      - name: ccache stats
+        if: always()
+        run: ccache -s || true
+      - name: Save ccache
+        if: always()
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .v8-ccache
+          key: v8-ccache-${{ env.V8_VERSION }}-linux-x64-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Pack the install
         run: |
           df -h /
