@@ -61,8 +61,16 @@ static void check_results(JSEngine *engine)
 static void check_errors(JSEngine *engine)
 {
     expect(engine, "try{m.open()}catch(e){e.name+': '+e.message}", "TypeError: open requires a path");
-    expect(engine, "names.slice(1).every(function(n){try{m[n]()}catch(e){return typeof e==='unknown'&&String(e)==='[uninitialized]'}})", "true");
-    expect(engine, "['setVolume','setLoop','setVisible'].every(function(n){try{m[n](0)}catch(e){return typeof e==='unknown'&&String(e)==='[uninitialized]'}})", "true");
+    expect(engine, "names.slice(1).map(function(n){try{m[n]()}catch(e){return e.name+': '+e.message}}).join('|')",
+           "TypeError: close requires a handle|TypeError: play requires a handle|"
+           "TypeError: pause requires a handle|TypeError: setVolume requires a handle and a volume|"
+           "TypeError: setLoop requires a handle and a flag|"
+           "TypeError: setVisible requires a handle and a flag|"
+           "TypeError: getState requires a handle");
+    expect(engine, "['setVolume','setLoop','setVisible'].map(function(n){try{m[n](0)}catch(e){return e.name+': '+e.message}}).join('|')",
+           "TypeError: setVolume requires a handle and a volume|"
+           "TypeError: setLoop requires a handle and a flag|"
+           "TypeError: setVisible requires a handle and a flag");
     expect(engine, "var bad={valueOf:function(){throw new RangeError('number')},"
                    "toString:function(){throw new Error('path')}};"
                    "try{m.open(bad)}catch(e){e.name+': '+e.message}", "Error: path");

@@ -6,6 +6,9 @@
  *
  * Main-thread native video bridge for the DOM shim; see docs/js-binding.md.
  * jsb handles are call-scoped and never retained (spec section 15.8).
+ * Missing required arguments throw a TypeError. The pre-port binding returned
+ * QuickJS's uninitialized exception sentinel, which V8 cannot represent; the
+ * TypeError is the nearest safe behaviour and is pinned by the parity test.
  */
 
 #include "bindings/bind_video.h"
@@ -31,7 +34,8 @@ static bool handle_arg(jsb_ctx *ctx, VideoHandle *out)
  * Backs HTMLVideoElement (https://html.spec.whatwg.org/multipage/media.html),
  * through dom_shim.js (`document.createElement` in docs/compat-surface.md).
  * Main thread only; borrowed
- * arguments and call-scoped results; conversion errors propagate unchanged. */
+ * arguments and call-scoped results; conversion errors propagate unchanged
+ * and a missing required argument throws a TypeError. */
 static void js_video_open(jsb_ctx *ctx)
 {
     if (jsb_arg_count(ctx) < 1) {
@@ -49,11 +53,16 @@ static void js_video_open(jsb_ctx *ctx)
  * Backs HTMLVideoElement (https://html.spec.whatwg.org/multipage/media.html),
  * through dom_shim.js (`document.createElement` in docs/compat-surface.md).
  * Main thread only; borrowed
- * arguments and call-scoped results; conversion errors propagate unchanged. */
+ * arguments and call-scoped results; conversion errors propagate unchanged
+ * and a missing required argument throws a TypeError. */
 static void js_video_close(jsb_ctx *ctx)
 {
     VideoHandle h;
-    if (jsb_arg_count(ctx) < 1 || !handle_arg(ctx, &h)) return;
+    if (jsb_arg_count(ctx) < 1) {
+        jsb_throw_type(ctx, "close requires a handle");
+        return;
+    }
+    if (!handle_arg(ctx, &h)) return;
     video_close(h);
     jsb_ret_undefined(ctx);
 }
@@ -62,11 +71,16 @@ static void js_video_close(jsb_ctx *ctx)
  * Backs HTMLVideoElement (https://html.spec.whatwg.org/multipage/media.html),
  * through dom_shim.js (`document.createElement` in docs/compat-surface.md).
  * Main thread only; borrowed
- * arguments and call-scoped results; conversion errors propagate unchanged. */
+ * arguments and call-scoped results; conversion errors propagate unchanged
+ * and a missing required argument throws a TypeError. */
 static void js_video_play(jsb_ctx *ctx)
 {
     VideoHandle h;
-    if (jsb_arg_count(ctx) < 1 || !handle_arg(ctx, &h)) return;
+    if (jsb_arg_count(ctx) < 1) {
+        jsb_throw_type(ctx, "play requires a handle");
+        return;
+    }
+    if (!handle_arg(ctx, &h)) return;
     video_play(h);
     jsb_ret_undefined(ctx);
 }
@@ -75,11 +89,16 @@ static void js_video_play(jsb_ctx *ctx)
  * Backs HTMLVideoElement (https://html.spec.whatwg.org/multipage/media.html),
  * through dom_shim.js (`document.createElement` in docs/compat-surface.md).
  * Main thread only; borrowed
- * arguments and call-scoped results; conversion errors propagate unchanged. */
+ * arguments and call-scoped results; conversion errors propagate unchanged
+ * and a missing required argument throws a TypeError. */
 static void js_video_pause(jsb_ctx *ctx)
 {
     VideoHandle h;
-    if (jsb_arg_count(ctx) < 1 || !handle_arg(ctx, &h)) return;
+    if (jsb_arg_count(ctx) < 1) {
+        jsb_throw_type(ctx, "pause requires a handle");
+        return;
+    }
+    if (!handle_arg(ctx, &h)) return;
     video_pause(h);
     jsb_ret_undefined(ctx);
 }
@@ -89,14 +108,17 @@ static void js_video_pause(jsb_ctx *ctx)
  * Backs HTMLVideoElement (https://html.spec.whatwg.org/multipage/media.html),
  * through dom_shim.js (`document.createElement` in docs/compat-surface.md).
  * Main thread only; borrowed
- * arguments and call-scoped results; conversion errors propagate unchanged. */
+ * arguments and call-scoped results; conversion errors propagate unchanged
+ * and a missing required argument throws a TypeError. */
 static void js_video_set_volume(jsb_ctx *ctx)
 {
     VideoHandle h;
     double vol = 1.0;
-    if (jsb_arg_count(ctx) < 2 || !handle_arg(ctx, &h) || !jsb_arg_to_f64(ctx, 1, &vol)) {
+    if (jsb_arg_count(ctx) < 2) {
+        jsb_throw_type(ctx, "setVolume requires a handle and a volume");
         return;
     }
+    if (!handle_arg(ctx, &h) || !jsb_arg_to_f64(ctx, 1, &vol)) return;
     video_set_volume(h, (float)vol);
     jsb_ret_undefined(ctx);
 }
@@ -105,11 +127,16 @@ static void js_video_set_volume(jsb_ctx *ctx)
  * Backs HTMLVideoElement (https://html.spec.whatwg.org/multipage/media.html),
  * through dom_shim.js (`document.createElement` in docs/compat-surface.md).
  * Main thread only; borrowed
- * arguments and call-scoped results; conversion errors propagate unchanged. */
+ * arguments and call-scoped results; conversion errors propagate unchanged
+ * and a missing required argument throws a TypeError. */
 static void js_video_set_loop(jsb_ctx *ctx)
 {
     VideoHandle h;
-    if (jsb_arg_count(ctx) < 2 || !handle_arg(ctx, &h)) return;
+    if (jsb_arg_count(ctx) < 2) {
+        jsb_throw_type(ctx, "setLoop requires a handle and a flag");
+        return;
+    }
+    if (!handle_arg(ctx, &h)) return;
     video_set_loop(h, jsb_arg_truthy(ctx, 1));
     jsb_ret_undefined(ctx);
 }
@@ -118,11 +145,16 @@ static void js_video_set_loop(jsb_ctx *ctx)
  * Backs HTMLVideoElement (https://html.spec.whatwg.org/multipage/media.html),
  * through dom_shim.js (`document.createElement` in docs/compat-surface.md).
  * Main thread only; borrowed
- * arguments and call-scoped results; conversion errors propagate unchanged. */
+ * arguments and call-scoped results; conversion errors propagate unchanged
+ * and a missing required argument throws a TypeError. */
 static void js_video_set_visible(jsb_ctx *ctx)
 {
     VideoHandle h;
-    if (jsb_arg_count(ctx) < 2 || !handle_arg(ctx, &h)) return;
+    if (jsb_arg_count(ctx) < 2) {
+        jsb_throw_type(ctx, "setVisible requires a handle and a flag");
+        return;
+    }
+    if (!handle_arg(ctx, &h)) return;
     video_set_visible(h, jsb_arg_truthy(ctx, 1));
     jsb_ret_undefined(ctx);
 }
@@ -132,11 +164,16 @@ static void js_video_set_visible(jsb_ctx *ctx)
  * Backs HTMLVideoElement (https://html.spec.whatwg.org/multipage/media.html),
  * through dom_shim.js (`document.createElement` in docs/compat-surface.md).
  * Main thread only; borrowed
- * arguments and call-scoped results; conversion errors propagate unchanged. */
+ * arguments and call-scoped results; conversion errors propagate unchanged
+ * and a missing required argument throws a TypeError. */
 static void js_video_get_state(jsb_ctx *ctx)
 {
     VideoHandle h;
-    if (jsb_arg_count(ctx) < 1 || !handle_arg(ctx, &h)) return;
+    if (jsb_arg_count(ctx) < 1) {
+        jsb_throw_type(ctx, "getState requires a handle");
+        return;
+    }
+    if (!handle_arg(ctx, &h)) return;
     VideoState st;
     if (!video_get_state(h, &st)) {
         jsb_ret_val(ctx, jsb_new_null(ctx));

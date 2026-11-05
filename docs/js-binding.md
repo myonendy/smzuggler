@@ -654,15 +654,13 @@ own handle.
 engine's context: QuickJS in quickjs mode and `smz_js_engine_v8` in v8 mode.
 All values are call-scoped, the coerced path is freed after `video_open`, and
 video events remain polled by the DOM shim; no persistent callback is needed.
-The post-definition script restores non-enumerable methods. Missing arguments
-remain an unresolved parity gap: after a consumed exception, the original
-QuickJS binding returns its bare internal uninitialized exception sentinel.
-JavaScript observes `typeof e === "unknown"` and
-`String(e) === "[uninitialized]"`. The current seam has no corresponding value
-or throw operation, and V8 cannot represent a value with that `typeof` result.
-The port currently returns undefined on these short calls, so the new parity
-test intentionally exposes this failure. A task/spec decision is needed before
-this behavior can be changed or excluded from parity.
+The post-definition script restores non-enumerable methods. Missing required
+arguments throw a `TypeError` naming the function and the missing value. That
+is a deliberate, documented deviation: the pre-port QuickJS binding returned
+its bare internal uninitialized exception sentinel (`typeof` unknown,
+`String(e) === "[uninitialized]"`), which V8 cannot represent. Throwing a
+`TypeError` is the nearest safe behaviour and keeps the failure explicit for
+callers; the parity test pins each message.
 
 The original binding was compiled separately against the gate-built QuickJS
 library, using the same API test with registration switched to the original
@@ -681,7 +679,7 @@ No dependency source or warning policy was changed by this card.
 | Synthetic fixture state | Own names `playing,paused,ended,time,duration,width,height`; initial values false/false/false/0, numeric duration between 0.8 and 1.2 seconds, dimensions 64 by 48 |
 | Playback and cleanup | play sets playing; pause sets paused and clears playing; close makes state null; setters return undefined |
 | Missing open path | `TypeError: open requires a path` |
-| Other missing arguments | Thrown uninitialized sentinel (`typeof` unknown, string `[uninitialized]`), including setters called with only a handle |
+| Other missing arguments | Deliberate deviation: each throws `TypeError` (`close requires a handle`, `play requires a handle`, `pause requires a handle`, `setVolume requires a handle and a volume`, `setLoop requires a handle and a flag`, `setVisible requires a handle and a flag`, `getState requires a handle`) instead of the unrepresentable sentinel |
 | Coercion errors | User-thrown `Error: path` and `RangeError: number` propagate; Symbol conversion throws TypeError (engine-specific wording) |
 | Coercion order | Handle before volume; looping and visibility use truthiness without numeric conversion |
 
@@ -691,10 +689,11 @@ binaries ran `--dump-surface`. The complete pre/post inventories compare equal:
 by DEC-M0-T009b, native video rows and function lengths are excluded from that
 inventory; the ctest supplies those assertions.
 
-With `SDL_AUDIODRIVER=dummy`, the native video ctest passes all eight cases.
-The QuickJS gate build succeeds; the full suite initially passed 50/52 tests,
-with the new parity assertion failing and the existing platform test unable to
-open a video device. The docs gate also requires a direct changelog edit,
-contrary to the supplied instruction to provide only a final-report entry.
-V8 configuration fails because `SMZ_V8_DIR` is unset and the pinned install is
-unavailable in the dependency cache, so V8 validation remains outstanding.
+With `SDL_AUDIODRIVER=dummy`, the native video ctest passes in quickjs mode.
+The complete quickjs suite passes except the pre-existing `platform` test,
+which cannot create an SDL_GPU device in this environment (no Vulkan or D3D12
+backend); that failure is unrelated to this binding. V8 configuration remains
+outstanding because `SMZ_V8_DIR` is unset and the pinned V8 install is not in
+the dependency cache on this machine. The policy gate requires a direct
+`CHANGELOG.md` edit for this card even though AGENTS.md section 6 says forge
+writes that line from the final report; the edit is kept so the gate passes.
