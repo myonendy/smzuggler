@@ -39,6 +39,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Port the `__native_filters` binding to the jsb seam with unchanged names, function arities, results and errors. (M1-T024)
 - Port the native video binding to jsb with API parity tests. (M1-T020)
 - `__native_canvas2d` is defined through the jsb seam by `bind_canvas2d_define`, with its JS API unchanged. (M1-T021)
 - Port the `__native_effekseer` binding to the jsb seam with unchanged names, function arities, results and errors. (M1-T022)
