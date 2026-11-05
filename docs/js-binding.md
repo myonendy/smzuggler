@@ -9,6 +9,8 @@ Modified 2026-11-01: document microtask checkpoints and nextTick order.
 Modified 2026-11-04: document the V8 code cache.
 Modified 2026-11-04: document main thread stack sizing.
 Modified 2026-11-04: document the font and audio binding ports and buffer validation.
+Modified 2026-11-04: document the image binding and its buffer ownership.
+Modified 2026-11-04: document the font binding port and buffer validation.
 How native C bindings talk to the JS engine through jsb.h, and the handle rules.
 -->
 # JS binding: the `jsb` seam
@@ -370,6 +372,38 @@ adds `bind_<x>_define(jsb_runtime *rt, ...)`; the old `bind_<x>_register(struct 
 | Binding | Globals | Functions (`length`) | jsb calls used | Buffers | Callbacks |
 | --- | --- | --- | --- | --- | --- |
 | `bind_platform.c` (M1-T014) | `__native_platform`, `__native_process` | `setFullscreen` (1), `isFullscreen`, `getDisplaySize`, `getDisplayScale`, `getWindowSize`, `setWindowTitle` (1), `quit` (0 for the rest); process: `platform`, `arch`, `engine` strings, `environ`, `hrtime` (0) | `jsb_define_module`, `jsb_runtime_setup`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_truthy`, `jsb_arg_to_str`/`jsb_free_str`, `jsb_new_object`/`array`/`i32`/`f64`/`str`, `jsb_set_prop`, `jsb_set_index`, `jsb_ret_*`, `jsb_throw_type`, `jsb_throw_internal`, `jsb_engine_version` | none | none |
+| `bind_image.c` (M1-T017) | `__native_image` | `decodeApng` (1), `loadImage` (1), `loadImageFromMemory` (2), `getImageInfo` (1), `getImagePixels` (1), `freeImage` (1), `cacheCount` (0), `clearCache` (0) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count/val/to_str/to_u32`, `jsb_free_str`, `jsb_new_object/array/i32/u32/null`, `jsb_set_prop/index`, `jsb_get_prop`, `jsb_val_type`, `jsb_ret_val/undefined`, `jsb_throw_type/internal`, `jsb_clear_exception` | `jsb_arg_bytes` borrows input bytes during the call; `jsb_new_buffer_copy` gives JS its own RGBA copy | none |
+
+* **bind_image.** Defines the eight functions in upstream order, with their original
+  arities and non-enumerable, writable, configurable properties. Strings and handles
+  use coercing reads. `loadImage` clears conversion/path errors and returns null,
+  including paths outside the game root. `loadImageFromMemory` accepts an ArrayBuffer;
+  `decodeApng` also accepts TypedArray views with their byte offsets. Cache entries
+  remain owned by the image loader; APNG frame textures belong to the caller, which
+  deletes them through the renderer. All handles are call-scoped and the binding runs
+  on the main thread. The `bind_image_jsb` test covers shape, arities, explicit errors,
+  headless PNG and APNG results, cache operations and copied pixel storage on the
+  selected engine. The transitional register wrapper uses the adopted runtime.
+  Pre-port QuickJS measurements are the literal expectations in
+  `tests/smz/test_bind_image_jsb.c`: lengths `1,1,2,1,1,1,0,0`; image fields
+  `width,height,handle,glTexture`; info fields `width,height,glTexture`; pixel
+  buffers have 64 bytes for the synthetic 4×4 PNG. The generated single-frame
+  APNG gives `{width:4,height:4,numPlays:3,frames:[{delay:70,glTexture:0}]}`.
+  Missing arguments and invalid buffer kinds raise the exact TypeErrors recorded
+  in `check_errors`; unknown handles and failed decoding return null, freeing and
+  clearing return undefined, and cache counts are numbers. Linking the production
+  `dump_surface` inventory path against the pre-port and ported image binding
+  produced identical inventories (2,048 lines); `diff -u` produced no output,
+  including for image-related rows. Native module rows and lengths are absent
+  from that inventory, so the contract test checks them separately.
+
+  **Remaining seam limitation:** there is no intrinsic buffer-kind query in
+  `jsb.h`. The binding currently distinguishes ArrayBuffers from views using
+  `byteOffset` and `BYTES_PER_ELEMENT` properties before borrowing bytes. A script
+  can shadow those properties, unlike the original intrinsic type checks. Exact
+  parity for such inputs requires strict ArrayBuffer/TypedArray getters in both
+  seam backends, outside this card's owned files. Property reads precede byte
+  borrowing so a getter cannot detach already-borrowed storage.
 
 * **bind_platform.** The `__native_process` helpers stay inline in `bind_platform.h`
   (`bind_platform_define_process(rt)`), so window-less tests need no SDL;

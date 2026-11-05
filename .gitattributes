@@ -10,3 +10,5 @@
 # smzuggler: append-only logs merge by union so parallel forge cards don't conflict
 CHANGELOG.md merge=union
 docs/DECISIONS.md merge=union
+# Each M1 port card adds its own section here; keep both when two land in the same spot
+docs/js-binding.md merge=union

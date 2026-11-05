@@ -40,6 +40,7 @@ All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
 - Port native audio bindings to jsb while preserving function arities, coercion, results and errors. (M1-T019)
+- Port native image loading, cache access and APNG decoding through jsb with API contract checks. (M1-T017)
 - Port native font loading and measurement to jsb while preserving the JavaScript API. (M1-T018)
 - V8 builds set --stack-size from the main thread's stack at startup (minus 25%, at least 256 KiB) and print the value; the /STACK link flag and the runtime thread are gone from v8 mode. (M1-T013)
 - `__native_input` (bind_input.c) is defined through the jsb seam by `bind_input_define`, with its JS API unchanged. (M1-T015)
