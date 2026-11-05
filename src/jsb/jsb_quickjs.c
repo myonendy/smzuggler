@@ -3,6 +3,8 @@
  * Modified 2026-11-04: adopt an existing context (jsb_adopt.h), find the
  * runtime through the QuickJS runtime opaque, and the seam calls of card
  * M1-T007b.
+ * Modified 2026-11-05: share the ArrayBuffer brand check and define native
+ * functions non-enumerably (card M1-T026b).
  *
  * TRANSITIONAL QuickJS implementation of the jsb seam (src/jsb/jsb.h).
  * Removed by card M1-T027, together with QuickJS itself.
@@ -639,6 +641,13 @@ bool jsb_arg_bytes(jsb_ctx *ctx, int index, uint8_t **data, size_t *len) {
     return true;
 }
 
+/* See jsb.h: jsb_arg_is_array_buffer. QuickJS's intrinsic brand test never
+ * runs a property getter, so a shadowed `byteOffset` cannot change the
+ * answer or throw. */
+bool jsb_arg_is_array_buffer(jsb_ctx *ctx, int index) {
+    return JS_IsArrayBuffer(arg(ctx, index));
+}
+
 /* See jsb.h: jsb_ret_undefined. */
 void jsb_ret_undefined(jsb_ctx *ctx) { set_ret(ctx, JS_UNDEFINED); }
 
@@ -730,8 +739,11 @@ bool jsb_set_fn_n(jsb_ctx *ctx, jsb_val *obj, const char *name, jsb_fn fn,
     JSValue func = JS_NewCFunctionMagic(ctx->js, trampoline, name, length,
                                         JS_CFUNC_generic_magic, magic);
     if (JS_IsException(func)) return false;
-    /* JS_SetPropertyStr takes over `func`, also on failure. */
-    return JS_SetPropertyStr(ctx->js, obj->value, name, func) >= 0;
+    /* Like JS_CFUNC_DEF (writable, configurable, not enumerable);
+     * JS_DefinePropertyValueStr takes over `func`, also on failure. */
+    return JS_DefinePropertyValueStr(ctx->js, obj->value, name, func,
+                                     JS_PROP_WRITABLE |
+                                         JS_PROP_CONFIGURABLE) >= 0;
 }
 
 /* See jsb.h: jsb_set_prop. */

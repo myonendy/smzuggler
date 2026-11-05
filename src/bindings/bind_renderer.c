@@ -4,6 +4,7 @@
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-11-04: ported from QuickJS to the jsb seam (spec section 4.1).
  * Modified 2026-11-05: remove the transitional QuickJS wrapper.
+ * Modified 2026-11-05: use jsb_arg_is_array_buffer and rely on non-enumerable jsb functions (card M1-T026b).
  *
  * __native_renderer: the high-level sprite-batch renderer API (frame
  * lifecycle, textures, render textures, quads, scissor and readPixels) that
@@ -40,32 +41,17 @@
 /* Single global renderer instance; also accessed by bind_tilemap.c. */
 Renderer *s_renderer = NULL;
 
-/* Returns whether argument `index` is a plain ArrayBuffer, not a view.
- *
- * Why: upstream read pixels with its ArrayBuffer getter, which accepts only
- * an ArrayBuffer, while jsb_arg_bytes also takes TypedArrays and DataViews.
- * Among those three, only views have a `byteOffset` (an inherited getter).
- * Fails, with the exception pending, only if a getter threw. */
-static bool arg_is_array_buffer(jsb_ctx *ctx, int index, bool *out)
-{
-    jsb_val *off = jsb_get_prop(ctx, jsb_arg_val(ctx, index), "byteOffset");
-    if (!off) return false;
-    *out = jsb_val_type(ctx, off) == JSB_TYPE_UNDEFINED;
-    return true;
-}
-
 /* Reads argument `index`'s bytes into `*buf` / `*size` when it is an
  * ArrayBuffer.
  *
  * Why: keeps upstream's "ArrayBuffer only" rule for updateTexture (see
- * arg_is_array_buffer). Returns false, with the pending exception dropped,
- * for any other value, so the caller throws upstream's own TypeError. The
- * bytes are borrowed from JS for the rest of the call. */
+ * jsb_arg_is_array_buffer). Returns false, with the pending exception
+ * dropped, for any other value, so the caller throws upstream's own
+ * TypeError. The bytes are borrowed from JS for the rest of the call. */
 static bool arg_array_buffer(jsb_ctx *ctx, int index,
                              uint8_t **buf, size_t *size)
 {
-    bool is_ab = false;
-    if (!arg_is_array_buffer(ctx, index, &is_ab) || !is_ab ||
+    if (!jsb_arg_is_array_buffer(ctx, index) ||
         !jsb_arg_bytes(ctx, index, buf, size)) {
         jsb_clear_exception(ctx);
         return false;
@@ -730,17 +716,6 @@ static bool renderer_define_setup(jsb_ctx *ctx, void *user)
     return jsb_define_module(ctx, "__native_renderer", renderer_module_init);
 }
 
-/* smzuggler: upstream's function list defined the functions non-enumerable
- * (writable, configurable); jsb_set_fn_n assigns them, which makes them
- * enumerable. This restores the old attributes so the JS API stays
- * byte-for-byte. Run once by bind_renderer_define, after the module exists. */
-static const char renderer_hide_fns_js[] =
-    "(function (m) {\n"
-    "  Object.getOwnPropertyNames(m).forEach(function (k) {\n"
-    "    Object.defineProperty(m, k, { enumerable: false });\n"
-    "  });\n"
-    "})(__native_renderer);\n";
-
 /* Define the shim bridge on the borrowed runtime, on the main thread.
  * No handles survive setup; errors return false and are printed to stderr. */
 bool bind_renderer_define(jsb_runtime *rt)
@@ -749,13 +724,5 @@ bool bind_renderer_define(jsb_runtime *rt)
         fprintf(stderr, "bind_renderer_define: no jsb runtime\n");
         return false;
     }
-    if (!jsb_runtime_setup(rt, renderer_define_setup, NULL))
-        return false;
-    char err[256];
-    if (!jsb_runtime_eval(rt, renderer_hide_fns_js, "bind_renderer.c", err,
-                          sizeof err)) {
-        fprintf(stderr, "bind_renderer_define: %s\n", err);
-        return false;
-    }
-    return true;
+    return jsb_runtime_setup(rt, renderer_define_setup, NULL);
 }

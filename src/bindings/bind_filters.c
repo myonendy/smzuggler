@@ -4,6 +4,7 @@
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-11-05: port the __native_filters binding to the jsb seam.
  * Modified 2026-11-05: remove the transitional QuickJS wrapper.
+ * Modified 2026-11-05: rely on jsb_set_fn_n for non-enumerable functions (card M1-T026b).
  *
  * __native_filters: the native bridge under pixi_shim.js, which compiles and
  * draws the PIXI filter shaders on Outsider's renderer (docs/js-binding.md,
@@ -409,15 +410,6 @@ static bool filters_define_setup(jsb_ctx *ctx, void *user)
     return jsb_define_module(ctx, "__native_filters", filters_module_init);
 }
 
-/* smzuggler: restore upstream's non-enumerable function properties.
- * jsb_set_fn_n assigns, so only the functions (not the shader IDs, which
- * upstream exposed with its ordinary property setter) are made
- * non-enumerable. */
-static const char filters_hide_fns_js[] =
-    "(function(m){Object.getOwnPropertyNames(m).forEach(function(k){"
-    "if(typeof m[k]==='function')"
-    "Object.defineProperty(m,k,{enumerable:false})})})(__native_filters);";
-
 /* See bind_filters.h: borrow rt and report definition errors on the main
  * thread. */
 bool bind_filters_define(jsb_runtime *rt)
@@ -427,12 +419,6 @@ bool bind_filters_define(jsb_runtime *rt)
         return false;
     }
     if (!jsb_runtime_setup(rt, filters_define_setup, NULL)) return false;
-    char error[256];
-    if (!jsb_runtime_eval(rt, filters_hide_fns_js, "bind_filters.c", error,
-                          sizeof error)) {
-        fprintf(stderr, "bind_filters_define: %s\n", error);
-        return false;
-    }
     s_runtime = rt;
     return true;
 }

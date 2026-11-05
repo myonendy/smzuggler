@@ -2,6 +2,8 @@
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-11-04: value, coercion, array, error and length calls the
  * binding ports need (card M1-T007b).
+ * Modified 2026-11-05: share the ArrayBuffer brand check and define native
+ * functions non-enumerably (card M1-T026b).
  *
  * jsb: the small C seam through which native bindings talk to the JS engine.
  *
@@ -154,6 +156,16 @@ jsb_val *jsb_arg_val(jsb_ctx *ctx, int index);
  * too. Both return false. SharedArrayBuffer is not accepted. */
 bool jsb_arg_bytes(jsb_ctx *ctx, int index, uint8_t **data, size_t *len);
 
+/* Returns whether argument `index` is a plain ArrayBuffer, not a TypedArray,
+ * DataView or SharedArrayBuffer.
+ *
+ * Why: several ports must keep Outsider's ArrayBuffer-only rule even though
+ * jsb_arg_bytes also accepts views. This is the engine's brand check, so it
+ * never runs a `byteOffset` getter that game code could shadow or make
+ * throw. Never throws; a missing or non-buffer argument is false. The bytes,
+ * when needed, still come from jsb_arg_bytes. */
+bool jsb_arg_is_array_buffer(jsb_ctx *ctx, int index);
+
 /* ---- Returns ----------------------------------------------------------- */
 /* Each sets the native function's result; the last call wins. They do
  * nothing once the call has thrown, and outside a native call. */
@@ -191,8 +203,9 @@ jsb_val *jsb_new_object(jsb_ctx *ctx);
  *
  * Why: this is the JS_CFUNC_DEF replacement. `name` (UTF-8, copied) is also
  * the function's `name`. `fn` must stay valid for the runtime's lifetime;
- * a C function is. Returns false if the property could not be set (a JS
- * exception is then pending). */
+ * a C function is. Like JS_CFUNC_DEF, the property is writable,
+ * configurable and non-enumerable. Returns false if the property could not
+ * be set (a JS exception is then pending). */
 bool jsb_set_fn(jsb_ctx *ctx, jsb_val *obj, const char *name, jsb_fn fn);
 
 /* Sets `obj[name] = val` as an ordinary assignment, so setters run.
@@ -481,7 +494,9 @@ void jsb_throw_error(jsb_ctx *ctx, const char *fmt, ...);
 void jsb_throw_internal(jsb_ctx *ctx, const char *fmt, ...);
 
 /* As jsb_set_fn, and sets the function's `length` to `length` (0..255),
- * as JS_CFUNC_DEF's arity does; out of range is a RangeError. */
+ * as JS_CFUNC_DEF's arity does; out of range is a RangeError. The property
+ * is writable, configurable and non-enumerable, so it does not appear in
+ * Object.keys or for-in. */
 bool jsb_set_fn_n(jsb_ctx *ctx, jsb_val *obj, const char *name, jsb_fn fn,
                   int length);
 

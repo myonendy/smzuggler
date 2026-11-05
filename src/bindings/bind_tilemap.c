@@ -4,6 +4,7 @@
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-11-05: ported from QuickJS to the jsb seam (spec section 4.1).
  * Modified 2026-11-05: remove the transitional QuickJS wrapper.
+ * Modified 2026-11-05: use jsb_arg_is_array_buffer and rely on non-enumerable jsb functions (card M1-T026b).
  *
  * __native_tilemap: draws packed map layers through the renderer's sprite
  * batch for tilemap_shim.js (docs/js-binding.md, "bind_tilemap").
@@ -25,32 +26,17 @@
 /* Global renderer, defined in bind_renderer.c; drawTiles uses its sprite batch. */
 extern Renderer *s_renderer;
 
-/* Returns whether argument `index` is a plain ArrayBuffer, not a view.
- *
- * Why: upstream read the element buffer with an engine getter that accepts
- * only an ArrayBuffer, while jsb_arg_bytes also takes TypedArrays and
- * DataViews. Among those three, only views have a `byteOffset` (an inherited
- * getter). Fails, with the exception pending, only if a getter threw. */
-static bool arg_is_array_buffer(jsb_ctx *ctx, int index, bool *out)
-{
-    jsb_val *off = jsb_get_prop(ctx, jsb_arg_val(ctx, index), "byteOffset");
-    if (!off) return false;
-    *out = jsb_val_type(ctx, off) == JSB_TYPE_UNDEFINED;
-    return true;
-}
-
 /* Reads argument `index`'s bytes into `*buf` / `*size` when it is an
  * ArrayBuffer.
  *
  * Why: keeps upstream's "ArrayBuffer only" rule for drawTiles (see
- * arg_is_array_buffer). Returns false, with the pending exception dropped,
- * for any other value, so the caller throws upstream's own TypeError. The
- * bytes are borrowed from JS for the rest of the call. */
+ * jsb_arg_is_array_buffer). Returns false, with the pending exception
+ * dropped, for any other value, so the caller throws upstream's own
+ * TypeError. The bytes are borrowed from JS for the rest of the call. */
 static bool arg_array_buffer(jsb_ctx *ctx, int index,
                              uint8_t **buf, size_t *size)
 {
-    bool is_ab = false;
-    if (!arg_is_array_buffer(ctx, index, &is_ab) || !is_ab ||
+    if (!jsb_arg_is_array_buffer(ctx, index) ||
         !jsb_arg_bytes(ctx, index, buf, size)) {
         jsb_clear_exception(ctx);
         return false;
@@ -193,17 +179,6 @@ static bool tilemap_define_setup(jsb_ctx *ctx, void *user)
     return jsb_define_module(ctx, "__native_tilemap", tilemap_module_init);
 }
 
-/* smzuggler: upstream's function list defined drawTiles non-enumerable
- * (writable, configurable); jsb_set_fn_n assigns it, which makes it
- * enumerable. This restores the old attributes so the JS API stays
- * byte-for-byte. Run once by bind_tilemap_define, after the module exists. */
-static const char tilemap_hide_fns_js[] =
-    "(function (m) {\n"
-    "  Object.getOwnPropertyNames(m).forEach(function (k) {\n"
-    "    Object.defineProperty(m, k, { enumerable: false });\n"
-    "  });\n"
-    "})(__native_tilemap);\n";
-
 /* See bind_tilemap.h: setup borrows rt and reports registration failures
  * loudly. Main thread only. */
 bool bind_tilemap_define(jsb_runtime *rt)
@@ -212,13 +187,5 @@ bool bind_tilemap_define(jsb_runtime *rt)
         fprintf(stderr, "bind_tilemap_define: no jsb runtime\n");
         return false;
     }
-    if (!jsb_runtime_setup(rt, tilemap_define_setup, NULL))
-        return false;
-    char err[256];
-    if (!jsb_runtime_eval(rt, tilemap_hide_fns_js, "bind_tilemap.c", err,
-                          sizeof err)) {
-        fprintf(stderr, "bind_tilemap_define: %s\n", err);
-        return false;
-    }
-    return true;
+    return jsb_runtime_setup(rt, tilemap_define_setup, NULL);
 }

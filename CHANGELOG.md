@@ -32,6 +32,7 @@ Modified 2026-11-01: record the game loop off QuickJS.
 Modified 2026-11-01: record microtask checkpoints after every macrotask.
 Modified 2026-11-04: record the renderer binding port.
 Modified 2026-11-05: record the direct-QuickJS test port.
+Modified 2026-11-05: record the non-enumerable jsb functions and shared ArrayBuffer check.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 <!-- Records project changes for release review; keep entries free of private data. -->
@@ -41,6 +42,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Share the ArrayBuffer brand check in jsb and define native functions non-enumerably. (M1-T026b)
 - Build V8 against the host libstdc++ (`use_sysroot = false`) and link v8 mode with lld, which the monolith's CREL relocations need. (M1-T001)
 - Build the pinned V8 on GitHub Actions by hand (`v8-build.yml`) and bootstrap depot_tools in `build_v8.sh`. (M1-T001)
 - Port the tests that called QuickJS directly to `js_engine.h`/`jsb.h` and remove the transitional binding wrappers. (M1-T026) (M1-T026)

@@ -4,6 +4,7 @@
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-11-04: port the HTMLVideoElement bridge to jsb.
  * Modified 2026-11-05: remove the transitional QuickJS wrapper.
+ * Modified 2026-11-05: rely on jsb_set_fn_n for non-enumerable functions (card M1-T026b).
  *
  * Main-thread native video bridge for the DOM shim; see docs/js-binding.md.
  * jsb handles are call-scoped and never retained (spec section 15.8).
@@ -208,13 +209,6 @@ static bool video_define_setup(jsb_ctx *ctx, void *user)
     return jsb_define_module(ctx, "__native_video", video_module_init);
 }
 
-/* smzuggler: restore upstream's non-enumerable function properties.
- * Missing arguments formerly returned an uninitialized exception sentinel;
- * jsb cannot represent it. The parity test exposes this unresolved seam gap. */
-static const char video_surface_js[] =
-    "(function(m){Object.getOwnPropertyNames(m).forEach(function(k){"
-    "Object.defineProperty(m,k,{enumerable:false})});})(__native_video);";
-
 /* See bind_video.h: borrow rt and report definition errors on the main thread. */
 bool bind_video_define(jsb_runtime *rt)
 {
@@ -222,11 +216,5 @@ bool bind_video_define(jsb_runtime *rt)
         fprintf(stderr, "bind_video_define: no jsb runtime\n");
         return false;
     }
-    if (!jsb_runtime_setup(rt, video_define_setup, NULL)) return false;
-    char error[256];
-    if (!jsb_runtime_eval(rt, video_surface_js, "bind_video.c", error, sizeof error)) {
-        fprintf(stderr, "bind_video_define: %s\n", error);
-        return false;
-    }
-    return true;
+    return jsb_runtime_setup(rt, video_define_setup, NULL);
 }

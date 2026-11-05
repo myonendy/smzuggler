@@ -4,6 +4,7 @@
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-11-04: ported to the jsb seam (bind_effekseer_define).
  * Modified 2026-11-05: remove the transitional QuickJS wrapper.
+ * Modified 2026-11-05: rely on jsb_set_fn_n for non-enumerable functions (card M1-T026b).
  *
  * The __native_effekseer binding: the native bridge under effekseer_shim.js,
  * which stands in for the Effekseer WebGL runtime RMMZ loads in NW.js. See
@@ -402,30 +403,11 @@ static bool effekseer_define_setup(jsb_ctx *ctx, void *user)
     return jsb_define_module(ctx, "__native_effekseer", effekseer_module_init);
 }
 
-/* smzuggler: upstream's function list defined the functions non-enumerable
- * (writable, configurable); jsb_set_fn_n assigns them, which makes them
- * enumerable. This restores the old attributes so the JS API stays
- * byte-for-byte. Run once by bind_effekseer_define, after the module exists. */
-static const char effekseer_hide_fns_js[] =
-    "(function (m) {\n"
-    "  Object.getOwnPropertyNames(m).forEach(function (k) {\n"
-    "    Object.defineProperty(m, k, { enumerable: false });\n"
-    "  });\n"
-    "})(__native_effekseer);\n";
-
 bool bind_effekseer_define(jsb_runtime *rt)
 {
     if (!rt) {
         fprintf(stderr, "bind_effekseer_define: no jsb runtime\n");
         return false;
     }
-    if (!jsb_runtime_setup(rt, effekseer_define_setup, NULL))
-        return false;
-    char err[256];
-    if (!jsb_runtime_eval(rt, effekseer_hide_fns_js, "bind_effekseer.c",
-                          err, sizeof err)) {
-        fprintf(stderr, "bind_effekseer_define: %s\n", err);
-        return false;
-    }
-    return true;
+    return jsb_runtime_setup(rt, effekseer_define_setup, NULL);
 }

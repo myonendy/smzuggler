@@ -2,6 +2,8 @@
 // Copyright (C) 2026 The smzuggler contributors
 // Modified 2026-11-04: the seam calls of card M1-T007b; native calls run
 // inside a TryCatch so jsb_clear_exception can drop an error.
+// Modified 2026-11-05: share the ArrayBuffer brand check and define native
+// functions non-enumerably (card M1-T026b).
 //
 // V8 implementation of the jsb seam declared in src/jsb/jsb.h.
 //
@@ -436,6 +438,13 @@ bool jsb_arg_bytes(jsb_ctx *ctx, int index, uint8_t **data, size_t *len) {
     return true;
 }
 
+// See jsb.h: jsb_arg_is_array_buffer. V8's intrinsic brand test never runs a
+// property getter, so a shadowed `byteOffset` cannot change the answer or
+// throw; a Proxy of an ArrayBuffer is not itself an ArrayBuffer.
+bool jsb_arg_is_array_buffer(jsb_ctx *ctx, int index) {
+    return arg(ctx, index)->IsArrayBuffer();
+}
+
 // See jsb.h: jsb_ret_undefined.
 void jsb_ret_undefined(jsb_ctx *ctx) {
     if (can_return(ctx)) ctx->info->GetReturnValue().SetUndefined();
@@ -522,7 +531,12 @@ bool jsb_set_fn_n(jsb_ctx *ctx, jsb_val *obj, const char *name, jsb_fn fn,
         return false;
     v8::Local<v8::String> key = utf8(ctx->isolate, name);
     func->SetName(key);
-    return target->Set(ctx->context, key, func).FromMaybe(false);
+    // Like JS_CFUNC_DEF: writable and configurable, but absent from
+    // Object.keys and for-in.
+    return target
+        ->DefineOwnProperty(ctx->context, key, func,
+                            static_cast<v8::PropertyAttribute>(v8::DontEnum))
+        .FromMaybe(false);
 }
 
 // See jsb.h: jsb_set_prop.

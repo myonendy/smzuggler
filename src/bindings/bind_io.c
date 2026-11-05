@@ -4,6 +4,7 @@
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-11-04: ported from QuickJS to the jsb seam (spec section 4.1).
  * Modified 2026-11-05: remove the transitional QuickJS wrapper.
+ * Modified 2026-11-05: rely on jsb_set_fn_n for non-enumerable functions (card M1-T026b).
  *
  * __native_io: synchronous file I/O for fs_shim.js, which stands in for
  * Node's `fs` module as NW.js games use it (docs/js-binding.md, "bind_io").
@@ -418,29 +419,11 @@ static bool io_define_setup(jsb_ctx *ctx, void *user)
     return jsb_define_module(ctx, "__native_io", io_module_init);
 }
 
-/* smzuggler: upstream's function list defined the functions non-enumerable
- * (writable, configurable); jsb_set_fn_n assigns them, which makes them
- * enumerable. This restores the old attributes so the JS API stays
- * byte-for-byte. Run once by bind_io_define, after the module exists. */
-static const char io_hide_fns_js[] =
-    "(function (m) {\n"
-    "  Object.getOwnPropertyNames(m).forEach(function (k) {\n"
-    "    Object.defineProperty(m, k, { enumerable: false });\n"
-    "  });\n"
-    "})(__native_io);\n";
-
 bool bind_io_define(jsb_runtime *rt)
 {
     if (!rt) {
         fprintf(stderr, "bind_io_define: no jsb runtime\n");
         return false;
     }
-    if (!jsb_runtime_setup(rt, io_define_setup, NULL))
-        return false;
-    char err[256];
-    if (!jsb_runtime_eval(rt, io_hide_fns_js, "bind_io.c", err, sizeof err)) {
-        fprintf(stderr, "bind_io_define: %s\n", err);
-        return false;
-    }
-    return true;
+    return jsb_runtime_setup(rt, io_define_setup, NULL);
 }

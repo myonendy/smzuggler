@@ -18,6 +18,8 @@ Modified 2026-11-05: document that M1-T026 removed the bind_<x>_register wrapper
 and that tests reach the engine through js_engine.h and jsb.h.
 Modified 2026-11-04: document the Effekseer binding port and parity capture.
 Modified 2026-11-05: document the filters binding port and parity capture.
+Modified 2026-11-05: document non-enumerable jsb functions and the shared
+ArrayBuffer brand check (M1-T026b).
 Modified 2026-11-04: document the renderer binding port and parity checks.
 How native C bindings talk to the JS engine through jsb.h, and the handle rules.
 -->
@@ -83,7 +85,8 @@ in a `TryCatch` that it resets. On V8 `jsb_throw_internal` makes an `Error` whos
 
 | QuickJS in `src/bindings/` | jsb |
 | --- | --- |
-| `JS_CFUNC_DEF`, `JS_SetPropertyFunctionList`, `JS_NewCFunction` | `jsb_set_fn_n` (arity = `length`) |
+| `JS_CFUNC_DEF`, `JS_SetPropertyFunctionList`, `JS_NewCFunction` | `jsb_set_fn_n` (arity = `length`, writable/configurable/non-enumerable) |
+| `JS_IsArrayBuffer` | `jsb_arg_is_array_buffer` (intrinsic brand check, no getters) |
 | `JS_GetGlobalObject` | `jsb_define_module` |
 | `JS_NewObject`, `JS_SetPropertyStr`, `JS_GetPropertyStr` | `jsb_new_object`, `jsb_set_prop`, `jsb_get_prop` |
 | `JS_NewAtomLen`, `JS_SetProperty`, `JS_FreeAtom` | `jsb_set_prop` on a NUL-terminated key copy |
@@ -115,23 +118,23 @@ the pre-port binary's in both engine modes.
 
 | Binding | Module and functions (`length`) | jsb calls used | Buffers | Callbacks |
 | --- | --- | --- | --- | --- |
-| `bind_io.c` (M1-T016) | `__native_io`: `readFileSync` (1), `readFileBinary` (1), `writeFileSync` (2), `writeFileBinary` (2), `mkdirSync` (1), `existsSync` (1), `isDirSync` (1), `readdirSync` (1), `unlinkSync` (1), `renameSync` (2), `getGameRoot` (0), `resolvePath` (1) | `jsb_define_module`, `jsb_set_fn_n`, `jsb_arg_count/to_str/val/bytes`, `jsb_free_str`, `jsb_get_prop`, `jsb_val_type`, `jsb_clear_exception`, `jsb_new_array/str/str_len/buffer_copy`, `jsb_set_index`, `jsb_ret_val/bool/str/undefined`, `jsb_throw_type/internal`, `jsb_runtime_setup/eval` | Reads copy native bytes into engine-owned ArrayBuffers; writes borrow bytes only during the call and accept ArrayBuffers only | none |
-| `bind_input.c` (M1-T015) | `__native_input`: `pollEvents` (0), `getGamepad` (1), `getGamepadCount` (0) | `jsb_define_module`, `jsb_set_fn_n`, `jsb_new_object/array/str/i32/f64/bool/null`, `jsb_set_prop`, `jsb_set_index`, `jsb_arg_count`, `jsb_arg_to_i32` (`getGamepad` coerces its index), `jsb_ret_val/i32`, `jsb_runtime_eval` | none | none |
+| `bind_io.c` (M1-T016) | `__native_io`: `readFileSync` (1), `readFileBinary` (1), `writeFileSync` (2), `writeFileBinary` (2), `mkdirSync` (1), `existsSync` (1), `isDirSync` (1), `readdirSync` (1), `unlinkSync` (1), `renameSync` (2), `getGameRoot` (0), `resolvePath` (1) | `jsb_define_module`, `jsb_set_fn_n`, `jsb_arg_count/to_str/val/bytes`, `jsb_free_str`, `jsb_get_prop`, `jsb_val_type`, `jsb_clear_exception`, `jsb_new_array/str/str_len/buffer_copy`, `jsb_set_index`, `jsb_ret_val/bool/str/undefined`, `jsb_throw_type/internal`, `jsb_runtime_setup` | Reads copy native bytes into engine-owned ArrayBuffers; writes borrow bytes only during the call and accept ArrayBuffers only | none |
+| `bind_input.c` (M1-T015) | `__native_input`: `pollEvents` (0), `getGamepad` (1), `getGamepadCount` (0) | `jsb_define_module`, `jsb_set_fn_n`, `jsb_new_object/array/str/i32/f64/bool/null`, `jsb_set_prop`, `jsb_set_index`, `jsb_arg_count`, `jsb_arg_to_i32` (`getGamepad` coerces its index), `jsb_ret_val/i32`, `jsb_runtime_setup` | none | none |
 | `bind_font.c` (M1-T018) | `__native_font`: `loadFont` (2), `loadFontFile` (2), `hasFont` (1), `getMetrics` (2), `measureText` (3), `fontCount` (0), `fontNames` (0) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_to_str/f64`, `jsb_free_str`, `jsb_arg_bytes`, `jsb_clear_exception`, `jsb_throw_type`, `jsb_new_object/array/str/f64/null`, `jsb_set_prop/index`, `jsb_ret_val/bool/i32/f64` | Borrowed ArrayBuffer bytes during `loadFont`; both font caches copy them before return. File bytes are owned and freed by the binding. | none |
 | `bind_audio.c` (M1-T019) | `__native_audio`: `init`, `shutdown`, `isInitialized`, `stopAll`, `getActiveVoiceCount` (0); `load`, `loadStream`, `loadFromMemory`, `freeSource`, `stop`, `stopBus`, `pause`, `resume`, `pauseBus`, `resumeBus`, `isPlaying`, `isPaused`, `getVolume`, `getPosition`, `getDuration` (1); `setVolume`, `setPitch`, `setPan`, `setBusVolume`, `seek` (2); `fadeVolume`, `fadeBusVolume` (3); `play` (6) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_to_str/u32/i32/f64`, `jsb_arg_truthy`, `jsb_free_str`, `jsb_arg_bytes`, `jsb_clear_exception`, `jsb_throw_type/range`, `jsb_new_u32/i32`, `jsb_set_prop`, `jsb_ret_val/bool/i32/f64` | ArrayBuffer-only `loadFromMemory`; borrowed bytes are copied by SoLoud before return. | none |
-| `bind_video.c` (M1-T020) | `__native_video`: `open`, `close`, `play`, `pause`, `getState` (1); `setVolume`, `setLoop`, `setVisible` (2) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_to_str/i32/f64`, `jsb_arg_truthy`, `jsb_free_str`, `jsb_new_object/bool/f64/i32/null`, `jsb_set_prop`, `jsb_ret_val/i32/undefined`, `jsb_throw_type` | none | none |
-| `bind_canvas2d.c` (M1-T021) | `__native_canvas2d`: 27 methods, with upstream names and arities (baseline below) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_to_u32/i32/f64/str`, `jsb_free_str`, `jsb_arg_bytes`, `jsb_clear_exception`, `jsb_throw_type/range/internal`, `jsb_new_object/i32/u32/null/buffer_copy`, `jsb_set_prop`, `jsb_ret_val/bool/f64` | Input ArrayBuffer bytes are borrowed only after coercions finish; rendering/font services copy them. Pixel results are engine-owned copies. File bytes and coerced strings are freed by the binding. | none |
-| `bind_effekseer.c` (M1-T022) | `__native_effekseer`: `init` (3); `shutdown`, `isInitialized`, `stopAll`, `beginDraw`, `endDraw`, `resetBackground`, `getLoadedCount`, `getPlayingCount` (0); `load`, `setSpeed` (2); `play`, `setPosition`, `setRotation`, `setScale` (4); `release`, `isLoaded`, `stop`, `stopRoot`, `exists`, `setProjectionMatrix`, `setCameraMatrix`, `update`, `drawHandle`, `setRestorationOfStatesFlag`, `setBackground` (1) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count/val/to_str/to_i32/to_u32/to_f64/truthy`, `jsb_free_str`, `jsb_is_array`, `jsb_get_index`, `jsb_val_to_f64`, `jsb_clear_exception`, `jsb_new_u32`, `jsb_ret_val/bool/i32`, `jsb_throw_type` | none; matrices are plain Arrays read with Number coercion, copied to 16 native floats during the call | none |
+| `bind_video.c` (M1-T020) | `__native_video`: `open`, `close`, `play`, `pause`, `getState` (1); `setVolume`, `setLoop`, `setVisible` (2) | `jsb_define_module`, `jsb_runtime_setup`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_to_str/i32/f64`, `jsb_arg_truthy`, `jsb_free_str`, `jsb_new_object/bool/f64/i32/null`, `jsb_set_prop`, `jsb_ret_val/i32/undefined`, `jsb_throw_type` | none | none |
+| `bind_canvas2d.c` (M1-T021) | `__native_canvas2d`: 27 methods, with upstream names and arities (baseline below) | `jsb_define_module`, `jsb_runtime_setup`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_to_u32/i32/f64/str`, `jsb_free_str`, `jsb_arg_is_array_buffer`, `jsb_arg_bytes`, `jsb_clear_exception`, `jsb_throw_type/range/internal`, `jsb_new_object/i32/u32/null/buffer_copy`, `jsb_set_prop`, `jsb_ret_val/bool/f64` | Input ArrayBuffer bytes are borrowed only after coercions finish; rendering/font services copy them. Pixel results are engine-owned copies. File bytes and coerced strings are freed by the binding. | none |
+| `bind_effekseer.c` (M1-T022) | `__native_effekseer`: `init` (3); `shutdown`, `isInitialized`, `stopAll`, `beginDraw`, `endDraw`, `resetBackground`, `getLoadedCount`, `getPlayingCount` (0); `load`, `setSpeed` (2); `play`, `setPosition`, `setRotation`, `setScale` (4); `release`, `isLoaded`, `stop`, `stopRoot`, `exists`, `setProjectionMatrix`, `setCameraMatrix`, `update`, `drawHandle`, `setRestorationOfStatesFlag`, `setBackground` (1) | `jsb_define_module`, `jsb_runtime_setup`, `jsb_set_fn_n`, `jsb_arg_count/val/to_str/to_i32/to_u32/to_f64/truthy`, `jsb_free_str`, `jsb_is_array`, `jsb_get_index`, `jsb_val_to_f64`, `jsb_clear_exception`, `jsb_new_u32`, `jsb_ret_val/bool/i32`, `jsb_throw_type` | none; matrices are plain Arrays read with Number coercion, copied to 16 native floats during the call | none |
 | `bind_filters.c` (M1-T024) | `__native_filters`: `init`, `shutdown`, `drawQuad`, `endFilter` (0); `deleteShader` (1); `compileShader` (2); `setUniform1f`, `setUniformMat4` (3); `beginFilter`, `setUniform2f`, `setUniformTexture` (4); `setUniform4f` (6); plus the shader-ID values `colorMatrixShader`, `maskShader`, `blurShader`, `alphaShader`, `colorFilterShader` | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_set_prop`, `jsb_arg_count/val/type/to_str/to_u32/to_i32/to_f64`, `jsb_arg_bytes`, `jsb_get_prop`, `jsb_is_array`, `jsb_get_index`, `jsb_val_to_f64`, `jsb_clear_exception`, `jsb_free_str`, `jsb_new_u32`, `jsb_ret_val/bool/undefined`, `jsb_throw_type` | `setUniformMat4` borrows an ArrayBuffer or TypedArray's bytes only for the call; a plain (or short) Array is read with Number coercion into 16 native floats during the call. A DataView or other value stays ignored, as upstream's two probes did | none |
 
 
 
-`jsb_set_fn_n` assigns functions, so they come out enumerable, while `JS_CFUNC_DEF` made
-them non-enumerable. `bind_input_define` restores that with a one-line
-`Object.defineProperty` script after the module exists, so `Object.keys(__native_input)`
-stays empty as before.
+`jsb_set_fn_n` defines functions writable, configurable and non-enumerable, as
+`JS_CFUNC_DEF` did, so `Object.keys(__native_input)` is empty without a
+post-definition script.
 
-`bind_io_define` restores the same property attributes for `__native_io`.
+`bind_io_define` gets the same property attributes from `jsb_set_fn_n`; it needs
+no setup script either.
 The `bind_io_jsb` ctest checks all twelve names and arities above, string and
 ArrayBuffer round trips (including embedded NULs and empty buffers), directory
 arrays, boolean filesystem results, undefined write results, coercion, and exact
@@ -154,9 +157,9 @@ The retained I/O parity test records these pre-port expectations:
 | Invalid binary data | `TypeError: writeFileBinary: second argument must be an ArrayBuffer` |
 | Missing read targets | InternalError: `failed to read file: <resolved path>`, `failed to read binary file: <resolved path>`, or `failed to read directory: <resolved path>` |
 
-`bind_font_define` also restores non-enumerable function properties. Its setup script
-captures the intrinsic ArrayBuffer byte-length getter and wraps `loadFont` with a
-non-constructible method of the same name and arity. The getter checks the actual
+`bind_font_define` preserves the native ArrayBuffer brand check with a setup
+script that captures the intrinsic ArrayBuffer byte-length getter and wraps
+`loadFont` with a non-constructible method of the same name and arity. The getter checks the actual
 ArrayBuffer brand: typed arrays, DataView and spoofed objects keep the old binding's
 TypeError instead of passing the seam's broader `jsb_arg_bytes` reader. Family
 ToString runs first, preserving conversion exceptions and ordering. No JS runs
@@ -188,9 +191,9 @@ longer than 4096 bytes remain accepted, and an embedded NUL in a family still
 terminates its native name. All expectations also run against the port.
 
 
-`bind_audio_define` preserves non-enumerable function properties and the native
-ArrayBuffer brand check using the same captured intrinsic technique as the font
-port. Only the four bus constants are enumerable. The wrapper's method syntax
+`bind_audio_define` preserves the native ArrayBuffer brand check using the same
+captured intrinsic technique as the font port. Only the four bus constants are
+enumerable. The wrapper's method syntax
 preserves `loadFromMemory.length === 1` and its lack of a constructor. The C
 binding uses coercing argument readers in the original order; all strings are
 freed and no borrowed bytes or JS handles survive the call. Audio ending events
@@ -246,11 +249,12 @@ the new parity test supplies that coverage.
 | `jsb_arg_obj(ctx, i)` | Needs an Object (functions and arrays count, `null` does not). |
 | `jsb_arg_val(ctx, i)` | Any value; never throws. |
 | `jsb_arg_bytes(ctx, i, &data, &len)` | Needs an ArrayBuffer, TypedArray or DataView; gives its bytes in place (see "Buffers"). TypeError if detached. |
+| `jsb_arg_is_array_buffer(ctx, i)` | True only for a plain ArrayBuffer, not a TypedArray, DataView or SharedArrayBuffer. An intrinsic brand check that runs no getters; never throws. |
 | `jsb_new_external_buffer(ctx, data, len, free_fn, user)` | Wraps native memory as an ArrayBuffer without copying; JS then owns it. |
 | `jsb_adjust_external_memory(ctx, change)` | Reports native memory held by JS wrappers to the GC; returns the runtime's total. |
 | `jsb_ret_undefined/_bool/_i32/_f64/_str/_val` | Set the result; the last call wins; ignored after a throw. |
 | `jsb_throw_type/_range(ctx, fmt, ...)` | Throw TypeError/RangeError with a printf-style message. Only the first throw of a call counts. |
-| `jsb_new_object`, `jsb_set_fn`, `jsb_set_prop`, `jsb_get_prop` | Build and read objects. Set and get are ordinary `[[Set]]`/`[[Get]]`, so accessors run. |
+| `jsb_new_object`, `jsb_set_fn`, `jsb_set_prop`, `jsb_get_prop` | Build and read objects. `jsb_set_fn` defines a writable, configurable, non-enumerable function property; set and get are ordinary `[[Set]]`/`[[Get]]`, so accessors run. |
 | `jsb_define_module(ctx, name, init)` | Makes a fresh object, fills it with `init`, then sets the global `name`. A failed `init` leaves no global. |
 
 **Missing arguments** count as `undefined`, so every typed getter throws
@@ -411,9 +415,9 @@ adds `bind_<x>_define(jsb_runtime *rt, ...)`; M1-T026 removed the old
 | Binding | Globals | Functions (`length`) | jsb calls used | Buffers | Callbacks |
 | --- | --- | --- | --- | --- | --- |
 | `bind_platform.c` (M1-T014) | `__native_platform`, `__native_process` | `setFullscreen` (1), `isFullscreen`, `getDisplaySize`, `getDisplayScale`, `getWindowSize`, `setWindowTitle` (1), `quit` (0 for the rest); process: `platform`, `arch`, `engine` strings, `environ`, `hrtime` (0) | `jsb_define_module`, `jsb_runtime_setup`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_truthy`, `jsb_arg_to_str`/`jsb_free_str`, `jsb_new_object`/`array`/`i32`/`f64`/`str`, `jsb_set_prop`, `jsb_set_index`, `jsb_ret_*`, `jsb_throw_type`, `jsb_throw_internal`, `jsb_engine_version` | none | none |
-| `bind_image.c` (M1-T017) | `__native_image` | `decodeApng` (1), `loadImage` (1), `loadImageFromMemory` (2), `getImageInfo` (1), `getImagePixels` (1), `freeImage` (1), `cacheCount` (0), `clearCache` (0) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count/val/to_str/to_u32`, `jsb_free_str`, `jsb_new_object/array/i32/u32/null`, `jsb_set_prop/index`, `jsb_get_prop`, `jsb_val_type`, `jsb_ret_val/undefined`, `jsb_throw_type/internal`, `jsb_clear_exception` | `jsb_arg_bytes` borrows input bytes during the call; `jsb_new_buffer_copy` gives JS its own RGBA copy | none |
-| `bind_renderer.c` (M1-T023) | `__native_renderer` | `init` (2), `shutdown` (0), `resize` (2), `getSize` (0), `beginFrame` (0), `beginFrameTransparent` (0), `endFrame` (0), `createTexture` (2), `updateTexture` (4), `deleteTexture` (1), `setTextureFilter` (2), `createRenderTexture` (2), `deleteRenderTexture` (2), `bindRenderTexture` (3), `unbindRenderTexture` (0), `drawQuad` (11), `drawQuadVertices` (15), `drawQuadVerticesUV` (19), `flush` (0), `setBlendMode` (1), `getDrawCalls` (0), `getQuadCount` (0), `readPixels` (3), `rebindBatch` (0), `setScissor` (4), `clearScissor` (0), `setScreenViewport` (4) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count/val/to_i32/to_u32/to_f64/truthy`, `jsb_arg_bytes`, `jsb_get_prop`, `jsb_val_type`, `jsb_clear_exception`, `jsb_new_object/i32/u32/null/buffer_copy`, `jsb_set_prop`, `jsb_ret_val/bool/i32/undefined`, `jsb_throw_type/range` | `updateTexture` borrows an ArrayBuffer's bytes only during the call (views are rejected, as upstream did); `readPixels` copies the native RGBA buffer into an engine-owned ArrayBuffer and frees the native one | none |
-| `bind_tilemap.c` (M1-T025) | `__native_tilemap` | `drawTiles` (8) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count/val/to_i32/to_f64`, `jsb_get_index`, `jsb_val_to_u32/i32`, `jsb_get_prop`, `jsb_val_type`, `jsb_arg_bytes`, `jsb_clear_exception`, `jsb_ret_undefined`, `jsb_throw_type/range/internal` | `drawTiles` borrows its element ArrayBuffer only during the call, after every coercion (views are rejected, as upstream's buffer read did) | none |
+| `bind_image.c` (M1-T017) | `__native_image` | `decodeApng` (1), `loadImage` (1), `loadImageFromMemory` (2), `getImageInfo` (1), `getImagePixels` (1), `freeImage` (1), `cacheCount` (0), `clearCache` (0) | `jsb_define_module`, `jsb_runtime_setup`, `jsb_set_fn_n`, `jsb_arg_count/val/to_str/to_u32`, `jsb_free_str`, `jsb_new_object/array/i32/u32/null`, `jsb_set_prop/index`, `jsb_get_prop`, `jsb_val_type`, `jsb_ret_val/undefined`, `jsb_throw_type/internal`, `jsb_arg_is_array_buffer`, `jsb_clear_exception` | `jsb_arg_bytes` borrows input bytes during the call; `jsb_new_buffer_copy` gives JS its own RGBA copy | none |
+| `bind_renderer.c` (M1-T023) | `__native_renderer` | `init` (2), `shutdown` (0), `resize` (2), `getSize` (0), `beginFrame` (0), `beginFrameTransparent` (0), `endFrame` (0), `createTexture` (2), `updateTexture` (4), `deleteTexture` (1), `setTextureFilter` (2), `createRenderTexture` (2), `deleteRenderTexture` (2), `bindRenderTexture` (3), `unbindRenderTexture` (0), `drawQuad` (11), `drawQuadVertices` (15), `drawQuadVerticesUV` (19), `flush` (0), `setBlendMode` (1), `getDrawCalls` (0), `getQuadCount` (0), `readPixels` (3), `rebindBatch` (0), `setScissor` (4), `clearScissor` (0), `setScreenViewport` (4) | `jsb_define_module`, `jsb_runtime_setup`, `jsb_set_fn_n`, `jsb_arg_count/val/to_i32/to_u32/to_f64/truthy`, `jsb_arg_is_array_buffer`, `jsb_arg_bytes`, `jsb_get_prop`, `jsb_val_type`, `jsb_clear_exception`, `jsb_new_object/i32/u32/null/buffer_copy`, `jsb_set_prop`, `jsb_ret_val/bool/i32/undefined`, `jsb_throw_type/range` | `updateTexture` borrows an ArrayBuffer's bytes only during the call (views are rejected, as upstream did); `readPixels` copies the native RGBA buffer into an engine-owned ArrayBuffer and frees the native one | none |
+| `bind_tilemap.c` (M1-T025) | `__native_tilemap` | `drawTiles` (8) | `jsb_define_module`, `jsb_runtime_setup`, `jsb_set_fn_n`, `jsb_arg_count/val/to_i32/to_f64`, `jsb_get_index`, `jsb_val_to_u32/i32`, `jsb_get_prop`, `jsb_val_type`, `jsb_arg_is_array_buffer`, `jsb_arg_bytes`, `jsb_clear_exception`, `jsb_ret_undefined`, `jsb_throw_type/range/internal` | `drawTiles` borrows its element ArrayBuffer only during the call, after every coercion (views are rejected, as upstream's buffer read did) | none |
 
 * **bind_image.** Defines the eight functions in upstream order, with their original
   arities and non-enumerable, writable, configurable properties. Strings and handles
@@ -438,13 +442,14 @@ adds `bind_<x>_define(jsb_runtime *rt, ...)`; M1-T026 removed the old
   including for image-related rows. Native module rows and lengths are absent
   from that inventory, so the contract test checks them separately.
 
-  **Remaining seam limitation:** there is no intrinsic buffer-kind query in
-  `jsb.h`. The binding currently distinguishes ArrayBuffers from views using
-  `byteOffset` and `BYTES_PER_ELEMENT` properties before borrowing bytes. A script
-  can shadow those properties, unlike the original intrinsic type checks. Exact
-  parity for such inputs requires strict ArrayBuffer/TypedArray getters in both
-  seam backends, outside this card's owned files. Property reads precede byte
-  borrowing so a getter cannot detach already-borrowed storage.
+  **ArrayBuffer checks:** `jsb_arg_is_array_buffer` gives all four buffer
+  bindings the engine's intrinsic brand test, so a script cannot shadow
+  `byteOffset` to change the answer or make the check throw. `decodeApng`
+  still accepts a TypedArray by its `BYTES_PER_ELEMENT` property, which a
+  script can shadow, and `jsb_arg_bytes` then accepts any real view; a
+  DataView with that property spoofed is therefore still accepted. Property
+  reads precede byte borrowing so a getter cannot detach already-borrowed
+  storage.
 
 * **bind_renderer.** Defines the 27 functions in upstream order, with their original
   arities and non-enumerable, writable, configurable properties. Every numeric
@@ -734,7 +739,7 @@ own handle.
 engine's context: QuickJS in quickjs mode and `smz_js_engine_v8` in v8 mode.
 All values are call-scoped, the coerced path is freed after `video_open`, and
 video events remain polled by the DOM shim; no persistent callback is needed.
-The post-definition script restores non-enumerable methods. Missing required
+The methods come from `jsb_set_fn_n`, so they are non-enumerable. Missing required
 arguments throw a `TypeError` naming the function and the missing value. That
 is a deliberate, documented deviation: the pre-port QuickJS binding returned
 its bare internal uninitialized exception sentinel (`typeof` unknown,
@@ -782,11 +787,11 @@ writes that line from the final report; the edit is kept so the gate passes.
 `bind_canvas2d_define` defines the module on the supplied engine runtime. The
 transitional register wrapper adopts the existing engine context. All calls run
 on the main thread; no jsb handle or borrowed buffer survives a native call.
-The ArrayBuffer-only check is the same as bind_image's: a value with a `byteOffset`
-is a view and is rejected, and plain or spoofed objects fail in `jsb_arg_bytes`;
-either way the binding throws upstream's own TypeError. Numeric/string coercions run in upstream order
+The ArrayBuffer-only check is the shared `jsb_arg_is_array_buffer` brand test:
+a TypedArray, DataView, plain or spoofed object is rejected, and the binding
+throws upstream's own TypeError. Numeric/string coercions run in upstream order
 before buffer validation, so user code cannot detach an already borrowed pointer.
-The setup script also restores non-enumerability for all 27 methods.
+`jsb_set_fn_n` makes all 27 methods non-enumerable.
 
 The new `bind_canvas2d_jsb` ctest uses real CPU Canvas2D services without a graphics
 device and calls `bind_canvas2d_define(js_engine_get_jsb(engine))`: the adopted

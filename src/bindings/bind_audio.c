@@ -4,6 +4,7 @@
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-11-04: port the native audio bridge to jsb.
  * Modified 2026-11-05: remove the transitional QuickJS wrapper.
+ * Modified 2026-11-05: rely on jsb_set_fn_n for non-enumerable functions (card M1-T026b).
  *
  * Implements the native mixer bridge for src/shims/webaudio_shim.js, backing
  * the AudioContext, AudioBufferSourceNode and AudioParam compat-surface rows.
@@ -514,10 +515,11 @@ static bool audio_define_setup(jsb_ctx *ctx, void *user)
     return jsb_define_module(ctx, "__native_audio", audio_module_init);
 }
 
-/* smzuggler: preserve the ArrayBuffer-only brand check and non-enumerable
- * native functions, as in bind_font. Capture the intrinsic before game JS;
- * no JS executes while C borrows buffer bytes. Method syntax keeps length,
- * name and non-constructibility of the original native entry point. */
+/* smzuggler: preserve the ArrayBuffer-only brand check, as in bind_font.
+ * Capture the intrinsic before game JS; no JS executes while C borrows
+ * buffer bytes. Method syntax keeps length, name and non-constructibility
+ * of the original native entry point; jsb_set_fn_n already made its
+ * property non-enumerable. */
 static const char audio_surface_js[] =
     "(function(m){"
     "var nativeLoad=m.loadFromMemory;"
@@ -527,8 +529,6 @@ static const char audio_surface_js[] =
     "try{byteLength.call(buffer)}catch(e){"
     "throw new TypeError('argument must be an ArrayBuffer')}"
     "return nativeLoad(buffer)}}.loadFromMemory;"
-    "Object.getOwnPropertyNames(m).forEach(function(k){"
-    "if(typeof m[k]==='function')Object.defineProperty(m,k,{enumerable:false})});"
     "})(__native_audio);";
 
 /* See bind_audio.h: borrow rt, report registration errors on the main thread. */

@@ -4,6 +4,7 @@
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-11-04: expose the font API through jsb.
  * Modified 2026-11-05: remove the transitional QuickJS wrapper.
+ * Modified 2026-11-05: rely on jsb_set_fn_n for non-enumerable functions (card M1-T026b).
  *
  * Supplies font loading and measurement for the FontFace/Canvas2D shims.
  * Main thread only; no JS handle or borrowed buffer survives a call.
@@ -239,10 +240,11 @@ static bool font_define_setup(jsb_ctx *ctx, void *user)
     return jsb_define_module(ctx, "__native_font", font_module_init);
 }
 
-/* smzuggler: keep upstream's ArrayBuffer-only input and non-enumerability.
- * jsb's byte reader also accepts views. Capture the intrinsic brand getter,
- * and coerce family first, just as the native binding did. Method syntax
- * preserves the native function's lack of a constructor/prototype property. */
+/* smzuggler: keep upstream's ArrayBuffer-only input. jsb's byte reader also
+ * accepts views. Capture the intrinsic brand getter, and coerce family
+ * first, just as the native binding did. Method syntax preserves the native
+ * function's lack of a constructor/prototype property; jsb_set_fn_n already
+ * made its property non-enumerable. */
 static const char font_surface_js[] =
     "(function(m){"
     "var nativeLoad=m.loadFont;"
@@ -253,8 +255,6 @@ static const char font_surface_js[] =
     "try{byteLength.call(buffer)}catch(e){"
     "throw new TypeError('loadFont: second arg must be ArrayBuffer')}"
     "return nativeLoad(family,buffer)}}.loadFont;"
-    "Object.getOwnPropertyNames(m).forEach(function(k){"
-    "Object.defineProperty(m,k,{enumerable:false})});"
     "})(__native_font);";
 
 /* See bind_font.h: setup borrows rt and reports registration failures loudly. */
