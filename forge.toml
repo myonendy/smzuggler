@@ -82,6 +82,20 @@ monthly_usd = 80.0
 timeout_min = 40
 hide = ["~/.config/smzuggler-rt", "~/Documents/GrokBot/smuggler-saves"]
 
+# DeepSeek V4.1 Flash (1017 snapshot) through OpenRouter at API prices (owner, 2026-11-04).
+# Owner cap: $25 per 30 days, enforced by [pools.openrouter] below.
+[agents.or-deepseek]
+harness = "opencode"
+pool = "openrouter"
+model = "openrouter/deepseek/deepseek-v4.1-flash-1017"
+family = "deepseek"
+timeout_min = 40
+hide = ["~/.config/smzuggler-rt", "~/Documents/GrokBot/smuggler-saves"]
+
+[pools.openrouter]
+usd_30d = 25.0                     # OWNER 2026-11-04: $25 a month
+plan_limit_re = "requires more credits|insufficient credits|key limit"
+
 # Plan-wide OpenCode Go cap. Keep identical in every project that uses the pool.
 [pools.opencode-go]
 usd_5h = 2.25
