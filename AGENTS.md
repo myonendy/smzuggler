@@ -99,7 +99,7 @@ A reviewer that finds any of these rejects the whole change.
 - Every public function/type has a doc comment explaining **why** and any contract
   (units, ownership, ranges, thread). Do not restate *what* the code says.
 - Each card lists its docs in `docs`; they must change in the same diff (DOCS gate), with
-  two exceptions below: `CHANGELOG.md` and `docs/DECISIONS.md`.
+  one exception below: `docs/DECISIONS.md`.
 - Module boundary changes update `ARCHITECTURE.md` in the same change: edit the one
   section involved, found with grep, not the whole file.
 - **Decisions:** only for choices a later agent could not recover from the code: a spec
@@ -108,10 +108,12 @@ A reviewer that finds any of these rejects the whole change.
   header (as for any new file) and `## DEC-<card ID> — <title>`, 10-20 lines: context,
   decision, why, rejected alternative. Never append to `docs/DECISIONS.md` (older entries
   stay there and keep their IDs). Most cards need no decision.
-- **Changelog:** don't edit `CHANGELOG.md`. Put one line in your final report under
-  `CHANGELOG:` saying what now exists (same style as the existing entries, without the
-  card ID); forge adds it under "Unreleased" with the card ID.
-  When the card's `docs` list `CHANGELOG.md`, that line is required: never write `none`.
+- **Changelog:** add your own line to `CHANGELOG.md`, in the same diff. Find the heading
+  with `grep -n '^## Unreleased' CHANGELOG.md` and insert one line directly below it:
+  `- <what now exists> (<card ID>)`, in the style of the entries under it (read only a few
+  lines there, never the whole file). One line per card; on a later attempt, replace your
+  earlier line instead of adding another. When the card's `docs` list `CHANGELOG.md`, the
+  line is required. Repeat it in your final report under `CHANGELOG:`.
 
 ## 7. Token discipline
 - Don't re-read files, don't dump large files or logs (use grep and ranges; section 2 lists
@@ -154,7 +156,7 @@ DONE: <one line>
 COMMIT SUBJECT: <subject per section 8>
 CHANGED: <files>
 TESTS: <what the new tests prove>
-CHANGELOG: <one line for CHANGELOG.md "Unreleased", or none>
+CHANGELOG: <the line you added under "Unreleased", or none>
 INTERPRETATIONS: <assumptions, or none>
 SPEC/INFRA ISSUES: <or none>
 LEFT OUT: <anything not done, incl. dev-laptop runs a human must do, or none>
