@@ -9,6 +9,7 @@ Modified 2026-11-01: document microtask checkpoints and nextTick order.
 Modified 2026-11-04: document the V8 code cache.
 Modified 2026-11-04: document the bind_io port and parity checks.
 Modified 2026-11-04: document main thread stack sizing.
+Modified 2026-11-04: document the font binding port and buffer validation.
 How native C bindings talk to the JS engine through jsb.h, and the handle rules.
 -->
 # JS binding: the `jsb` seam
@@ -106,6 +107,7 @@ binary's in both engine modes.
 | --- | --- | --- | --- | --- |
 | `bind_io.c` (M1-T016) | `__native_io`: `readFileSync` (1), `readFileBinary` (1), `writeFileSync` (2), `writeFileBinary` (2), `mkdirSync` (1), `existsSync` (1), `isDirSync` (1), `readdirSync` (1), `unlinkSync` (1), `renameSync` (2), `getGameRoot` (0), `resolvePath` (1) | `jsb_define_module`, `jsb_set_fn_n`, `jsb_arg_count/to_str/val/bytes`, `jsb_free_str`, `jsb_get_prop`, `jsb_val_type`, `jsb_clear_exception`, `jsb_new_array/str/str_len/buffer_copy`, `jsb_set_index`, `jsb_ret_val/bool/str/undefined`, `jsb_throw_type/internal`, `jsb_runtime_setup/eval` | Reads copy native bytes into engine-owned ArrayBuffers; writes borrow bytes only during the call and accept ArrayBuffers only | none |
 | `bind_input.c` (M1-T015) | `__native_input`: `pollEvents` (0), `getGamepad` (1), `getGamepadCount` (0) | `jsb_define_module`, `jsb_set_fn_n`, `jsb_new_object/array/str/i32/f64/bool/null`, `jsb_set_prop`, `jsb_set_index`, `jsb_arg_count`, `jsb_arg_to_i32` (`getGamepad` coerces its index), `jsb_ret_val/i32`, `jsb_runtime_eval` | none | none |
+| `bind_font.c` (M1-T018) | `__native_font`: `loadFont` (2), `loadFontFile` (2), `hasFont` (1), `getMetrics` (2), `measureText` (3), `fontCount` (0), `fontNames` (0) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_to_str/f64`, `jsb_free_str`, `jsb_arg_bytes`, `jsb_clear_exception`, `jsb_throw_type`, `jsb_new_object/array/str/f64/null`, `jsb_set_prop/index`, `jsb_ret_val/bool/i32/f64` | Borrowed ArrayBuffer bytes during `loadFont`; both font caches copy them before return. File bytes are owned and freed by the binding. | none |
 
 `jsb_set_fn_n` assigns functions, so they come out enumerable, while `JS_CFUNC_DEF` made
 them non-enumerable. `bind_input_define` restores that with a one-line
@@ -119,6 +121,40 @@ arrays, boolean filesystem results, undefined write results, coercion, and exact
 binding error names/messages. It uses the adopted engine in quickjs mode and
 `smz_js_engine_v8` in v8 mode. Engine-generated Symbol conversion messages retain
 each engine's spelling. No JS handle or borrowed buffer survives a native call.
+
+`bind_font_define` also restores non-enumerable function properties. Its setup script
+captures the intrinsic ArrayBuffer byte-length getter and wraps `loadFont` with a
+non-constructible method of the same name and arity. The getter checks the actual
+ArrayBuffer brand: typed arrays, DataView and spoofed objects keep the old binding's
+TypeError instead of passing the seam's broader `jsb_arg_bytes` reader. Family
+ToString runs first, preserving conversion exceptions and ordering. No JS runs
+while the C callback borrows bytes; its strings are owned copies freed on every
+exit. Result handles remain inside their native call scope.
+
+The `bind_font_jsb` test uses an original synthetic sfnt with one empty glyph,
+a 1000-unit em and fixed metrics. It checks successful loading, metrics, widths
+and names without a graphics device or an installed font. Missing-font cases,
+all seven function descriptors/arities and binding-authored error messages are
+captured from the pre-port binding; `--dump-surface` has no native font rows.
+The M1-T018 pre/post `--dump-surface` diff is empty for the complete inventory
+(and therefore for `font`). The pre-port probe recorded:
+
+| Check | Expected value |
+| --- | --- |
+| Own names, in order | `loadFont,loadFontFile,hasFont,getMetrics,measureText,fontCount,fontNames` |
+| Function arities, in order | `2,2,1,2,3,0,0`; each has `typeof === "function"` |
+| Function property descriptors | writable and configurable, non-enumerable |
+| Missing font | `loadFont` / `loadFontFile` / `hasFont`: `false`; `getMetrics`: `null`; `fontCount`: `0`; `fontNames`: `[]` |
+| Missing-family width, size `"10"`, text `12345` | `30.000001907348633` |
+| Synthetic font | load / has: `true`; count `1`; names `["Synthetic"]`; width of `abc` at 1000 pixels: `1500` |
+| Synthetic metrics at 1000 pixels | `{"ascent":800,"descent":-200,"lineGap":100,"lineHeight":1100}` |
+| Missing arguments (TypeError messages) | `loadFont requires family and ArrayBuffer`; `loadFontFile requires family and path`; `hasFont requires family name`; `getMetrics requires family and pixelSize`; `measureText requires family, pixelSize, text` |
+| Invalid buffer (TypeError message) | `loadFont: second arg must be ArrayBuffer` (including views and a spoofed ArrayBuffer tag) |
+
+User-thrown conversion errors keep their original type and message. Strings
+longer than 4096 bytes remain accepted, and an embedded NUL in a family still
+terminates its native name. All expectations also run against the port.
+
 
 ## API
 

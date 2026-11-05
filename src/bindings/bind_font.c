@@ -1,6 +1,14 @@
 /*
  * Copyright (c) 2026 General Arcade (Pte. Ltd.)
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
+ * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-04: expose the font API through jsb.
+ *
+ * Supplies font loading and measurement for the FontFace/Canvas2D shims.
+ * Main thread only; no JS handle or borrowed buffer survives a call.
+ * Both font caches copy input bytes. See docs/js-binding.md for lifetimes
+ * and docs/compat-surface.md entries FontFace, FontFaceSet and
+ * CanvasRenderingContext2D.prototype.measureText for the shim contracts.
  */
 
 #include "bindings/bind_font.h"
@@ -8,7 +16,10 @@
 #include "rendering/canvas2d.h"
 #include "io/file_io.h"
 
-#include <quickjs.h>
+#ifdef SMZ_JSB_ADOPT
+#include "jsb/jsb_adopt.h"
+#endif
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -16,22 +27,27 @@
 
 /* Font loading */
 
-/* loadFont(family, arrayBuffer) -> bool */
-static JSValue js_font_load(JSContext *ctx, JSValueConst this_val,
-                             int argc, JSValueConst *argv)
+/* FontFace loading for the font shim: family is coerced, bytes are borrowed
+ * only until both caches copy them. Main thread; missing/wrong args throw.
+ * Returns a Boolean. See https://drafts.csswg.org/css-font-loading/#fontface-interface
+ * and docs/js-binding.md; this internal API is not a browser global. */
+static void js_font_load(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 2)
-        return JS_ThrowTypeError(ctx, "loadFont requires family and ArrayBuffer");
+    if (jsb_arg_count(ctx) < 2) {
+        jsb_throw_type(ctx, "loadFont requires family and ArrayBuffer");
+        return;
+    }
 
-    const char *family = JS_ToCString(ctx, argv[0]);
-    if (!family) return JS_EXCEPTION;
+    char *family = jsb_arg_to_str(ctx, 0, NULL);
+    if (!family) return;
 
     size_t buf_size = 0;
-    uint8_t *data = JS_GetArrayBuffer(ctx, &buf_size, argv[1]);
-    if (!data) {
-        JS_FreeCString(ctx, family);
-        return JS_ThrowTypeError(ctx, "loadFont: second arg must be ArrayBuffer");
+    uint8_t *data = NULL;
+    if (!jsb_arg_bytes(ctx, 1, &data, &buf_size)) {
+        jsb_free_str(family);
+        jsb_clear_exception(ctx);
+        jsb_throw_type(ctx, "loadFont: second arg must be ArrayBuffer");
+        return;
     }
 
     /* Load into both font_manager and canvas2d font caches. */
@@ -40,40 +56,44 @@ static JSValue js_font_load(JSContext *ctx, JSValueConst this_val,
         canvas2d_load_font(family, data, buf_size);
     }
 
-    JS_FreeCString(ctx, family);
-    return JS_NewBool(ctx, ok);
+    jsb_free_str(family);
+    jsb_ret_bool(ctx, ok);
 }
 
-/* loadFontFile(family, path) -> bool */
-static JSValue js_font_load_file(JSContext *ctx, JSValueConst this_val,
-                                  int argc, JSValueConst *argv)
+/* FontFace file loading for the shim; family/path use string coercion.
+ * Main thread; owns/frees file bytes and strings. Returns false for IO failure,
+ * or throws on missing args/conversion failure. Same reference as loadFont. */
+static void js_font_load_file(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 2)
-        return JS_ThrowTypeError(ctx, "loadFontFile requires family and path");
+    if (jsb_arg_count(ctx) < 2) {
+        jsb_throw_type(ctx, "loadFontFile requires family and path");
+        return;
+    }
 
-    const char *family = JS_ToCString(ctx, argv[0]);
-    if (!family) return JS_EXCEPTION;
+    char *family = jsb_arg_to_str(ctx, 0, NULL);
+    if (!family) return;
 
-    const char *path = JS_ToCString(ctx, argv[1]);
+    char *path = jsb_arg_to_str(ctx, 1, NULL);
     if (!path) {
-        JS_FreeCString(ctx, family);
-        return JS_EXCEPTION;
+        jsb_free_str(family);
+        return;
     }
 
     char resolved[PATH_BUF_SIZE];
     if (!file_io_resolve_path(path, resolved, sizeof(resolved))) {
-        JS_FreeCString(ctx, path);
-        JS_FreeCString(ctx, family);
-        return JS_NewBool(ctx, false);
+        jsb_free_str(path);
+        jsb_free_str(family);
+        jsb_ret_bool(ctx, false);
+        return;
     }
-    JS_FreeCString(ctx, path);
+    jsb_free_str(path);
 
     size_t file_size = 0;
     uint8_t *data = file_io_read_binary(resolved, &file_size);
     if (!data) {
-        JS_FreeCString(ctx, family);
-        return JS_NewBool(ctx, false);
+        jsb_free_str(family);
+        jsb_ret_bool(ctx, false);
+        return;
     }
 
     /* Load into both font_manager and canvas2d font caches. */
@@ -83,140 +103,183 @@ static JSValue js_font_load_file(JSContext *ctx, JSValueConst this_val,
     }
 
     free(data);
-    JS_FreeCString(ctx, family);
-    return JS_NewBool(ctx, ok);
+    jsb_free_str(family);
+    jsb_ret_bool(ctx, ok);
 }
 
 /* Font queries */
 
-/* hasFont(family) -> bool */
-static JSValue js_font_has(JSContext *ctx, JSValueConst this_val,
-                            int argc, JSValueConst *argv)
+/* Implements the font shim's family availability query (FontFaceSet.check).
+ * Main thread; owns/frees the coerced family string, returns bool or throws.
+ * Reference: https://drafts.csswg.org/css-font-loading/#font-face-set-check */
+static void js_font_has(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 1)
-        return JS_ThrowTypeError(ctx, "hasFont requires family name");
+    if (jsb_arg_count(ctx) < 1) {
+        jsb_throw_type(ctx, "hasFont requires family name");
+        return;
+    }
 
-    const char *family = JS_ToCString(ctx, argv[0]);
-    if (!family) return JS_EXCEPTION;
+    char *family = jsb_arg_to_str(ctx, 0, NULL);
+    if (!family) return;
 
     bool has = font_manager_has_font(family);
-    JS_FreeCString(ctx, family);
-    return JS_NewBool(ctx, has);
+    jsb_free_str(family);
+    jsb_ret_bool(ctx, has);
 }
 
-/* getMetrics(family, pixelSize) -> {ascent, descent, lineGap, lineHeight} | null */
-static JSValue js_font_get_metrics(JSContext *ctx, JSValueConst this_val,
-                                    int argc, JSValueConst *argv)
+/* Supplies Canvas2D text metrics in CSS pixels at the coerced size.
+ * Main thread; frees family, returns a call-scoped object or null if absent;
+ * missing args/conversion failures throw. Internal counterpart of TextMetrics:
+ * https://html.spec.whatwg.org/multipage/canvas.html#textmetrics */
+static void js_font_get_metrics(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 2)
-        return JS_ThrowTypeError(ctx, "getMetrics requires family and pixelSize");
+    if (jsb_arg_count(ctx) < 2) {
+        jsb_throw_type(ctx, "getMetrics requires family and pixelSize");
+        return;
+    }
 
-    const char *family = JS_ToCString(ctx, argv[0]);
-    if (!family) return JS_EXCEPTION;
+    char *family = jsb_arg_to_str(ctx, 0, NULL);
+    if (!family) return;
 
     double size;
-    if (JS_ToFloat64(ctx, &size, argv[1])) {
-        JS_FreeCString(ctx, family);
-        return JS_EXCEPTION;
+    if (!jsb_arg_to_f64(ctx, 1, &size)) {
+        jsb_free_str(family);
+        return;
     }
 
     FontMetrics m;
     if (!font_manager_get_metrics(family, (float)size, &m)) {
-        JS_FreeCString(ctx, family);
-        return JS_NULL;
+        jsb_free_str(family);
+        jsb_ret_val(ctx, jsb_new_null(ctx));
+        return;
     }
 
-    JS_FreeCString(ctx, family);
+    jsb_free_str(family);
 
-    JSValue obj = JS_NewObject(ctx);
-    JS_SetPropertyStr(ctx, obj, "ascent", JS_NewFloat64(ctx, m.ascent));
-    JS_SetPropertyStr(ctx, obj, "descent", JS_NewFloat64(ctx, m.descent));
-    JS_SetPropertyStr(ctx, obj, "lineGap", JS_NewFloat64(ctx, m.line_gap));
-    JS_SetPropertyStr(ctx, obj, "lineHeight", JS_NewFloat64(ctx, m.line_height));
-    return obj;
+    jsb_val *obj = jsb_new_object(ctx);
+    jsb_set_prop(ctx, obj, "ascent", jsb_new_f64(ctx, m.ascent));
+    jsb_set_prop(ctx, obj, "descent", jsb_new_f64(ctx, m.descent));
+    jsb_set_prop(ctx, obj, "lineGap", jsb_new_f64(ctx, m.line_gap));
+    jsb_set_prop(ctx, obj, "lineHeight", jsb_new_f64(ctx, m.line_height));
+    jsb_ret_val(ctx, obj);
 }
 
-/* measureText(family, pixelSize, text) -> number (width) */
-static JSValue js_font_measure_text(JSContext *ctx, JSValueConst this_val,
-                                     int argc, JSValueConst *argv)
+/* Supplies Canvas2D measureText width in CSS pixels (same reference above).
+ * Family/text strings are owned and freed here; size uses number coercion.
+ * Main thread; returns width, or throws on missing args/conversion failure. */
+static void js_font_measure_text(jsb_ctx *ctx)
 {
-    (void)this_val;
-    if (argc < 3)
-        return JS_ThrowTypeError(ctx, "measureText requires family, pixelSize, text");
-
-    const char *family = JS_ToCString(ctx, argv[0]);
-    if (!family) return JS_EXCEPTION;
-
-    double size;
-    if (JS_ToFloat64(ctx, &size, argv[1])) {
-        JS_FreeCString(ctx, family);
-        return JS_EXCEPTION;
+    if (jsb_arg_count(ctx) < 3) {
+        jsb_throw_type(ctx, "measureText requires family, pixelSize, text");
+        return;
     }
 
-    const char *text = JS_ToCString(ctx, argv[2]);
+    char *family = jsb_arg_to_str(ctx, 0, NULL);
+    if (!family) return;
+
+    double size;
+    if (!jsb_arg_to_f64(ctx, 1, &size)) {
+        jsb_free_str(family);
+        return;
+    }
+
+    char *text = jsb_arg_to_str(ctx, 2, NULL);
     if (!text) {
-        JS_FreeCString(ctx, family);
-        return JS_EXCEPTION;
+        jsb_free_str(family);
+        return;
     }
 
     float w = font_manager_measure_text(family, (float)size, text);
-    JS_FreeCString(ctx, text);
-    JS_FreeCString(ctx, family);
-    return JS_NewFloat64(ctx, (double)w);
+    jsb_free_str(text);
+    jsb_free_str(family);
+    jsb_ret_f64(ctx, (double)w);
 }
 
-/* fontCount() -> number */
-static JSValue js_font_count(JSContext *ctx, JSValueConst this_val,
-                              int argc, JSValueConst *argv)
+/* Supplies the font shim's cache size; main thread, no retained JS state.
+ * Returns an integer Number; extra arguments are ignored. Internal API. */
+static void js_font_count(jsb_ctx *ctx)
 {
-    (void)this_val;
-    (void)argc;
-    (void)argv;
-    return JS_NewInt32(ctx, font_manager_font_count());
+    jsb_ret_i32(ctx, font_manager_font_count());
 }
 
-/* fontNames() -> string[] */
-static JSValue js_font_names(JSContext *ctx, JSValueConst this_val,
-                              int argc, JSValueConst *argv)
+/* Supplies loaded family names to the font shim; main thread, internal API.
+ * Returns a call-scoped array of copied strings; extra arguments are ignored. */
+static void js_font_names(jsb_ctx *ctx)
 {
-    (void)this_val;
-    (void)argc;
-    (void)argv;
 
     int count = font_manager_font_count();
-    JSValue arr = JS_NewArray(ctx);
+    jsb_val *arr = jsb_new_array(ctx);
     int idx = 0;
     for (int i = 0; i < count; i++) {
         const char *name = font_manager_font_name(i);
         if (name) {
-            JS_SetPropertyUint32(ctx, arr, idx++, JS_NewString(ctx, name));
+            jsb_set_index(ctx, arr, idx++, jsb_new_str(ctx, name));
         }
     }
-    return arr;
+    jsb_ret_val(ctx, arr);
 }
 
 /* Registration */
 
-static const JSCFunctionListEntry js_font_funcs[] = {
-    JS_CFUNC_DEF("loadFont",      2, js_font_load),
-    JS_CFUNC_DEF("loadFontFile",  2, js_font_load_file),
-    JS_CFUNC_DEF("hasFont",       1, js_font_has),
-    JS_CFUNC_DEF("getMetrics",    2, js_font_get_metrics),
-    JS_CFUNC_DEF("measureText",   3, js_font_measure_text),
-    JS_CFUNC_DEF("fontCount",     0, js_font_count),
-    JS_CFUNC_DEF("fontNames",     0, js_font_names),
-};
-
-void bind_font_register(JSContext *ctx)
+/* Preserve upstream order and arities; failure leaves the module unpublished.
+ * All handles belong to this main-thread setup scope (docs/js-binding.md). */
+static bool font_module_init(jsb_ctx *ctx, jsb_val *module)
 {
-    JSValue global = JS_GetGlobalObject(ctx);
-    JSValue obj = JS_NewObject(ctx);
-
-    JS_SetPropertyFunctionList(ctx, obj, js_font_funcs,
-                               sizeof(js_font_funcs) / sizeof(js_font_funcs[0]));
-
-    JS_SetPropertyStr(ctx, global, "__native_font", obj);
-    JS_FreeValue(ctx, global);
+    return jsb_set_fn_n(ctx, module, "loadFont", js_font_load, 2) &&
+           jsb_set_fn_n(ctx, module, "loadFontFile", js_font_load_file, 2) &&
+           jsb_set_fn_n(ctx, module, "hasFont", js_font_has, 1) &&
+           jsb_set_fn_n(ctx, module, "getMetrics", js_font_get_metrics, 2) &&
+           jsb_set_fn_n(ctx, module, "measureText", js_font_measure_text, 3) &&
+           jsb_set_fn_n(ctx, module, "fontCount", js_font_count, 0) &&
+           jsb_set_fn_n(ctx, module, "fontNames", js_font_names, 0);
 }
+
+/* Define the module in a fresh setup scope; no user data is retained. */
+static bool font_define_setup(jsb_ctx *ctx, void *user)
+{
+    (void)user;
+    return jsb_define_module(ctx, "__native_font", font_module_init);
+}
+
+/* smzuggler: keep upstream's ArrayBuffer-only input and non-enumerability.
+ * jsb's byte reader also accepts views. Capture the intrinsic brand getter,
+ * and coerce family first, just as the native binding did. Method syntax
+ * preserves the native function's lack of a constructor/prototype property. */
+static const char font_surface_js[] =
+    "(function(m){"
+    "var nativeLoad=m.loadFont;"
+    "var byteLength=Object.getOwnPropertyDescriptor(ArrayBuffer.prototype,'byteLength').get;"
+    "m.loadFont={loadFont(family,buffer){"
+    "if(arguments.length<2)return nativeLoad.apply(this,arguments);"
+    "family=`${family}`;"
+    "try{byteLength.call(buffer)}catch(e){"
+    "throw new TypeError('loadFont: second arg must be ArrayBuffer')}"
+    "return nativeLoad(family,buffer)}}.loadFont;"
+    "Object.getOwnPropertyNames(m).forEach(function(k){"
+    "Object.defineProperty(m,k,{enumerable:false})});"
+    "})(__native_font);";
+
+/* See bind_font.h: setup borrows rt and reports registration failures loudly. */
+bool bind_font_define(jsb_runtime *rt)
+{
+    if (!rt) {
+        fprintf(stderr, "bind_font_define: no jsb runtime\n");
+        return false;
+    }
+    if (!jsb_runtime_setup(rt, font_define_setup, NULL))
+        return false;
+    char error[256];
+    if (!jsb_runtime_eval(rt, font_surface_js, "bind_font.c", error, sizeof error)) {
+        fprintf(stderr, "bind_font_define: %s\n", error);
+        return false;
+    }
+    return true;
+}
+
+#ifdef SMZ_JSB_ADOPT
+/* Transitional main-thread entry; the engine owns the adopted runtime. */
+void bind_font_register(struct JSContext *ctx)
+{
+    bind_font_define(jsb_runtime_of(ctx));
+}
+#endif
