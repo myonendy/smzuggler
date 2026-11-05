@@ -543,3 +543,10 @@ the process main thread in every engine mode. M1-T013 reads the main thread's st
 startup and passes V8 a `--stack-size` below it with a safety margin. Rejected: starting a
 dedicated thread with a chosen stack size, which breaks the documented thread model and is
 unsafe where SDL video must run on the main thread.
+
+## DEC-M1-H1-V8-PIN — owner approved V8 pin 13.6.233.8
+The owner approved the DEC-M1-T001 proposal at checkpoint H1 on 2026-11-05: V8 `13.6.233.8`
+with the args in docs/build-v8.md. The owner builds it once on dev-laptop with
+`tools/v8/build_v8.sh` into `$SMZ_DEPS_DIR/v8/13.6.233.8`; M1-T027 (V8 becomes the only
+engine) and the cards after it wait until that install exists and a v8-mode build and test
+pass has run.
