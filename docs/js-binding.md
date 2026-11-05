@@ -12,6 +12,7 @@ Modified 2026-11-04: document main thread stack sizing.
 Modified 2026-11-04: document the font and audio binding ports and buffer validation.
 Modified 2026-11-04: document the image binding and its buffer ownership.
 Modified 2026-11-04: document the font binding port and buffer validation.
+Modified 2026-11-04: document the Effekseer binding port and parity capture.
 How native C bindings talk to the JS engine through jsb.h, and the handle rules.
 -->
 # JS binding: the `jsb` seam
@@ -111,6 +112,8 @@ binary's in both engine modes.
 | `bind_input.c` (M1-T015) | `__native_input`: `pollEvents` (0), `getGamepad` (1), `getGamepadCount` (0) | `jsb_define_module`, `jsb_set_fn_n`, `jsb_new_object/array/str/i32/f64/bool/null`, `jsb_set_prop`, `jsb_set_index`, `jsb_arg_count`, `jsb_arg_to_i32` (`getGamepad` coerces its index), `jsb_ret_val/i32`, `jsb_runtime_eval` | none | none |
 | `bind_font.c` (M1-T018) | `__native_font`: `loadFont` (2), `loadFontFile` (2), `hasFont` (1), `getMetrics` (2), `measureText` (3), `fontCount` (0), `fontNames` (0) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_to_str/f64`, `jsb_free_str`, `jsb_arg_bytes`, `jsb_clear_exception`, `jsb_throw_type`, `jsb_new_object/array/str/f64/null`, `jsb_set_prop/index`, `jsb_ret_val/bool/i32/f64` | Borrowed ArrayBuffer bytes during `loadFont`; both font caches copy them before return. File bytes are owned and freed by the binding. | none |
 | `bind_audio.c` (M1-T019) | `__native_audio`: `init`, `shutdown`, `isInitialized`, `stopAll`, `getActiveVoiceCount` (0); `load`, `loadStream`, `loadFromMemory`, `freeSource`, `stop`, `stopBus`, `pause`, `resume`, `pauseBus`, `resumeBus`, `isPlaying`, `isPaused`, `getVolume`, `getPosition`, `getDuration` (1); `setVolume`, `setPitch`, `setPan`, `setBusVolume`, `seek` (2); `fadeVolume`, `fadeBusVolume` (3); `play` (6) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_to_str/u32/i32/f64`, `jsb_arg_truthy`, `jsb_free_str`, `jsb_arg_bytes`, `jsb_clear_exception`, `jsb_throw_type/range`, `jsb_new_u32/i32`, `jsb_set_prop`, `jsb_ret_val/bool/i32/f64` | ArrayBuffer-only `loadFromMemory`; borrowed bytes are copied by SoLoud before return. | none |
+| `bind_effekseer.c` (M1-T022) | `__native_effekseer`: `init` (3); `shutdown`, `isInitialized`, `stopAll`, `beginDraw`, `endDraw`, `resetBackground`, `getLoadedCount`, `getPlayingCount` (0); `load`, `setSpeed` (2); `play`, `setPosition`, `setRotation`, `setScale` (4); `release`, `isLoaded`, `stop`, `stopRoot`, `exists`, `setProjectionMatrix`, `setCameraMatrix`, `update`, `drawHandle`, `setRestorationOfStatesFlag`, `setBackground` (1) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count/val/to_str/to_i32/to_u32/to_f64/truthy`, `jsb_free_str`, `jsb_is_array`, `jsb_get_index`, `jsb_val_to_f64`, `jsb_clear_exception`, `jsb_new_u32`, `jsb_ret_val/bool/i32`, `jsb_throw_type` | none; matrices are plain Arrays read with Number coercion, copied to 16 native floats during the call | none |
+
 
 
 `jsb_set_fn_n` assigns functions, so they come out enumerable, while `JS_CFUNC_DEF` made
@@ -668,3 +671,28 @@ message and stack and return `JSB_ERR_THREW`, that a freed function is collected
 external buffer hung on it is freed only after `jsb_callback_free` and `gc()`), that
 freed and stale handles and bad arguments are refused, and that a callback may free its
 own handle.
+
+### Effekseer parity capture (M1-T022)
+
+The pre-port QuickJS binding has 26 own methods, in the order pinned by
+`test_bind_effekseer_jsb.c`, with lengths
+`3,0,0,2,1,1,4,1,1,0,4,4,4,2,1,1,1,1,0,1,0,1,1,0,0,0`.
+Every method is a function with a writable, configurable, non-enumerable property.
+Without initialization, `isInitialized`, `isLoaded` and `exists` return false;
+`load`, `getLoadedCount` and `getPlayingCount` return 0; `play` returns -1.
+Other operations return undefined. Tracking-backend `init` returns true and
+`shutdown` returns undefined. No test opens a graphics device.
+
+Missing `load` arguments throw `TypeError: load requires a path argument`.
+Non-Array matrices throw `TypeError: setProjectionMatrix expects a 16-element array`
+or `TypeError: setCameraMatrix expects a 16-element array`. Arrays of any length
+are accepted; missing entries coerce to NaN, and all 16 entries are read in order.
+Numeric conversion and element getter exceptions retain their type and message.
+Path resolution and path string conversion exceptions are cleared and return 0;
+scale conversion errors still propagate. Paths are allocated by jsb and freed
+before backend loading; no JS handles or callbacks survive a call.
+
+The new test runs the original registration entry for the pre-port capture and
+then `bind_effekseer_define(js_engine_get_jsb(engine))` for both seam backends.
+The `--dump-surface` effekseer row is unchanged (empty diff); native method arities
+are absent from that inventory, so the test above supplies the parity evidence.
