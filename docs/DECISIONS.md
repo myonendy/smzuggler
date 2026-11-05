@@ -14,6 +14,7 @@ Modified 2026-11-01: record the V8 script watchdog design.
 Modified 2026-11-01: record how the game loop reaches JS without QuickJS.
 Modified 2026-11-01: record how the error handler reaches JS without QuickJS.
 Modified 2026-11-01: record the microtask checkpoint order.
+Modified 2026-11-05: build V8 without its sysroot and link v8 mode with lld.
 Project documentation; identity decisions are in docs/DECISIONS.md.
 -->
 
@@ -550,3 +551,15 @@ with the args in docs/build-v8.md. The owner builds it once on dev-laptop with
 `tools/v8/build_v8.sh` into `$SMZ_DEPS_DIR/v8/13.6.233.8`; M1-T027 (V8 becomes the only
 engine) and the cards after it wait until that install exists and a v8-mode build and test
 pass has run.
+
+## DEC-M1-T001-SYSROOT — V8 builds without its sysroot, and v8 mode links with lld
+Owner approved, 2026-11-05. The first CI build of the pin failed at ninja step 17:
+with `use_custom_libcxx = false`, V8's default Debian bullseye sysroot supplies GCC 10's
+libstdc++, which lacks `std::bit_cast` and `std::make_unique_for_overwrite`. `build_v8.sh`
+now adds `use_sysroot = false`, so V8 compiles against the build host's libstdc++
+(ubuntu-24.04: GCC 13) and still shares one `std::` ABI with the host build;
+`use_custom_libcxx` stays off. V8's clang also emits CREL relocations on Linux, which GNU ld
+cannot read, so `cmake/V8.cmake` and the generated `v8-config.cmake` link V8 users with
+`-fuse-ld=lld`, and v8 mode fails at configure time without `ld.lld`. Rejected:
+`use_custom_libcxx = true` (two C++ libraries at the seam) and patching `--crel` out of the
+V8 checkout (a local change to the pinned source).

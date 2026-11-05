@@ -46,6 +46,7 @@ target_cpu = "$(host_cpu)"
 v8_monolithic = true
 is_component_build = false
 use_custom_libcxx = false
+use_sysroot = false
 v8_use_external_startup_data = false
 v8_enable_i18n_support = true
 icu_use_data_file = true
@@ -132,7 +133,8 @@ if(NOT TARGET V8::v8_monolith)
     IMPORTED_LOCATION "\${_smz_v8_prefix}/lib/libv8_monolith.a"
     INTERFACE_INCLUDE_DIRECTORIES "\${_smz_v8_prefix}/include"
     INTERFACE_COMPILE_DEFINITIONS "V8_COMPRESS_POINTERS;V8_31BIT_SMIS_ON_64BIT_ARCH"
-    INTERFACE_LINK_LIBRARIES "Threads::Threads;\${CMAKE_DL_LIBS}")
+    INTERFACE_LINK_LIBRARIES "Threads::Threads;\${CMAKE_DL_LIBS}"
+    INTERFACE_LINK_OPTIONS "-fuse-ld=lld")
 endif()
 EOF
 }

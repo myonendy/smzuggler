@@ -21,6 +21,7 @@ REQUIRED_ARGS = {
     'v8_monolithic': 'true',
     'is_component_build': 'false',
     'use_custom_libcxx': 'false',
+    'use_sysroot': 'false',
     'v8_use_external_startup_data': 'false',
     'v8_enable_i18n_support': 'true',
     'v8_enable_pointer_compression': 'true',

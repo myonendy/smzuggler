@@ -78,7 +78,13 @@ In v8 mode the top-level `CMakeLists.txt` includes `cmake/V8.cmake`, which:
 * defines the imported static target `smz::v8`: the monolith, its headers,
   `V8_COMPRESS_POINTERS` and `V8_31BIT_SMIS_ON_64BIT_ARCH`, C++20, threads and
   libdl;
-* sets `SMZ_V8_ICU_DATA`, the `icudtl.dat` path V8 needs at startup.
+* sets `SMZ_V8_ICU_DATA`, the `icudtl.dat` path V8 needs at startup;
+* links everything that uses `smz::v8` with lld (`-fuse-ld=lld`) and stops
+  at configure time if `ld.lld` is missing. V8's own clang writes its objects
+  with CREL relocations (`-Wa,--crel` in V8's `build/config/compiler`, no GN
+  arg turns it off), which GNU ld and gold cannot read. v8 mode therefore
+  needs lld installed (Arch `lld`, Debian/Ubuntu `lld`, Fedora `lld`); the
+  default quickjs build is unchanged and does not need it.
 
 The version is read from the headers, not from `v8-config.cmake`
 (DEC-M1-T002). The test `v8_smoke` (`tests/smz/test_v8_smoke.cc`) is built
@@ -100,6 +106,12 @@ One line of why for each (`--print-args` prints exactly these):
 * `is_component_build = false`: required by the monolith; no shared V8 libraries.
 * `use_custom_libcxx = false`: build against the system C++ library that the host
   links, so `std::` types at the seam have one ABI.
+* `use_sysroot = false`: compile against the build machine's own headers and
+  libstdc++ instead of V8's bundled Debian bullseye sysroot, whose GCC 10
+  libstdc++ lacks C++20 parts V8 13.6 uses (`std::bit_cast`,
+  `std::make_unique_for_overwrite`) once `use_custom_libcxx` is off
+  (DEC-M1-T001-SYSROOT). The build host needs a libstdc++ at least as new as
+  GCC 13's; the linking host's must be the same or newer.
 * `v8_use_external_startup_data = false`: the startup snapshot is linked in, so
   there is no `snapshot_blob.bin` to find at run time.
 * `v8_enable_i18n_support = true`: `Intl` and `toLocaleString` match NW.js

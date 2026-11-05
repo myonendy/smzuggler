@@ -123,6 +123,15 @@ class V8CMakeTest(unittest.TestCase):
         self.assertIn('"V8_COMPRESS_POINTERS;V8_31BIT_SMIS_ON_64BIT_ARCH"', text)
         self.assertNotIn("V8_ENABLE_SANDBOX", text)
 
+    def test_v8_links_with_lld(self):
+        # The monolith's CREL relocations need lld; both CMake entry points
+        # must say so, and V8.cmake must stop when ld.lld is missing.
+        text = V8_CMAKE.read_text()
+        self.assertIn('INTERFACE_LINK_OPTIONS "-fuse-ld=lld"', text)
+        self.assertIn("find_program(SMZ_LD_LLD NAMES ld.lld)", text)
+        script = (ROOT / "tools" / "v8" / "build_v8.sh").read_text()
+        self.assertIn('INTERFACE_LINK_OPTIONS "-fuse-ld=lld"', script)
+
 
 if __name__ == "__main__":
     unittest.main()

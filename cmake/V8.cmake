@@ -83,7 +83,9 @@ endfunction()
 #
 # Why: one place says how to compile and link against V8. Consumers need
 # C++20 (V8 13.x headers require it), the pointer-compression defines that
-# match `v8_enable_pointer_compression = true`, threads and libdl. Also sets
+# match `v8_enable_pointer_compression = true`, threads and libdl, and lld:
+# V8's clang emits CREL relocations that GNU ld cannot read
+# (DEC-M1-T001-SYSROOT), so a missing ld.lld fails the configure. Also sets
 # SMZ_V8_ICU_DATA (path of icudtl.dat, which V8 needs at startup because
 # `icu_use_data_file = true`) in the caller's scope. Safe to call twice.
 function(smz_import_v8)
@@ -91,6 +93,14 @@ function(smz_import_v8)
     set(SMZ_V8_ICU_DATA "${SMZ_V8_DIR}/share/icudtl.dat" PARENT_SCOPE)
     if(TARGET smz::v8)
         return()
+    endif()
+    find_program(SMZ_LD_LLD NAMES ld.lld)
+    if(NOT SMZ_LD_LLD)
+        message(FATAL_ERROR
+            "SMZ_JS_ENGINE=v8 links with lld (-fuse-ld=lld) because the V8 "
+            "monolith uses CREL relocations that GNU ld cannot read, but "
+            "ld.lld was not found. Install lld (Arch, Debian, Ubuntu and "
+            "Fedora package: lld) (docs/build-v8.md).")
     endif()
     find_package(Threads REQUIRED)
     add_library(smz::v8 STATIC IMPORTED GLOBAL)
@@ -100,6 +110,7 @@ function(smz_import_v8)
         INTERFACE_COMPILE_DEFINITIONS
             "V8_COMPRESS_POINTERS;V8_31BIT_SMIS_ON_64BIT_ARCH"
         INTERFACE_COMPILE_FEATURES cxx_std_20
-        INTERFACE_LINK_LIBRARIES "Threads::Threads;${CMAKE_DL_LIBS}")
+        INTERFACE_LINK_LIBRARIES "Threads::Threads;${CMAKE_DL_LIBS}"
+        INTERFACE_LINK_OPTIONS "-fuse-ld=lld")
     message(STATUS "smzuggler: V8 ${SMZ_V8_VERSION_PIN} from ${SMZ_V8_DIR}")
 endfunction()
