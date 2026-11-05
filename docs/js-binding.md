@@ -93,6 +93,22 @@ in a `TryCatch` that it resets. On V8 `jsb_throw_internal` makes an `Error` whos
 | `JS_ThrowInternalError`, `JS_ThrowOutOfMemory` | `jsb_throw_internal` (`"out of memory"`) |
 | `JS_GetVersion` | `jsb_engine_version` |
 
+## Ported bindings
+
+Each port defines its module in `bind_<x>_define(jsb_runtime *rt, ...)`; the old
+`bind_<x>_register(struct JSContext *, ...)` stays as a wrapper under `SMZ_JSB_ADOPT`
+until M1-T026. A `tests/smz/test_bind_<x>_jsb.c` test pins the JS API to the pre-port
+binary's in both engine modes.
+
+| Binding | Module and functions (`length`) | jsb calls used | Buffers | Callbacks |
+| --- | --- | --- | --- | --- |
+| `bind_input.c` (M1-T015) | `__native_input`: `pollEvents` (0), `getGamepad` (1), `getGamepadCount` (0) | `jsb_define_module`, `jsb_set_fn_n`, `jsb_new_object/array/str/i32/f64/bool/null`, `jsb_set_prop`, `jsb_set_index`, `jsb_arg_count`, `jsb_arg_to_i32` (`getGamepad` coerces its index), `jsb_ret_val/i32`, `jsb_runtime_eval` | none | none |
+
+`jsb_set_fn_n` assigns functions, so they come out enumerable, while `JS_CFUNC_DEF` made
+them non-enumerable. `bind_input_define` restores that with a one-line
+`Object.defineProperty` script after the module exists, so `Object.keys(__native_input)`
+stays empty as before.
+
 ## API
 
 ### Host side
