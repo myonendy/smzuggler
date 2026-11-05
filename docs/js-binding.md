@@ -8,7 +8,7 @@ Modified 2026-11-01: document the error handler's js_engine.h path.
 Modified 2026-11-01: document microtask checkpoints and nextTick order.
 Modified 2026-11-04: document the V8 code cache.
 Modified 2026-11-04: document main thread stack sizing.
-Modified 2026-11-04: document the font binding port and buffer validation.
+Modified 2026-11-04: document the font and audio binding ports and buffer validation.
 How native C bindings talk to the JS engine through jsb.h, and the handle rules.
 -->
 # JS binding: the `jsb` seam
@@ -106,6 +106,8 @@ binary's in both engine modes.
 | --- | --- | --- | --- | --- |
 | `bind_input.c` (M1-T015) | `__native_input`: `pollEvents` (0), `getGamepad` (1), `getGamepadCount` (0) | `jsb_define_module`, `jsb_set_fn_n`, `jsb_new_object/array/str/i32/f64/bool/null`, `jsb_set_prop`, `jsb_set_index`, `jsb_arg_count`, `jsb_arg_to_i32` (`getGamepad` coerces its index), `jsb_ret_val/i32`, `jsb_runtime_eval` | none | none |
 | `bind_font.c` (M1-T018) | `__native_font`: `loadFont` (2), `loadFontFile` (2), `hasFont` (1), `getMetrics` (2), `measureText` (3), `fontCount` (0), `fontNames` (0) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_to_str/f64`, `jsb_free_str`, `jsb_arg_bytes`, `jsb_clear_exception`, `jsb_throw_type`, `jsb_new_object/array/str/f64/null`, `jsb_set_prop/index`, `jsb_ret_val/bool/i32/f64` | Borrowed ArrayBuffer bytes during `loadFont`; both font caches copy them before return. File bytes are owned and freed by the binding. | none |
+| `bind_audio.c` (M1-T019) | `__native_audio`: `init`, `shutdown`, `isInitialized`, `stopAll`, `getActiveVoiceCount` (0); `load`, `loadStream`, `loadFromMemory`, `freeSource`, `stop`, `stopBus`, `pause`, `resume`, `pauseBus`, `resumeBus`, `isPlaying`, `isPaused`, `getVolume`, `getPosition`, `getDuration` (1); `setVolume`, `setPitch`, `setPan`, `setBusVolume`, `seek` (2); `fadeVolume`, `fadeBusVolume` (3); `play` (6) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_to_str/u32/i32/f64`, `jsb_arg_truthy`, `jsb_free_str`, `jsb_arg_bytes`, `jsb_clear_exception`, `jsb_throw_type/range`, `jsb_new_u32/i32`, `jsb_set_prop`, `jsb_ret_val/bool/i32/f64` | ArrayBuffer-only `loadFromMemory`; borrowed bytes are copied by SoLoud before return. | none |
+
 
 `jsb_set_fn_n` assigns functions, so they come out enumerable, while `JS_CFUNC_DEF` made
 them non-enumerable. `bind_input_define` restores that with a one-line
@@ -145,6 +147,42 @@ The M1-T018 pre/post `--dump-surface` diff is empty for the complete inventory
 User-thrown conversion errors keep their original type and message. Strings
 longer than 4096 bytes remain accepted, and an embedded NUL in a family still
 terminates its native name. All expectations also run against the port.
+
+
+`bind_audio_define` preserves non-enumerable function properties and the native
+ArrayBuffer brand check using the same captured intrinsic technique as the font
+port. Only the four bus constants are enumerable. The wrapper's method syntax
+preserves `loadFromMemory.length === 1` and its lack of a constructor. The C
+binding uses coercing argument readers in the original order; all strings are
+freed and no borrowed bytes or JS handles survive the call. Audio ending events
+remain polled by the shim, so this port needs no persistent callbacks.
+
+### M1-T019 parity report
+
+Before the port, `bind_audio_jsb` was run against `bind_audio_register` on the
+original QuickJS binary. It passed the following expectations; the final test
+uses `bind_audio_define(js_engine_get_jsb(engine))`, selecting the real V8 engine
+when configured with `SMZ_JS_ENGINE=v8`.
+
+| Pre-port check | Captured expected value |
+| --- | --- |
+| Own names, in order | `init,shutdown,isInitialized,load,loadStream,loadFromMemory,freeSource,play,stop,stopBus,stopAll,pause,resume,pauseBus,resumeBus,setVolume,setPitch,setPan,setBusVolume,fadeVolume,fadeBusVolume,isPlaying,isPaused,getVolume,getPosition,seek,getDuration,getActiveVoiceCount,BUS_BGM,BUS_BGS,BUS_ME,BUS_SE` |
+| Function lengths, in the same order | `0,0,0,1,1,1,1,6,1,1,0,1,1,1,1,2,2,2,2,3,3,1,1,1,1,2,1,0` |
+| Function properties | All `typeof` values are `function`; names match keys; properties are writable/configurable and non-enumerable. Function own names are `length,name`. |
+| Bus constants | Enumerable `BUS_BGM,BUS_BGS,BUS_ME,BUS_SE`, values `0,1,2,3` |
+| Uninitialized results | `isInitialized`, `isPlaying`, `isPaused`: `false`; `load`, `loadStream`, `loadFromMemory` (including an empty buffer), `play`, `getVolume`, `getPosition`, `getDuration`, `getActiveVoiceCount`: Number `0`; all other calls except `init`: `undefined` |
+| Device-free init | With the engine disabled, `init()` returns `true` and `isInitialized()` stays `false` |
+| Missing arguments: TypeError messages | `load requires a path argument`; `loadStream requires a path argument`; `loadFromMemory requires an ArrayBuffer`; `play requires 6 arguments` |
+| Wrong buffer: TypeError message | `argument must be an ArrayBuffer` for null, objects, strings, typed arrays, DataView and spoofed ArrayBuffer tags |
+| Invalid bus: RangeError message | `invalid audio bus: -1` or `invalid audio bus: 4` for play, stop/pause/resume bus, set/fade bus volume |
+| Outside-root path: TypeError message | `audio path resolution failed: ../outside.ogg` for load and loadStream |
+| Coercion | String and number conversions run in the original order; user-thrown errors keep their type/message. Symbol coercion is TypeError (engine wording differs). |
+
+The pre/post binary `--dump-surface` files compare equal: `diff -u` emits no
+lines (exit 0), for the complete inventory and therefore for audio. As specified
+by DEC-M0-T009b, the inventory has no native audio module rows or function lengths;
+the new parity test supplies that coverage.
+
 
 
 ## API
