@@ -8,6 +8,7 @@ Modified 2026-11-01: document the error handler's js_engine.h path.
 Modified 2026-11-01: document microtask checkpoints and nextTick order.
 Modified 2026-11-04: document the V8 code cache.
 Modified 2026-11-04: document the bind_io port and parity checks.
+Modified 2026-11-04: document main thread stack sizing.
 How native C bindings talk to the JS engine through jsb.h, and the handle rules.
 -->
 # JS binding: the `jsb` seam
@@ -346,6 +347,19 @@ How jsb applies them:
   all before disposing of the isolate.
 * jsb is main-thread only. The one exception is a `jsb_free_fn`, which V8 may call from
   a GC helper thread (see "Buffers").
+
+## Runtime stack
+
+V8 engine initialization measures the available stack below its current main
+thread frame before creating the first isolate. Linux uses pthread stack bounds,
+macOS uses pthread stack address/size, and Windows uses the virtual allocation
+base. It passes `--stack-size` in KiB, subtracting 25% of available space or
+256 KiB, whichever is larger, for native calls and exception reporting. The
+selected value is printed at startup. An unavailable or too-small stack fails
+initialization loudly. JS, SDL and the event loop stay on the process main thread;
+no runtime thread is created. Embedders must initialize the engine on that thread
+before creating other jsb runtimes. QuickJS retains its Windows linker reservation.
+`stack_size` checks repeated catchable recursion overflow and engine recovery.
 
 ## js_engine on V8
 `src/engine/js_engine_v8.cc` implements `src/engine/js_engine.h` on V8 (§4.1 item 3,
