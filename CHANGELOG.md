@@ -39,7 +39,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
-- Port synchronous native file I/O to jsb with API parity coverage. (M1-T016)
+- Port native file I/O bindings to jsb with API parity coverage. (M1-T016)
 - Port native audio bindings to jsb while preserving function arities, coercion, results and errors. (M1-T019)
 - Port native image loading, cache access and APNG decoding through jsb with API contract checks. (M1-T017)
 - Port native font loading and measurement to jsb while preserving the JavaScript API. (M1-T018)

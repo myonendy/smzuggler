@@ -28,7 +28,7 @@ bool bind_io_define(jsb_runtime *rt);
 
 #ifdef SMZ_JSB_ADOPT
 struct JSContext;
-/* Keep the legacy caller spelling available without exposing engine internals. */
+/* Legacy callers such as test_plugins still use the typedef until M1-T026. */
 typedef struct JSContext JSContext;
 
 /* TRANSITIONAL (removed by M1-T026): registers __native_io on the engine's

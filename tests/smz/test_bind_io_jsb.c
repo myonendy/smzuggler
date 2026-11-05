@@ -203,9 +203,14 @@ static void cleanup(const char *root)
     remove(root);
 }
 
+/* Runs the API checks on the main thread in a private temporary game root. */
 int main(void)
 {
-    char dir[] = "/tmp/smz-bind-io-XXXXXX";
+    const char *tmp = getenv("TMPDIR");
+    if (!tmp || !*tmp) tmp = "/tmp";
+    char dir[1024];
+    int length = snprintf(dir, sizeof dir, "%s/smz-bind-io-XXXXXX", tmp);
+    assert(length > 0 && (size_t)length < sizeof dir);
     assert(mkdtemp(dir) != NULL);
     file_io_set_game_root(dir);
     char root[1024];
