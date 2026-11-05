@@ -39,7 +39,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
-- Port native file I/O bindings to jsb while preserving the JavaScript API. (M1-T016)
+- Port synchronous native file I/O to jsb with API parity coverage. (M1-T016)
 - Port native font loading and measurement to jsb while preserving the JavaScript API. (M1-T018)
 - V8 builds set --stack-size from the main thread's stack at startup (minus 25%, at least 256 KiB) and print the value; the /STACK link flag and the runtime thread are gone from v8 mode. (M1-T013)
 - `__native_input` (bind_input.c) is defined through the jsb seam by `bind_input_define`, with its JS API unchanged. (M1-T015)

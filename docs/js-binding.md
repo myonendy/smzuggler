@@ -122,6 +122,21 @@ binding error names/messages. It uses the adopted engine in quickjs mode and
 `smz_js_engine_v8` in v8 mode. Engine-generated Symbol conversion messages retain
 each engine's spelling. No JS handle or borrowed buffer survives a native call.
 
+The retained I/O parity test records these pre-port expectations:
+
+| Check | Expected value |
+| --- | --- |
+| Own names and arities | The twelve functions in the `bind_io.c` row, in that order; all have `typeof === "function"` |
+| Function properties | Writable, configurable, non-enumerable; `Object.keys(__native_io)` is empty |
+| Text round trip | `h\u00e9\u0000x` has length 4, with character codes 233 and 0 at indices 1 and 2 |
+| Binary round trip | ArrayBuffer of length 3, bytes `1,2,255`; empty ArrayBuffers round-trip with length 0 |
+| Writes and directory reads | Writes return `undefined`; `readdirSync` returns an array of entry names |
+| Filesystem predicates and mutations | Boolean results, including `false` for missing paths in predicates, rename and unlink |
+| Path results | `getGameRoot` returns the configured root; `resolvePath('a/b%20c.txt')` returns that root plus `/a/b c.txt` |
+| Missing arguments (functions with nonzero arity) | TypeError: `<function> requires a path argument`, except writes require `path and data arguments` and rename requires `oldPath and newPath arguments` |
+| Invalid binary data | `TypeError: writeFileBinary: second argument must be an ArrayBuffer` |
+| Missing read targets | InternalError: `failed to read file: <resolved path>`, `failed to read binary file: <resolved path>`, or `failed to read directory: <resolved path>` |
+
 `bind_font_define` also restores non-enumerable function properties. Its setup script
 captures the intrinsic ArrayBuffer byte-length getter and wraps `loadFont` with a
 non-constructible method of the same name and arity. The getter checks the actual
