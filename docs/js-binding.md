@@ -406,6 +406,7 @@ adds `bind_<x>_define(jsb_runtime *rt, ...)`; the old `bind_<x>_register(struct 
 | `bind_platform.c` (M1-T014) | `__native_platform`, `__native_process` | `setFullscreen` (1), `isFullscreen`, `getDisplaySize`, `getDisplayScale`, `getWindowSize`, `setWindowTitle` (1), `quit` (0 for the rest); process: `platform`, `arch`, `engine` strings, `environ`, `hrtime` (0) | `jsb_define_module`, `jsb_runtime_setup`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_truthy`, `jsb_arg_to_str`/`jsb_free_str`, `jsb_new_object`/`array`/`i32`/`f64`/`str`, `jsb_set_prop`, `jsb_set_index`, `jsb_ret_*`, `jsb_throw_type`, `jsb_throw_internal`, `jsb_engine_version` | none | none |
 | `bind_image.c` (M1-T017) | `__native_image` | `decodeApng` (1), `loadImage` (1), `loadImageFromMemory` (2), `getImageInfo` (1), `getImagePixels` (1), `freeImage` (1), `cacheCount` (0), `clearCache` (0) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count/val/to_str/to_u32`, `jsb_free_str`, `jsb_new_object/array/i32/u32/null`, `jsb_set_prop/index`, `jsb_get_prop`, `jsb_val_type`, `jsb_ret_val/undefined`, `jsb_throw_type/internal`, `jsb_clear_exception` | `jsb_arg_bytes` borrows input bytes during the call; `jsb_new_buffer_copy` gives JS its own RGBA copy | none |
 | `bind_renderer.c` (M1-T023) | `__native_renderer` | `init` (2), `shutdown` (0), `resize` (2), `getSize` (0), `beginFrame` (0), `beginFrameTransparent` (0), `endFrame` (0), `createTexture` (2), `updateTexture` (4), `deleteTexture` (1), `setTextureFilter` (2), `createRenderTexture` (2), `deleteRenderTexture` (2), `bindRenderTexture` (3), `unbindRenderTexture` (0), `drawQuad` (11), `drawQuadVertices` (15), `drawQuadVerticesUV` (19), `flush` (0), `setBlendMode` (1), `getDrawCalls` (0), `getQuadCount` (0), `readPixels` (3), `rebindBatch` (0), `setScissor` (4), `clearScissor` (0), `setScreenViewport` (4) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count/val/to_i32/to_u32/to_f64/truthy`, `jsb_arg_bytes`, `jsb_get_prop`, `jsb_val_type`, `jsb_clear_exception`, `jsb_new_object/i32/u32/null/buffer_copy`, `jsb_set_prop`, `jsb_ret_val/bool/i32/undefined`, `jsb_throw_type/range` | `updateTexture` borrows an ArrayBuffer's bytes only during the call (views are rejected, as upstream did); `readPixels` copies the native RGBA buffer into an engine-owned ArrayBuffer and frees the native one | none |
+| `bind_tilemap.c` (M1-T025) | `__native_tilemap` | `drawTiles` (8) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count/val/to_i32/to_f64`, `jsb_get_index`, `jsb_val_to_u32/i32`, `jsb_get_prop`, `jsb_val_type`, `jsb_arg_bytes`, `jsb_clear_exception`, `jsb_ret_undefined`, `jsb_throw_type/range/internal` | `drawTiles` borrows its element ArrayBuffer only during the call, after every coercion (views are rejected, as upstream's buffer read did) | none |
 
 * **bind_image.** Defines the eight functions in upstream order, with their original
   arities and non-enumerable, writable, configurable properties. Strings and handles
@@ -458,6 +459,26 @@ adds `bind_<x>_define(jsb_runtime *rt, ...)`; the old `bind_<x>_register(struct 
   ArrayBuffer; `getDrawCalls` and `getQuadCount` are `0`. `--dump-surface` lists
   no native module rows (DEC-M0-T009b), so its renderer output is unchanged by
   the port; the contract test is what pins the API.
+
+* **bind_tilemap.** Defines `drawTiles` with its original arity and
+  non-enumerable, writable, configurable property. The count, tileset count and
+  offsets use the coercing `jsb_arg_to_i32`/`jsb_arg_to_f64` reads, and the
+  per-tileset texture id, width and height use `jsb_get_index` plus
+  `jsb_val_to_u32`/`jsb_val_to_i32`, in upstream's order. The element buffer
+  keeps upstream's ArrayBuffer-only rule (TypedArray and DataView arguments get
+  `TypeError: drawTiles: arg 0 must be an ArrayBuffer`) and is read last,
+  because earlier coercions can run user JS that detaches it. With no renderer,
+  with `count <= 0` or with `numTilesets <= 0`, the result is `undefined`;
+  allocation failure keeps `InternalError: out of memory`. Heap tileset storage
+  is freed on every exit and no JS handle outlives the call. The
+  `bind_tilemap_jsb` test covers the name, arity and descriptor, the no-device
+  result, buffer-only rejection, range and conversion errors, and coerced
+  arguments with a headless renderer. Pre-port QuickJS measurements are the
+  literal expectations in `tests/smz/test_bind_tilemap_jsb.c`; lengths are
+  `8`, `Object.getOwnPropertyNames` is `drawTiles`, the descriptor is
+  `true,false,true`, and the binding-authored errors are the strings above.
+  `--dump-surface` lists no native module rows (DEC-M0-T009b), so its tilemap
+  output is unchanged by the port.
 
 * **bind_platform.** The `__native_process` helpers stay inline in `bind_platform.h`
   (`bind_platform_define_process(rt)`), so window-less tests need no SDL;
