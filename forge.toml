@@ -15,8 +15,8 @@ Copyright (C) 2026 The smzuggler contributors
 [agents]
 # Claude is review-only in this project (owner, 2026-10-30): never a worker, implementer,
 # fallback worker, planner or auditor. Same shape as the earlier project used for review-only Claude.
-workers = ["codex", "claude"]  # Claude allowed as a worker from 2026-10-31 (never on overage); grok only as the last-resort fallback
-fallback_workers = ["codex", "claude"]  # grok removed 2026-11-01 (owner): Grok weekly allowance low
+workers = ["codex"]  # OWNER 2026-11-04: Codex does the work; Claude writes only when Codex is cooling down
+fallback_workers = ["claude"]  # OWNER 2026-11-04: Claude mostly reviews; grok removed 2026-11-01
 reviewer = "cross"                 # never the author; prefers another model family and CLI
 self_review_fallback = true        # author reviews only when every other reviewer is cooling
 review_pool = ["claude", "codex"]  # grok removed 2026-11-01 (owner); OpenCode Go cancelled 2026-10-30
@@ -31,7 +31,7 @@ max_turns = 60
 review_max_turns = 25
 max_budget_usd = 4.0               # per run; only meaningful for API billing
 timeout_min = 40
-extra_args = []
+extra_args = ["--effort", "medium"]   # OWNER 2026-11-04: medium effort for work and review
 allow_overage = false              # never run Claude on paid overage (owner). Do not change.
 resume_retries = true              # a gate-fix retry continues the worker's own session (forge default for claude)
 # review_model = "sonnet"          # optional: cheaper model for reviews; fix_model for gate-fix retries
@@ -40,7 +40,7 @@ resume_retries = true              # a gate-fix retry continues the worker's own
 bin = "codex"
 model = ""
 timeout_min = 40                   # codex exec has no max-turns flag; wall clock is the cap
-extra_args = []
+extra_args = ["-c", "model_reasoning_effort=\"medium\""]   # OWNER 2026-11-04: medium effort
 network_access = false             # builds are offline (FetchContent disconnected, local deps cache)
 # resume_retries = true            # opt-in: gate-fix retries resume the Codex session (argv checked on
                                    # codex-cli 0.166.0, a logged-in resume not yet tried; forge reruns fresh if it fails)

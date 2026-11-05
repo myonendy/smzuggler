@@ -13,6 +13,7 @@
 # Modified 2026-11-04: link smz_jsb_quickjs (jsb adoption) into everything
 # that builds src/engine/js_engine.c.
 # Modified 2026-11-04: add the V8 code cache store smz_js_codecache.
+# Modified 2026-11-04: size V8 recursion for the process main thread.
 # Build orchestration; see docs/DECISIONS.md (DEC-M0-T001).
 
 cmake_minimum_required(VERSION 3.20)
@@ -133,11 +134,13 @@ endif()
 if(MSVC)
     # Source files are UTF-8; silence noisy narrowing/deprecation warnings.
     add_compile_options(/wd4244 /wd4267 /wd4996 /utf-8)
-    # QuickJS throws a catchable "stack overflow" only when the OS stack is
-    # larger than its own limit (JS_STACK_SIZE in js_engine.c). The MSVC
-    # default of 1 MB is smaller, so deep recursion in game scripts would
-    # crash the process instead. Applies to every executable, tests included.
-    add_link_options(/STACK:16777216)
+    if(SMZ_JS_ENGINE STREQUAL "quickjs")
+        # QuickJS throws a catchable "stack overflow" only when the OS stack is
+        # larger than its own limit (JS_STACK_SIZE in js_engine.c). The MSVC
+        # default of 1 MB is smaller, so deep recursion in game scripts would
+        # crash the process instead. V8 builds size --stack-size at startup.
+        add_link_options(/STACK:16777216)
+    endif()
 endif()
 
 # Game default resolution

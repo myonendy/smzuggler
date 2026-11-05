@@ -8,6 +8,8 @@
  * Modified 2026-10-31: return process.exitCode after a clean quit.
  * Modified 2026-11-01: default logs, .jsc cache and config to host data dirs.
  *
+ * Modified 2026-11-04: keep runtime services on the process main thread.
+ *
  * Runtime entry point; owns startup and shutdown on the main thread.
  * See docs/DECISIONS.md (DEC-M0-T001) for identity ownership.
  */
@@ -338,7 +340,7 @@ static int process_exit_status(JSEngine *js)
 
 /** Start the runtime on the main thread using borrowed CLI arguments; return
  * an exit status on startup failure or after releasing runtime resources. */
-int main(int argc, char *argv[])
+static int runtime_main(int argc, char *argv[])
 {
     /* Android: printf output is lost unless routed to logcat. No-op elsewhere. */
     android_support_init_logging();
@@ -713,6 +715,13 @@ int main(int argc, char *argv[])
     error_handler_log(LOG_INFO, "Shutdown complete");
     error_handler_shutdown();
     return exit_status;
+}
+
+/** Run services on the process main thread with borrowed CLI arguments.
+ * Returns the runtime exit status after JS and graphics teardown. */
+int main(int argc, char *argv[])
+{
+    return runtime_main(argc, argv);
 }
 
 #endif /* RMMZ_TEST_DATA_DIR */
