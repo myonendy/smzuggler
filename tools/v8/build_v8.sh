@@ -66,6 +66,11 @@ setup_depot_tools() {
     export XDG_CACHE_HOME="$deps/v8-cache" CIPD_CACHE_DIR="$deps/v8-cache/cipd"
     export VPYTHON_VIRTUALENV_ROOT="$deps/v8-cache/vpython"
     mkdir -p "$CIPD_CACHE_DIR" "$VPYTHON_VIRTUALENV_ROOT"
+    # A fresh clone has no bundled python3 or CIPD tools until its one-time
+    # bootstrap runs; with self-update off nothing else runs it, and gclient's
+    # hooks then fail (python3_bin_reldir.txt missing). It is idempotent.
+    (cd "$tools" && ./ensure_bootstrap) \
+        || die "depot_tools bootstrap (ensure_bootstrap) failed in $tools"
 }
 
 # Check out exactly the pinned tag (and the DEPS it names) into v8-src/v8.
