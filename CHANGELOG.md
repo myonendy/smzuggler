@@ -41,6 +41,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Build the pinned V8 on GitHub Actions by hand (`v8-build.yml`) and bootstrap depot_tools in `build_v8.sh`. (M1-T001)
 - Port the tests that called QuickJS directly to `js_engine.h`/`jsb.h` and remove the transitional binding wrappers. (M1-T026) (M1-T026)
 - Port the `__native_tilemap` binding to the jsb seam with unchanged names, function arities, results and errors. (M1-T025)
 - Port the `__native_filters` binding to the jsb seam with unchanged names, function arities, results and errors. (M1-T024)

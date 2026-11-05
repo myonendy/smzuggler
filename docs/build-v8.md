@@ -140,3 +140,8 @@ CI and contributors use byte-identical V8 builds. Rebuilding is needed only
 when the pin or the args change; `args.gn` inside the tarball says which.
 The publishing job and the CMake fetch are later M1 cards; this page fixes
 the layout they share.
+
+The Linux x64 build runs by hand as `.github/workflows/v8-build.yml`
+(`workflow_dispatch` only). It uploads `v8-<version>-linux-x64.tar.xz` and its
+`.sha256` as a workflow artifact; publishing it as a release asset is still a
+later card.
