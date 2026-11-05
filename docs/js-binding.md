@@ -11,6 +11,7 @@ Modified 2026-11-04: document main thread stack sizing.
 Modified 2026-11-04: document the font and audio binding ports and buffer validation.
 Modified 2026-11-04: document the image binding and its buffer ownership.
 Modified 2026-11-04: document the font binding port and buffer validation.
+Modified 2026-11-04: document the video binding port and parity checks.
 How native C bindings talk to the JS engine through jsb.h, and the handle rules.
 -->
 # JS binding: the `jsb` seam
@@ -109,6 +110,7 @@ binary's in both engine modes.
 | `bind_input.c` (M1-T015) | `__native_input`: `pollEvents` (0), `getGamepad` (1), `getGamepadCount` (0) | `jsb_define_module`, `jsb_set_fn_n`, `jsb_new_object/array/str/i32/f64/bool/null`, `jsb_set_prop`, `jsb_set_index`, `jsb_arg_count`, `jsb_arg_to_i32` (`getGamepad` coerces its index), `jsb_ret_val/i32`, `jsb_runtime_eval` | none | none |
 | `bind_font.c` (M1-T018) | `__native_font`: `loadFont` (2), `loadFontFile` (2), `hasFont` (1), `getMetrics` (2), `measureText` (3), `fontCount` (0), `fontNames` (0) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_to_str/f64`, `jsb_free_str`, `jsb_arg_bytes`, `jsb_clear_exception`, `jsb_throw_type`, `jsb_new_object/array/str/f64/null`, `jsb_set_prop/index`, `jsb_ret_val/bool/i32/f64` | Borrowed ArrayBuffer bytes during `loadFont`; both font caches copy them before return. File bytes are owned and freed by the binding. | none |
 | `bind_audio.c` (M1-T019) | `__native_audio`: `init`, `shutdown`, `isInitialized`, `stopAll`, `getActiveVoiceCount` (0); `load`, `loadStream`, `loadFromMemory`, `freeSource`, `stop`, `stopBus`, `pause`, `resume`, `pauseBus`, `resumeBus`, `isPlaying`, `isPaused`, `getVolume`, `getPosition`, `getDuration` (1); `setVolume`, `setPitch`, `setPan`, `setBusVolume`, `seek` (2); `fadeVolume`, `fadeBusVolume` (3); `play` (6) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_to_str/u32/i32/f64`, `jsb_arg_truthy`, `jsb_free_str`, `jsb_arg_bytes`, `jsb_clear_exception`, `jsb_throw_type/range`, `jsb_new_u32/i32`, `jsb_set_prop`, `jsb_ret_val/bool/i32/f64` | ArrayBuffer-only `loadFromMemory`; borrowed bytes are copied by SoLoud before return. | none |
+| `bind_video.c` (M1-T020) | `__native_video`: `open`, `close`, `play`, `pause`, `getState` (1); `setVolume`, `setLoop`, `setVisible` (2) | `jsb_define_module`, `jsb_runtime_setup/eval`, `jsb_set_fn_n`, `jsb_arg_count`, `jsb_arg_to_str/i32/f64`, `jsb_arg_truthy`, `jsb_free_str`, `jsb_new_object/bool/f64/i32/null`, `jsb_set_prop`, `jsb_ret_val/i32/undefined`, `jsb_throw_type` | none | none |
 
 
 `jsb_set_fn_n` assigns functions, so they come out enumerable, while `JS_CFUNC_DEF` made
@@ -644,3 +646,55 @@ message and stack and return `JSB_ERR_THREW`, that a freed function is collected
 external buffer hung on it is freed only after `jsb_callback_free` and `gc()`), that
 freed and stale handles and bad arguments are refused, and that a callback may free its
 own handle.
+
+
+### M1-T020 video parity report
+
+`bind_video_define(js_engine_get_jsb(engine))` defines the module on the selected
+engine's context: QuickJS in quickjs mode and `smz_js_engine_v8` in v8 mode.
+All values are call-scoped, the coerced path is freed after `video_open`, and
+video events remain polled by the DOM shim; no persistent callback is needed.
+The post-definition script restores non-enumerable methods. Missing arguments
+remain an unresolved parity gap: after a consumed exception, the original
+QuickJS binding returns its bare internal uninitialized exception sentinel.
+JavaScript observes `typeof e === "unknown"` and
+`String(e) === "[uninitialized]"`. The current seam has no corresponding value
+or throw operation, and V8 cannot represent a value with that `typeof` result.
+The port currently returns undefined on these short calls, so the new parity
+test intentionally exposes this failure. A task/spec decision is needed before
+this behavior can be changed or excluded from parity.
+
+The original binding was compiled separately against the gate-built QuickJS
+library, using the same API test with registration switched to the original
+`bind_video_register`. The initial GCC and Clang builds failed on the cached
+QuickJS const assignment at `quickjs.c:26366`; the standard GCC gate build
+supplied its existing toolchain settings and produced the dependency library.
+No dependency source or warning policy was changed by this card.
+
+| Pre-port binary check | Captured expected value |
+| --- | --- |
+| Own names, in order | `open,close,play,pause,setVolume,setLoop,setVisible,getState` |
+| Function lengths, same order | `1,1,1,1,2,2,2,1` |
+| Function descriptors | All have type `function`, matching names, writable/configurable and non-enumerable; own names `length,name` |
+| Failed open | Number `0` for missing files, null and undefined paths |
+| Invalid handle | `getState` returns null; close/play/pause/setVolume/setLoop/setVisible return undefined |
+| Synthetic fixture state | Own names `playing,paused,ended,time,duration,width,height`; initial values false/false/false/0, numeric duration between 0.8 and 1.2 seconds, dimensions 64 by 48 |
+| Playback and cleanup | play sets playing; pause sets paused and clears playing; close makes state null; setters return undefined |
+| Missing open path | `TypeError: open requires a path` |
+| Other missing arguments | Thrown uninitialized sentinel (`typeof` unknown, string `[uninitialized]`), including setters called with only a handle |
+| Coercion errors | User-thrown `Error: path` and `RangeError: number` propagate; Symbol conversion throws TypeError (engine-specific wording) |
+| Coercion order | Handle before volume; looping and visibility use truthiness without numeric conversion |
+
+The pre-port runtime was relinked with the original binding object, and both
+binaries ran `--dump-surface`. The complete pre/post inventories compare equal:
+`diff -u` emits no lines and exits 0, including the video inventory. As specified
+by DEC-M0-T009b, native video rows and function lengths are excluded from that
+inventory; the ctest supplies those assertions.
+
+With `SDL_AUDIODRIVER=dummy`, the native video ctest passes all eight cases.
+The QuickJS gate build succeeds; the full suite initially passed 50/52 tests,
+with the new parity assertion failing and the existing platform test unable to
+open a video device. The docs gate also requires a direct changelog edit,
+contrary to the supplied instruction to provide only a final-report entry.
+V8 configuration fails because `SMZ_V8_DIR` is unset and the pinned install is
+unavailable in the dependency cache, so V8 validation remains outstanding.
