@@ -135,11 +135,11 @@ if(MSVC)
     # Source files are UTF-8; silence noisy narrowing/deprecation warnings.
     add_compile_options(/wd4244 /wd4267 /wd4996 /utf-8)
     if(SMZ_JS_ENGINE STREQUAL "quickjs")
-    # QuickJS throws a catchable "stack overflow" only when the OS stack is
-    # larger than its own limit (JS_STACK_SIZE in js_engine.c). The MSVC
-    # default of 1 MB is smaller, so deep recursion in game scripts would
-    # crash the process instead. Applies to every executable, tests included.
-    add_link_options(/STACK:16777216)
+        # QuickJS throws a catchable "stack overflow" only when the OS stack is
+        # larger than its own limit (JS_STACK_SIZE in js_engine.c). The MSVC
+        # default of 1 MB is smaller, so deep recursion in game scripts would
+        # crash the process instead. V8 builds size --stack-size at startup.
+        add_link_options(/STACK:16777216)
     endif()
 endif()
 
