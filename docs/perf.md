@@ -46,7 +46,7 @@ perf script -i run.perf.data > run.perf.txt
 `--js-flags=VALUE` (or the two-argument `--js-flags VALUE`) passes a
 whitespace-separated list of V8 flags to the runtime. The runtime applies them
 before it creates the first isolate, so they take effect for every script.
-The value must be one of the seven flags below; an unknown or malformed token
+Each flag in the value must be one of the seven below; an unknown or malformed token
 prints `Invalid --js-flags flag: ...` and exits with status 2, before a window
 is opened. A numeric flag accepts both `--flag=N` and `--flag N`, as V8 does.
 If the option repeats, the last value wins, as `--data-dir` does.
@@ -77,9 +77,12 @@ tools/perf/record.sh --out run/perf -- \
     ./build/smzuggler-rt --game <game-dir> <control-mode options>
 ```
 
-It runs `perf record -g --call-graph dwarf -e cycles:u -F 499`, moves this
-run's `jit-<pid>.dump` into `run/perf/`, injects it with `perf inject --jit`
-and writes `run/perf/run.perf.txt` for `attribute.py`. To use the older map
+It runs `perf record -g -k mono --call-graph dwarf -e cycles:u -F 499` so
+samples use CLOCK_MONOTONIC, matching V8's jitdump timestamps. It then runs
+`perf inject --jit` while `jit-<pid>.dump` remains at the path recorded in
+the mmap event. After injection it moves this run's dump and generated
+`jitted-*.so` files into `run/perf/` and writes `run/perf/run.perf.txt` for
+`attribute.py`. To use the older map
 format instead, pass `--js-flags=--perf-basic-prof`; the script then skips the
 injection step. Any other allow-listed flag or combination can be passed the
 same way, for example `--js-flags="--trace-gc"` for a separate GC log run.

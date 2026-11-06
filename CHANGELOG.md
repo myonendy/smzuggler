@@ -42,7 +42,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
-- Validate `--js-flags` against a V8 allow-list, apply it before the isolate and record a perf recipe with jitdump injection. (M1-T029)
+- Validate `--js-flags` before isolate creation and record monotonic perf profiles with jitdump injection before archiving. (M1-T029)
 - Add `--cpu-prof[=FILE]`, which records V8's CPU samples and writes a game-relative Chrome DevTools `.cpuprofile` on exit. (M1-T028)
 - Document the blocked M1 V8 drive preflight and the owner battery rerun recipe. (M1-T032)
 - Remove the former engine and build exclusively on V8. (M1-T027)

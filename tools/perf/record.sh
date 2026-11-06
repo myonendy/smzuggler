@@ -6,12 +6,13 @@
 # (spec section 6, card M1-T029).
 #
 # Why: `perf record` alone sees JIT frames as anonymous addresses. V8's
-# --perf-prof writes jit-<pid>.dump next to the working directory, and
+# --perf-prof writes jit-<pid>.dump in the working directory, and
 # `perf inject --jit` folds those records into the profile so shim and game
 # JavaScript separate from native code. This script keeps that recipe in one
 # place: it validates nothing (the runtime's --js-flags allow-list does), runs
-# perf, moves the JIT dump into the output directory and injects it.
-# See docs/perf.md, "Recording a V8 profile".
+# perf with CLOCK_MONOTONIC, injects the JIT dump at its recorded path, then
+# archives the dump and generated symbols in the output directory.
+# See docs/perf.md, "perf record with JIT symbols".
 #
 # Usage:
 #   tools/perf/record.sh --out DIR [--js-flags "FLAGS"] -- COMMAND [ARGS...]
@@ -90,30 +91,39 @@ mkdir -p "$out"
 tmp_before=${TMPDIR:-/tmp}/smz-jit-before.$$
 trap 'rm -f "$tmp_before"' EXIT HUP INT TERM
 
-# Note dumps that already exist so only this run's file is moved.
-for file in jit-*.dump; do
+# Preserve artifacts from earlier runs when archiving this run's output.
+for file in jit-*.dump jitted-*.so; do
     [ -e "$file" ] && printf '%s\n' "$file"
 done > "$tmp_before"
 
-if ! perf record -g --call-graph dwarf -e cycles:u -F 499 \
+if ! perf record -g -k mono --call-graph dwarf -e cycles:u -F 499 \
         -o "$out/run.perf.data" -- "$@" "--js-flags=$js_flags"; then
     echo "record.sh: perf record failed" >&2
     exit 1
 fi
 
+has_dump=false
 for file in jit-*.dump; do
+    [ -e "$file" ] || continue
+    if ! grep -Fqx "$file" "$tmp_before"; then
+        has_dump=true
+    fi
+done
+
+profile=run.perf.data
+if [ "$has_dump" = true ]; then
+    # Injection opens the dump at the path recorded in perf's mmap event.
+    # Keep it there until injection has also generated the jitted ELF files.
+    perf inject --jit -i "$out/run.perf.data" -o "$out/run.jit.perf.data"
+    profile=run.jit.perf.data
+fi
+
+for file in jit-*.dump jitted-*.so; do
     [ -e "$file" ] || continue
     if ! grep -Fqx "$file" "$tmp_before"; then
         mv "$file" "$out/"
     fi
 done
-
-profile=run.perf.data
-if [ -n "$(find "$out" -maxdepth 1 -name 'jit-*.dump' -print -quit 2>/dev/null)" ]; then
-    # perf inject looks for jit-*.dump in its working directory.
-    (cd "$out" && perf inject --jit -i run.perf.data -o run.jit.perf.data)
-    profile=run.jit.perf.data
-fi
 
 perf script -i "$out/$profile" > "$out/run.perf.txt"
 
