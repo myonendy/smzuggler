@@ -24,12 +24,10 @@
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <sys/types.h>
 #if defined(_WIN32)
 #include <direct.h>
 #endif
@@ -276,10 +274,8 @@ int smz_js_flags_parse(int argc, char **argv, char *out, size_t out_size)
     return 0;
 }
 
-/* -------------------------------------------------------------------------
- * §14 perf harness helpers. Above the RMMZ_TEST_DATA_DIR seam so tests link
- * the real parser and fixture rules without SDL, V8 or a window.
- * ------------------------------------------------------------------------- */
+/* §14 perf harness helpers. Above the RMMZ_TEST_DATA_DIR seam so tests link
+ * the real parser and fixture rules without SDL, V8 or a window. */
 #define SMZ_PERF_PATH_MAX 1024
 #define SMZ_PERF_SAVE_MAX ((size_t)64 * 1024 * 1024)
 /** Existing directory. */
@@ -351,8 +347,7 @@ static const PerfFixture *perf_fixture(const char *name)
 /** True when SAVE_MAP is one of the maps FIXTURE accepts. */
 static bool perf_accepts(const PerfFixture *fixture, int save_map)
 {
-    return save_map == fixture->maps[0] ||
-           (fixture->maps[1] != 0 && save_map == fixture->maps[1]);
+    return save_map == fixture->maps[0] || save_map == fixture->maps[1];
 }
 /** Copy SRC to DST byte for byte. */
 static bool perf_copy_file(const char *src, const char *dst)
@@ -414,6 +409,33 @@ static bool perf_stats_dir_ok(const char *path)
     if (path[len - 1] == '/' || path[len - 1] == '\\') return true;
     return perf_is_dir(path);
 }
+/** Cross-option rules after the scan; 0, or 2 with one clear line in ERR. */
+static int perf_validate_options(const SmzPerfSuiteOptions *out, bool control,
+                                 bool frames, char *err, size_t err_size)
+{
+    if (out->requested && out->import_requested) {
+        perf_error(err, err_size, "perf-suite: --perf-suite and --import-fixture cannot be combined");
+        return 2;
+    }
+    if (out->import_requested || !out->requested) return 0;
+    if (!out->frame_stats_dir) {
+        perf_error(err, err_size, "perf-suite: --frame-stats=<directory> is required");
+        return 2;
+    }
+    if (!perf_stats_dir_ok(out->frame_stats_dir)) {
+        perf_error(err, err_size, "perf-suite: --frame-stats must name a directory; end it with / or create it first");
+        return 2;
+    }
+    if (control) {
+        perf_error(err, err_size, "perf-suite: --control cannot be combined with scripted input replay");
+        return 2;
+    }
+    if (frames) {
+        perf_error(err, err_size, "perf-suite: --frames would cut the 10 s + 120 s windows");
+        return 2;
+    }
+    return 0;
+}
 /** See perf_suite.h. Unknown argv entries stay for the runtime parser. */
 int smz_perf_suite_parse_args(int argc, char **argv, SmzPerfSuiteOptions *out,
                               char *err, size_t err_size)
@@ -432,39 +454,31 @@ int smz_perf_suite_parse_args(int argc, char **argv, SmzPerfSuiteOptions *out,
         else if (!strncmp(argv[i], "--perf-suite=", 13)) {
             out->requested = true;
             if (!perf_profile_parse(argv[i] + 13, &out->profile)) {
-                perf_error(err, err_size,
-                    "perf-suite: unknown profile '%s' (use dev-laptop, "
-                    "steam-deck, deck-proxy or extra)", argv[i] + 13);
+                perf_error(err, err_size, "perf-suite: unknown profile '%s' (use dev-laptop, steam-deck, deck-proxy or extra)", argv[i] + 13);
                 return 2;
             }
         } else if (!strcmp(argv[i], "--import-fixture")) {
             out->import_requested = true;
             if (i + 2 >= argc) {
-                perf_error(err, err_size,
-                    "import-fixture: expected --import-fixture <slot> <fixture>");
+                perf_error(err, err_size, "import-fixture: expected --import-fixture <slot> <fixture>");
                 return 2;
             }
             if (!perf_slot_parse(argv[i + 1], &out->import_slot)) {
-                perf_error(err, err_size,
-                    "import-fixture: slot must be 1-999, got '%s'", argv[i + 1]);
+                perf_error(err, err_size, "import-fixture: slot must be 1-999, got '%s'", argv[i + 1]);
                 return 2;
             }
             out->import_fixture = argv[i + 2];
             if (!perf_fixture(out->import_fixture)) {
-                perf_error(err, err_size,
-                    "import-fixture: unknown fixture '%s' (expected fx-map92, "
-                    "fx-trade or fx-combat)", out->import_fixture);
+                perf_error(err, err_size, "import-fixture: unknown fixture '%s' (expected fx-map92, fx-trade or fx-combat)", out->import_fixture);
                 return 2;
             }
             i += 2;
         } else if (!strncmp(argv[i], "--import-fixture=", 17)) {
-            perf_error(err, err_size,
-                "import-fixture: use --import-fixture <slot> <fixture>");
+            perf_error(err, err_size, "import-fixture: use --import-fixture <slot> <fixture>");
             return 2;
         } else if (!strcmp(argv[i], "--frame-stats")) {
             if (i + 1 >= argc || !argv[i + 1] || argv[i + 1][0] == '-') {
-                perf_error(err, err_size,
-                    "frame-stats: --frame-stats needs a file or directory path");
+                perf_error(err, err_size, "frame-stats: --frame-stats needs a file or directory path");
                 return 2;
             }
             out->frame_stats_dir = argv[++i];
@@ -476,34 +490,7 @@ int smz_perf_suite_parse_args(int argc, char **argv, SmzPerfSuiteOptions *out,
             out->frame_stats_dir = argv[i] + 14;
         }
     }
-    if (out->requested && out->import_requested) {
-        perf_error(err, err_size,
-            "perf-suite: --perf-suite and --import-fixture cannot be combined");
-        return 2;
-    }
-    if (out->import_requested || !out->requested) return 0;
-    if (!out->frame_stats_dir) {
-        perf_error(err, err_size,
-            "perf-suite: --frame-stats=<directory> is required");
-        return 2;
-    }
-    if (!perf_stats_dir_ok(out->frame_stats_dir)) {
-        perf_error(err, err_size,
-            "perf-suite: --frame-stats must name a directory; end it with / "
-            "or create it first");
-        return 2;
-    }
-    if (control) {
-        perf_error(err, err_size,
-            "perf-suite: --control cannot be combined with scripted input replay");
-        return 2;
-    }
-    if (frames) {
-        perf_error(err, err_size,
-            "perf-suite: --frames would cut the 10 s + 120 s windows");
-        return 2;
-    }
-    return 0;
+    return perf_validate_options(out, control, frames, err, err_size);
 }
 /** See perf_suite.h. */
 const char *smz_perf_profile_name(SmzPerfProfile profile)
@@ -634,29 +621,22 @@ int smz_perf_import_fixture(const SmzPerfSuiteOptions *options, char *err,
         return 2;
     }
     if (!perf_save_dir(saves, sizeof saves)) {
-        perf_error(err, err_size,
-            "import-fixture: set SMZUGGLER_SAVE_DIR to the game's save folder");
+        perf_error(err, err_size, "import-fixture: set SMZUGGLER_SAVE_DIR to the game's save folder");
         return 1;
     }
     snprintf(slot, sizeof slot, "file%d.rmmzsave", options->import_slot);
     if (!perf_join(source, sizeof source, saves, slot) || !perf_is_file(source)) {
-        perf_error(err, err_size,
-            "import-fixture: save slot %d not found in the save directory",
-            options->import_slot);
+        perf_error(err, err_size, "import-fixture: save slot %d not found in the save directory", options->import_slot);
         return 1;
     }
     if (smz_perf_read_save_map_id(source, &map_id, detail, sizeof detail)) {
-        perf_error(err, err_size, "import-fixture: slot %d: %s",
-                   options->import_slot, detail);
+        perf_error(err, err_size, "import-fixture: slot %d: %s", options->import_slot, detail);
         return 1;
     }
     if (!perf_accepts(fixture, map_id)) {
         if (fixture->maps[1])
             snprintf(alternate, sizeof alternate, " or %d", fixture->maps[1]);
-        perf_error(err, err_size,
-            "import-fixture: %s requires map %d%s, but slot %d is on map %d",
-            fixture->name, fixture->maps[0], alternate, options->import_slot,
-            map_id);
+        perf_error(err, err_size, "import-fixture: %s requires map %d%s, but slot %d is on map %d", fixture->name, fixture->maps[0], alternate, options->import_slot, map_id);
         return 1;
     }
     if (!smz_perf_fixtures_dir(fixtures, sizeof fixtures) ||
@@ -685,22 +665,17 @@ int smz_perf_validate_fixture(const char *name, char *err, size_t err_size)
     }
     if (!perf_join(path, sizeof path, fixtures, fixture->name) ||
         !perf_is_file(path)) {
-        perf_error(err, err_size,
-            "perf-suite: missing fixture %s; create it with --import-fixture "
-            "(see docs/testing-fixtures.md)", fixture->name);
+        perf_error(err, err_size, "perf-suite: missing fixture %s; create it with --import-fixture (see docs/testing-fixtures.md)", fixture->name);
         return 1;
     }
     if (smz_perf_read_save_map_id(path, &map_id, detail, sizeof detail)) {
-        perf_error(err, err_size, "perf-suite: fixture %s: %s", fixture->name,
-                   detail);
+        perf_error(err, err_size, "perf-suite: fixture %s: %s", fixture->name, detail);
         return 1;
     }
     if (!perf_accepts(fixture, map_id)) {
         if (fixture->maps[1])
             snprintf(alternate, sizeof alternate, " or %d", fixture->maps[1]);
-        perf_error(err, err_size,
-            "perf-suite: fixture %s is on map %d but the scene needs map %d%s",
-            fixture->name, map_id, fixture->maps[0], alternate);
+        perf_error(err, err_size, "perf-suite: fixture %s is on map %d but the scene needs map %d%s", fixture->name, map_id, fixture->maps[0], alternate);
         return 1;
     }
     return 0;
@@ -968,10 +943,8 @@ static js_profiler *start_cpu_profile(jsb_runtime *jsb, const char *path,
     return profiler;
 }
 
-/* -------------------------------------------------------------------------
- * §14 perf-suite execution: fixed 10 s + 120 s windows, three runs, and the
- * same InputEvents a keyboard produces. Main thread only.
- * ------------------------------------------------------------------------- */
+/* §14 perf-suite execution: fixed 10 s + 120 s windows, three runs, and the
+ * same InputEvents a keyboard produces. Main thread only. */
 #define SMZ_PERF_WARMUP_SECONDS 10
 #define SMZ_PERF_SCORED_SECONDS 120
 #define SMZ_PERF_RUNS 3
@@ -1050,25 +1023,18 @@ static char *perf_call(JSEngine *js, const char *method)
 static bool perf_js_escape(const char *path, char *out, size_t out_size)
 {
     size_t used = 0;
-    const unsigned char *p = (const unsigned char *)path;
-    while (p && *p) {
-        const char *piece = NULL;
-        char escaped[8];
-        if (*p == '\\' || *p == '"') {
-            escaped[0] = '\\'; escaped[1] = (char)*p; escaped[2] = '\0';
-            piece = escaped;
-        } else if (*p == '\n') {
-            piece = "\\n";
-        } else {
-            escaped[0] = (char)*p; escaped[1] = '\0'; piece = escaped;
-        }
-        if (used + strlen(piece) + 1 > out_size) return false;
-        memcpy(out + used, piece, strlen(piece));
-        used += strlen(piece);
-        out[used] = '\0';
-        p++;
+    if (!out_size) return false;
+    for (; path && *path; path++) {
+        char plain[2] = {*path, '\0'};
+        const char *piece = *path == '\n'   ? "\\n"
+                            : *path == '\\' ? "\\\\"
+                            : *path == '"'  ? "\\\""
+                                            : plain;
+        size_t len = strlen(piece);
+        if (used + len + 1 > out_size) return false;
+        memcpy(out + used, piece, len);
+        used += len;
     }
-    if (out_size == 0) return false;
     out[used] = '\0';
     return true;
 }
@@ -1154,8 +1120,6 @@ static bool perf_wait_for_scene(GameLoop *loop, JSEngine *js,
 static bool perf_setup_scene(GameLoop *loop, JSEngine *js,
                              const PerfScene *scene, char *err, size_t err_size)
 {
-    char call[64];
-    char *result;
     int map_id = 0;
     if (strcmp(scene->id, "S1") == 0) {
         if (!perf_bridge_is(perf_call(js, "title()"), "ok")) {
@@ -1168,8 +1132,7 @@ static bool perf_setup_scene(GameLoop *loop, JSEngine *js,
         const PerfFixture *fixture = perf_fixture(scene->fixture);
         if (fixture) map_id = fixture->maps[0];
     }
-    snprintf(call, sizeof call, "load(%d)", 1); /* scratch copy of the fixture */
-    if (!perf_bridge_is(perf_call(js, call), "ok")) {
+    if (!perf_bridge_is(perf_call(js, "load(1)"), "ok")) { /* scratch slot 1 */
         perf_error(err, err_size, "perf-suite: fixture load failed for %s",
                    scene->id);
         return false;
@@ -1396,14 +1359,12 @@ static int runtime_main(int argc, char *argv[])
             cpu_prof_path = argv[i] + 11;
         } else if (strcmp(argv[i], "--perf-suite") == 0 ||
                    strncmp(argv[i], "--perf-suite=", 13) == 0) {
-            /* Validated with the other §14 harness options above. */
-            continue;
+            continue; /* validated with the other §14 options above */
         } else if (strcmp(argv[i], "--import-fixture") == 0) {
-            /* Already consumed and dispatched before the window. */
-            i += 2;
+            i += 2; /* consumed and dispatched before the window */
             continue;
         } else if (strncmp(argv[i], "--import-fixture=", 17) == 0) {
-            continue;
+            continue; /* rejected by the harness parser above */
         } else if (strcmp(argv[i], "--frame-stats") == 0 && i + 1 < argc) {
             /* Per-frame timing JSON Lines and summary (spec §14.3). */
             frame_stats_path = argv[++i];
@@ -1541,18 +1502,11 @@ static int runtime_main(int argc, char *argv[])
         }
     }
 
-    if (perf_options.requested) {
-        if (smz_perf_validate_fixture("fx-map92", perf_err,
-                                      sizeof perf_err) != 0) {
-            fatal_error("%s", perf_err);
-            error_handler_shutdown();
-            return 1;
-        }
-        if (!perf_prepare_scratch(perf_err, sizeof perf_err)) {
-            fatal_error("%s", perf_err);
-            error_handler_shutdown();
-            return 1;
-        }
+    if (perf_options.requested &&
+        !perf_prepare_scratch(perf_err, sizeof perf_err)) {
+        fatal_error("%s", perf_err);
+        error_handler_shutdown();
+        return 1;
     }
 
     Platform *platform = platform_init(APP_TITLE, win_w, win_h);
@@ -1715,9 +1669,7 @@ static int runtime_main(int argc, char *argv[])
         return 1;
     }
 
-    if (perf_options.requested) {
-        /* perf_suite_run opens one frame-stats file per scene and run. */
-    } else if (frame_stats_path) {
+    if (!perf_options.requested && frame_stats_path) {
         char scrubbed[1024];
         log_scrub(frame_stats_path, scrubbed, sizeof(scrubbed));
         if (game_loop_enable_frame_stats(loop, frame_stats_path, 60.0)) {
