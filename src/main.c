@@ -11,6 +11,7 @@
  * Modified 2026-11-04: keep runtime services on the process main thread.
  * Modified 2026-11-05: validate and forward --js-flags to V8 before startup
  * (card M1-T029).
+ * Modified 2026-11-05: start an optional V8 CPU profile from --cpu-prof.
  *
  * Runtime entry point; owns startup and shutdown on the main thread.
  * See docs/DECISIONS.md (DEC-M0-T001) for identity ownership.
@@ -269,6 +270,7 @@ int smz_js_flags_parse(int argc, char **argv, char *out, size_t out_size)
 #endif
 #include "smzuggler/dump_surface.h"
 #include "engine/js_engine.h"
+#include "engine/js_profiler.h"
 #include "engine/game_loop.h"
 #include "engine/script_loader.h"
 #include "bindings/bind_io.h"
@@ -485,6 +487,36 @@ static int process_exit_status(JSEngine *js)
     return code;
 }
 
+/** Starts the optional V8 CPU profile requested by `--cpu-prof`.
+ *
+ * Why: path selection and start-up logging are one decision, so keeping them
+ * out of runtime_main leaves the entry point readable. `path` is borrowed
+ * from argv and may be NULL or empty, in which case the profile goes under
+ * `<state_dir>/profiles`; `state_dir` and `game_dir` are borrowed and may be
+ * NULL. Returns the caller-owned handle to pass to js_profiler_stop, or NULL
+ * after logging when no path can be chosen or V8 refuses to start. Main
+ * thread, before the first script is evaluated. */
+static js_profiler *start_cpu_profile(jsb_runtime *jsb, const char *path,
+                                      const char *state_dir, const char *game_dir)
+{
+    char default_path[1024];
+    const char *out = path;
+    if (!out || !out[0]) {
+        if (!js_profiler_default_path(state_dir, default_path, sizeof default_path)) {
+            error_handler_log(LOG_ERROR,
+                              "--cpu-prof needs a state directory; pass --cpu-prof=FILE");
+            return NULL;
+        }
+        out = default_path;
+    }
+    js_profiler *profiler = js_profiler_start(jsb, out, game_dir);
+    if (profiler)
+        error_handler_log(LOG_INFO, "CPU profile will be written to %s", out);
+    else
+        error_handler_log(LOG_ERROR, "Could not start the V8 CPU profiler");
+    return profiler;
+}
+
 /** Start the runtime on the main thread using borrowed CLI arguments; return
  * an exit status on startup failure or after releasing runtime resources. */
 static int runtime_main(int argc, char *argv[])
@@ -515,6 +547,8 @@ static int runtime_main(int argc, char *argv[])
     const char *dump_path = NULL;
     bool share_requested = false;
     const char *share_path = NULL;
+    bool cpu_prof_requested = false;
+    const char *cpu_prof_path = NULL;
 #ifdef SMZUGGLER_NAME
     SmzHostDirs host_dirs = {0};
 #else
@@ -564,6 +598,13 @@ static int runtime_main(int argc, char *argv[])
             /* Automation: take eval/screenshot commands from stdin (see
                game_loop_enable_control and tools/visual_eval.py). */
             control_mode = true;
+        } else if (strcmp(argv[i], "--cpu-prof") == 0) {
+            /* Record a V8 CPU profile; the default path is under the state
+               dir (see js_profiler_default_path). */
+            cpu_prof_requested = true;
+        } else if (strncmp(argv[i], "--cpu-prof=", 11) == 0) {
+            cpu_prof_requested = true;
+            cpu_prof_path = argv[i] + 11;
         } else if (strcmp(argv[i], "--no-audio") == 0) {
             no_audio = 1;
         } else if (strcmp(argv[i], "--js-flags") == 0 && i + 1 < argc) {
@@ -651,6 +692,14 @@ static int runtime_main(int argc, char *argv[])
         snprintf(console_log_buf, sizeof(console_log_buf), "%s/console.log", log_dir_buf);
         console_log_path = console_log_buf;
     }
+#endif
+
+    /* Directory for a default --cpu-prof file: next to the logs, which are
+       already the host state directory (or an explicit --data-dir). */
+#ifdef SMZUGGLER_NAME
+    const char *state_dir = host_dirs.log_dir;
+#else
+    const char *state_dir = log_dir_buf[0] ? log_dir_buf : NULL;
 #endif
 
     /* GUI-subsystem builds start without stdout/stderr; attach to the parent
@@ -745,6 +794,13 @@ static int runtime_main(int argc, char *argv[])
 
     jsb_runtime *jsb = js_engine_get_jsb(js);
 
+    /* V8 samples only scripts once the profiler runs, so it starts before
+       the first shim or game script is evaluated and stops before V8's
+       isolate is destroyed. */
+    js_profiler *profiler = cpu_prof_requested
+                                ? start_cpu_profile(jsb, cpu_prof_path, state_dir, game_dir)
+                                : NULL;
+
     bind_io_define(jsb);
 
     /* Initialize image loader (GL enabled since we have a context). */
@@ -834,6 +890,7 @@ static int runtime_main(int argc, char *argv[])
         }
         bind_filters_shutdown();
         filters_shutdown();
+        js_profiler_stop(profiler);
         js_engine_shutdown(js);
         platform_shutdown(platform);
         error_handler_shutdown();
@@ -878,6 +935,7 @@ static int runtime_main(int argc, char *argv[])
     bind_filters_shutdown();
     filters_shutdown();
     int exit_status = process_exit_status(js);
+    js_profiler_stop(profiler);
     js_engine_shutdown(js);
     platform_shutdown(platform);
     error_handler_log(LOG_INFO, "Shutdown complete");
