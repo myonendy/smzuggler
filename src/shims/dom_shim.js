@@ -2,8 +2,9 @@
  * Copyright (c) 2026 General Arcade (Pte. Ltd.)
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
  * Copyright (C) 2026 The smzuggler contributors
- * Modified 2026-11-05: return the native WebGL2 context from getContext and
- * resize it with the canvas (card M2-T001).
+ * Modified 2026-11-05: return the native WebGL2 context from getContext.
+ * Modified 2026-11-06: resize the WebGL drawing buffer with the canvas
+ * (card M2-T001).
  */
 
 /*
@@ -768,6 +769,10 @@
                     __native_canvas2d.resize(this._context2d._handle, this._width, this._height);
                 }
             }
+            if (this._contextWebGL && typeof __native_webgl !== "undefined" &&
+                typeof __native_webgl.resize === "function") {
+                __native_webgl.resize(this._contextWebGL, this._width, this._height);
+            }
         }
     });
 
@@ -783,6 +788,10 @@
                     this._width > 0 && this._height > 0) {
                     __native_canvas2d.resize(this._context2d._handle, this._width, this._height);
                 }
+            }
+            if (this._contextWebGL && typeof __native_webgl !== "undefined" &&
+                typeof __native_webgl.resize === "function") {
+                __native_webgl.resize(this._contextWebGL, this._width, this._height);
             }
         }
     });

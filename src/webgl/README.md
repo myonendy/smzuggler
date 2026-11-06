@@ -10,9 +10,11 @@ Native WebGL2 over GLES 3.0 / GL 3.3 core (spec §4.2). See
 [js-binding.md](../../docs/js-binding.md#handle-rules).
 `webgl.cc` owns the GL context, C state, V8 objects and Fast API callbacks;
 `webgl_define` defines `__native_webgl`, and `webgl_runtime.c` calls it beside
-Canvas2D at startup. `dom_shim.js` asks `__native_webgl.createContext`; JS calls
-run `slow_method`, while the §4.2 hot calls also have a `v8::CFunction` fast
-path. Buffer/VAO wrappers own one GL name each: explicit deletes free it now,
-GC only queues it for the context drain (per-frame drain arrives with M2-T002),
-and no `Local` is stored in C. Tests: `tests/smz/test_webgl_context.c` and
+Canvas2D at startup. `dom_shim.js` asks `__native_webgl.createContext` and
+`__native_webgl.resize`; JS calls run `slow_method`, while the §4.2 hot calls
+also have a `v8::CFunction` fast path that allocates nothing on the JS heap.
+Buffer/VAO wrappers own one GL name each: explicit deletes free it now, GC only
+queues it, and a collected context is queued for `webgl_drain()` (or the next
+`createContext`) because §15.8 forbids GL in a finalizer. No `Local` is stored
+in C. Tests: `tests/smz/test_webgl_context.c` and
 `tests/smz/test_webgl_fast_api.cc`.

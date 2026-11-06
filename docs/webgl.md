@@ -48,6 +48,12 @@ constants, so PIXI sees `gl.createBuffer`, `gl.ARRAY_BUFFER` and so on without
 a JS wrapper. `ctx.canvas` is set by the shim, and the module also exposes
 `fastApiInfo()` for the Fast API test.
 
+`HTMLCanvasElement`'s `width`/`height` setters call `__native_webgl.resize`, so
+`drawingBufferWidth`/`drawingBufferHeight` follow the canvas. WebGL does not
+change the viewport when the drawing buffer is resized, so neither does the
+binding; callers keep their `viewport` call. The properties are prototype
+accessors reading the live context, not snapshot values.
+
 ## Default framebuffer
 
 WebGL renders into framebuffer name `0`; `bindFramebuffer(target, null)` maps to
@@ -55,9 +61,10 @@ WebGL renders into framebuffer name `0`; `bindFramebuffer(target, null)` maps to
 existing OpenGL context, so WebGL draws into the presented surface. The default
 `gpu` backend has no GL context, so the module creates a hidden GL window until
 real-PIXI/ANGLE replaces it; screen presentation through SDL3 GPU is not claimed
-here. `getError()` returns and clears the GL error queue, and a new context
-starts with depth/stencil/cull/blend/scissor off, a transparent clear colour and
-a viewport equal to the drawing buffer.
+here. `getError()` returns and clears the native GL error queue (and any
+synthetic error, see below), and a new context starts with
+depth/stencil/cull/blend/scissor off, a transparent clear colour and a viewport
+equal to the drawing buffer.
 
 ## Hot calls and lifetime
 
@@ -67,18 +74,36 @@ a viewport equal to the drawing buffer.
 `v8::CFunction` (V8 Fast API) as well as a slow validation callback (spec §4.2);
 `tests/smz/test_webgl_fast_api.cc` checks the registration counter.
 
+Fast calls must not allocate on the JS heap, so typed-array bytes are read with
+`ArrayBufferView::HasBuffer`/`CopyContents` into a small stack buffer (V8's
+on-heap typed arrays are at most 64 bytes in this pin) or borrowed directly from
+an off-heap backing store. A foreign receiver and invalid `bufferSubData` data
+throw the same `TypeError` from both paths, so whether TurboFan has optimised a
+call site cannot change JS-visible behaviour.
+
 Every buffer/VAO wrapper owns one GL name: `delete*()` frees it now, GC only
-queues it, and the context drains that queue when destroyed. No `Local` is
-stored in C. This is the short form of spec §15.8 and
-[js-binding.md](js-binding.md#handle-rules); M2-T002 adds the per-frame drain
-with the texture and framebuffer lifetime rules.
+queues it, and the context drains that queue when destroyed. Using a deleted or
+foreign-context wrapper records `INVALID_OPERATION` in the context (returned by
+the next `getError()`) instead of silently binding name `0`. A collected context
+is likewise only queued; the next `createContext` and the exported
+`webgl_drain()` (for the frame loop and teardown) perform the GL deletes on the
+main thread, because spec §15.8 forbids GL calls in a GC finalizer. On context
+destruction, names still held by live wrappers are deleted and the wrappers are
+marked dead; if the GL context cannot be made current (lost device or closed
+window), the names are forgotten instead of calling GL. No `Local` is stored in
+C. Teardown calls `webgl_shutdown` to release the per-isolate context template.
+This is the short form of spec §15.8 and
+[js-binding.md](js-binding.md#handle-rules); M2-T002 adds the full lifetime rules
+for textures and framebuffers.
 
 ## Tests
 
 `tests/smz/test_webgl_context.c` creates a context through `dom_shim.js`, sets
-state, uploads buffers, binds a VAO and clears without a GL error; it skips only
-when the backend reports no GL device or entry point. The fast-api test needs no
-device. Rows for every entry point are in [compat-surface.md](compat-surface.md).
+state, uploads buffers, binds a VAO and clears without a GL error; it also
+checks that a canvas resize updates `drawingBufferWidth` and that using a
+deleted buffer yields `INVALID_OPERATION`. It skips only when the backend
+reports no GL device or entry point. The fast-api test needs no device. Rows for
+every entry point are in [compat-surface.md](compat-surface.md).
 
 ## Platform matrix
 

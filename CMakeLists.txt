@@ -12,6 +12,7 @@
 # Modified 2026-11-04: add the V8 code cache store smz_js_codecache.
 # Modified 2026-11-04: size V8 recursion for the process main thread.
 # Modified 2026-11-05: add the WebGL2 context module under src/webgl/.
+# Modified 2026-11-06: point the WebGL registration seam at its decision note.
 # Modified 2026-11-05: add the optional V8 CPU profiler (--cpu-prof).
 # Modified 2026-11-05: add the MZ_GLES provider switch (system or ANGLE).
 # Modified 2026-11-05: build the always-compiled --frame-stats writer.
@@ -298,7 +299,8 @@ target_link_libraries(outsider PRIVATE
 )
 
 # main.c is outside this card's files, so the linker routes the Canvas2D
-# define call through webgl_runtime.c, which then defines WebGL2 too.
+# define call through webgl_runtime.c, which then defines WebGL2 too. This is a
+# Linux-only seam; see docs/decisions/DEC-M2-T001.md for the platform gap.
 if(UNIX AND NOT APPLE AND NOT ANDROID)
     target_link_options(outsider PRIVATE "-Wl,--wrap=bind_canvas2d_define")
 endif()

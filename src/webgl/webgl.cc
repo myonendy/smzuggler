@@ -10,7 +10,8 @@
  * 15.8). Textures, FBOs, shaders and extensions are M2-T002/M2-T003.
  *
  * Rules: main thread only. No v8::Local is stored in C; explicit deletes free
- * names now and GC deletes only queue them for the context drain.
+ * names now, GC only queues them (and a collected context) for a main-thread
+ * drain outside GC, because spec section 15.8 forbids GL calls in a finalizer.
  */
 #include "webgl/webgl.h"
 
@@ -21,7 +22,6 @@
 #include <v8-fast-api-calls.h>
 #include <v8.h>
 
-#include <memory>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,17 +36,19 @@ using v8::CFunction;
 using v8::Context;
 using v8::Exception;
 using v8::External;
+using v8::FastApiCallbackOptions;
 using v8::Function;
 using v8::FunctionCallbackInfo;
 using v8::FunctionTemplate;
+using v8::Global;
 using v8::Integer;
 using v8::Isolate;
 using v8::Local;
-using v8::Number;
+using v8::Name;
 using v8::Object;
 using v8::ObjectTemplate;
 using v8::Persistent;
-using v8::Signature;
+using v8::PropertyCallbackInfo;
 using v8::String;
 using v8::Value;
 using v8::WeakCallbackInfo;
@@ -140,11 +142,27 @@ static bool gl_load(void)
     return missing == 0;
 }
 
+/* The window and GL context the module draws on. `s_borrowed_context` belongs
+ * to the platform's window and is never destroyed here; `s_owned_context` is
+ * the hidden fallback window's context, which this module created. */
 static bool s_backend_checked;
 static bool s_backend_ready;
-static SDL_Window *s_hidden_window;
+static SDL_Window *s_backend_window;
+static SDL_GLContext s_borrowed_context;
 static SDL_GLContext s_owned_context;
 
+/* Returns the context the module draws on, owned or borrowed, or NULL. */
+static SDL_GLContext backend_context(void)
+{
+    return s_owned_context ? s_owned_context : s_borrowed_context;
+}
+/* Makes the module's GL context current; needed before deleting GL names. */
+static bool backend_make_current(void)
+{
+    SDL_GLContext context = backend_context();
+    return s_backend_window && context &&
+           SDL_GL_MakeCurrent(s_backend_window, context);
+}
 /* Uses an existing OpenGL window, or creates a hidden GLES 3.0/GL 3.3 one. */
 static bool backend_create(void)
 {
@@ -158,26 +176,28 @@ static bool backend_create(void)
         }
     if (windows) SDL_free(windows);
     if (window) {
-        s_owned_context = SDL_GL_GetCurrentContext();
-        return s_owned_context && SDL_GL_MakeCurrent(window, s_owned_context);
+        s_borrowed_context = SDL_GL_GetCurrentContext();
+        s_backend_window = window;
+        return s_borrowed_context &&
+               SDL_GL_MakeCurrent(window, s_borrowed_context);
     }
 
-    s_hidden_window = SDL_CreateWindow("smzuggler WebGL", 16, 16,
-                                       SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
-    if (!s_hidden_window) return false;
+    s_backend_window = SDL_CreateWindow("smzuggler WebGL", 16, 16,
+                                        SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
+    if (!s_backend_window) return false;
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
-    s_owned_context = SDL_GL_CreateContext(s_hidden_window);
+    s_owned_context = SDL_GL_CreateContext(s_backend_window);
     if (!s_owned_context) {
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,
                             SDL_GL_CONTEXT_PROFILE_CORE);
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-        s_owned_context = SDL_GL_CreateContext(s_hidden_window);
+        s_owned_context = SDL_GL_CreateContext(s_backend_window);
     }
     return s_owned_context &&
-           SDL_GL_MakeCurrent(s_hidden_window, s_owned_context);
+           SDL_GL_MakeCurrent(s_backend_window, s_owned_context);
 }
 /* Brings up SDL video, a GL context and entry points exactly once. */
 static bool backend_ready(void)
@@ -195,24 +215,32 @@ static bool backend_ready(void)
 
 /* One queued GC delete, drained on the main thread (spec section 15.8). */
 struct Pending { Pending *next; GLuint name; bool buffer; };
+/* One wrapper-owned GL name; `buffer` selects buffers vs vertex arrays. */
+struct GLObject;
 
-/* One WebGL2 context and its drawing-buffer size. */
+/* One WebGL2 context, its drawing-buffer size and the wrappers it owns. */
 struct GLContext {
     uint32_t id;
     int width;
     int height;
     Pending *pending;
+    GLObject *objects;
+    GLenum synth_error;
 };
 
-/* A wrapper-owned GL name; `buffer` selects buffers vs vertex arrays. */
+/* A wrapper-owned GL name; `context` is NULL once the context is gone. */
 struct GLObject {
-    uint32_t context_id;
+    GLContext *context;
+    GLObject *next;
     GLuint name;
     bool buffer;
     bool deleted;
 };
 
 static GLContext *s_contexts[MAX_CONTEXTS];
+/* Contexts whose JS wrapper was collected, drained outside GC. */
+static GLContext *s_destroy_queue[MAX_CONTEXTS];
+static size_t s_destroy_count;
 
 /* Returns `ctx` while it is registered, else NULL. */
 static GLContext *live(GLContext *ctx)
@@ -255,8 +283,8 @@ static GLContext *context_create(int width, int height)
     }
     return ctx;
 }
-/* Deletes queued names and frees the pending nodes. */
-static void drain(GLContext *ctx)
+/* Deletes names queued by collected wrappers and frees the queue nodes. */
+static void drain_pending(GLContext *ctx)
 {
     Pending *node = ctx->pending;
     ctx->pending = NULL;
@@ -268,21 +296,74 @@ static void drain(GLContext *ctx)
         node = next;
     }
 }
-/* Destroys a context; wrappers that outlive it become inert. */
+/* Deletes the names live wrappers still hold, then detaches the wrappers.
+ * The records themselves belong to the JS wrappers and are not freed here. */
+static void release_objects(GLContext *ctx)
+{
+    for (GLObject *object = ctx->objects; object; object = object->next) {
+        if (!object->deleted && object->name) {
+            if (object->buffer) gl.DeleteBuffers(1, &object->name);
+            else gl.DeleteVertexArrays(1, &object->name);
+        }
+        object->name = 0;
+        object->deleted = true;
+        object->context = NULL;
+    }
+    ctx->objects = NULL;
+}
+/* Forgets the live wrappers' names without GL, for a lost context. */
+static void forget_objects(GLContext *ctx)
+{
+    for (GLObject *object = ctx->objects; object; object = object->next) {
+        object->name = 0;
+        object->deleted = true;
+        object->context = NULL;
+    }
+    ctx->objects = NULL;
+}
+/* Frees the queued name nodes without GL, for a lost context. */
+static void forget_pending(GLContext *ctx)
+{
+    Pending *node = ctx->pending;
+    ctx->pending = NULL;
+    while (node) {
+        Pending *next = node->next;
+        free(node);
+        node = next;
+    }
+}
+/* Destroys a context; runs on the main thread, never inside a GC callback. */
 static void context_destroy(GLContext *ctx)
 {
     if (!ctx) return;
     if (ctx->id > 0 && ctx->id <= MAX_CONTEXTS &&
         s_contexts[ctx->id - 1] == ctx)
         s_contexts[ctx->id - 1] = NULL;
-    drain(ctx);
-    ctx->id = 0;
+    if (backend_make_current()) {
+        release_objects(ctx);
+        drain_pending(ctx);
+    } else {
+        /* Context lost or window gone: forget names, never call GL blindly. */
+        forget_objects(ctx);
+        forget_pending(ctx);
+    }
     free(ctx);
 }
-/* Creates one buffer or VAO record; NULL on allocation/GL failure. */
+/* Queues a collected context for the next main-thread drain; no GL here. */
+static void context_enqueue(GLContext *ctx)
+{
+    if (s_destroy_count < MAX_CONTEXTS) s_destroy_queue[s_destroy_count++] = ctx;
+}
+/* Destroys every queued context; the only place GL can run after GC. */
+static void drain_destroy_queue(void)
+{
+    size_t count = s_destroy_count;
+    s_destroy_count = 0;
+    for (size_t i = 0; i < count; i++) context_destroy(s_destroy_queue[i]);
+}
+/* Creates one buffer or VAO record and links it into its context. */
 static GLObject *object_create(GLContext *ctx, bool buffer)
 {
-    if (!live(ctx)) return NULL;
     GLuint name = 0;
     if (buffer) gl.GenBuffers(1, &name); else gl.GenVertexArrays(1, &name);
     GLObject *object = name ? (GLObject *)calloc(1, sizeof(*object)) : NULL;
@@ -291,21 +372,33 @@ static GLObject *object_create(GLContext *ctx, bool buffer)
         else gl.DeleteVertexArrays(1, &name);
         return NULL;
     }
-    object->context_id = ctx->id;
+    object->context = ctx;
+    object->next = ctx->objects;
+    ctx->objects = object;
     object->name = name;
     object->buffer = buffer;
     return object;
+}
+/* Unlinks `object` from its context's live-wrapper list, if linked. */
+static void object_unlink(GLObject *object)
+{
+    GLContext *ctx = object->context;
+    if (!ctx) return;
+    GLObject **link = &ctx->objects;
+    while (*link && *link != object) link = &(*link)->next;
+    if (*link) *link = object->next;
+    object->context = NULL;
+    object->next = NULL;
 }
 /* Explicit delete: releases the name now and marks the wrapper dead. */
 static void object_delete(GLObject *object)
 {
     if (!object || object->deleted) return;
-    GLContext *ctx = object->context_id && object->context_id <= MAX_CONTEXTS
-                       ? s_contexts[object->context_id - 1] : NULL;
-    if (ctx && object->name) {
+    if (object->context && object->name) {
         if (object->buffer) gl.DeleteBuffers(1, &object->name);
         else gl.DeleteVertexArrays(1, &object->name);
     }
+    object_unlink(object);
     object->name = 0;
     object->deleted = true;
 }
@@ -313,8 +406,7 @@ static void object_delete(GLObject *object)
 static void object_gc(GLObject *object)
 {
     if (!object) return;
-    GLContext *ctx = object->context_id && object->context_id <= MAX_CONTEXTS
-                       ? s_contexts[object->context_id - 1] : NULL;
+    GLContext *ctx = object->context;
     if (ctx && !object->deleted && object->name) {
         Pending *node = (Pending *)malloc(sizeof(*node));
         if (node) {
@@ -324,6 +416,7 @@ static void object_gc(GLObject *object)
             ctx->pending = node;
         }
     }
+    object_unlink(object);
     free(object);
 }
 
@@ -346,6 +439,11 @@ static Local<String> utf8(Isolate *isolate, const char *text)
 static void throw_type(Isolate *isolate, const char *message)
 {
     isolate->ThrowException(Exception::TypeError(utf8(isolate, message)));
+}
+/* Throws the receiver error both paths share, as Chrome does. */
+static void throw_illegal(Isolate *isolate)
+{
+    throw_type(isolate, "Illegal invocation");
 }
 /* Reads ToInt32; missing -> 0. */
 static int32_t arg_i32(Isolate *isolate, const FunctionCallbackInfo<Value> &info,
@@ -389,7 +487,7 @@ static GLContext *context_of(Local<Object> receiver)
     return static_cast<GLContext *>(
         receiver->GetAlignedPointerFromInternalField(0));
 }
-/* Returns the wrapper record behind a JS value, or NULL for null/undefined. */
+/* Returns the wrapper record behind a JS object value, or NULL. */
 static GLObject *object_of(Local<Value> value)
 {
     if (value->IsNullOrUndefined() || !value->IsObject()) return NULL;
@@ -398,41 +496,62 @@ static GLObject *object_of(Local<Value> value)
     return static_cast<GLObject *>(
         object->GetAlignedPointerFromInternalField(0));
 }
-/* Resolves null or a wrapper/number to a GL name (0 for null). */
-static uint32_t gl_name(Local<Value> value)
+/* Resolves null or a wrapper to a GL name without allocating, so fast calls
+ * may use it. A dead or foreign-context wrapper records INVALID_OPERATION, as
+ * Chrome reports for use after delete (spec section 15.8). */
+static uint32_t gl_name(GLContext *ctx, Local<Value> value)
 {
     if (value->IsNullOrUndefined()) return 0;
-    GLObject *object = object_of(value);
-    if (object) return object->deleted ? 0 : object->name;
-    if (value->IsNumber())
-        return value->Uint32Value(Isolate::GetCurrent()->GetCurrentContext())
-            .FromMaybe(0);
+    if (value->IsObject()) {
+        GLObject *object = object_of(value);
+        if (!object) return 0;
+        if (object->deleted || object->context != ctx) {
+            ctx->synth_error = GL_INVALID_OPERATION;
+            return 0;
+        }
+        return object->name;
+    }
+    if (value->IsUint32()) return (uint32_t)value.As<Integer>()->Value();
+    if (value->IsInt32()) return (uint32_t)value.As<Integer>()->Value();
     return 0;
 }
-/* Borrowed bytes of an ArrayBuffer/view; `store` keeps them alive for GL. */
+/* Bytes borrowed from a JS ArrayBuffer/view. `storage` receives V8's on-heap
+ * typed arrays (at most typed_array_max_size_in_heap, 64 in this pin) so a fast
+ * call never allocates a backing store. */
 struct Bytes {
-    std::shared_ptr<v8::BackingStore> store;
     const uint8_t *data = NULL;
     size_t len = 0;
+    uint8_t storage[64];
 };
 
-/* Fills `bytes` from a buffer or view; false for any other value. */
+/* Fills `bytes` from a buffer or view with no JS-heap allocation; false for
+ * any other value. The bytes stay valid while the JS value is reachable. */
 static bool bytes_of(Local<Value> value, Bytes *bytes)
 {
+    bytes->data = bytes->storage;
+    bytes->len = 0;
     if (value->IsArrayBuffer()) {
-        bytes->store = value.As<ArrayBuffer>()->GetBackingStore();
-        bytes->data = (const uint8_t *)bytes->store->Data();
-        bytes->len = bytes->store->ByteLength();
+        Local<ArrayBuffer> buffer = value.As<ArrayBuffer>();
+        const void *data = buffer->Data();
+        if (!data) return true;
+        bytes->data = (const uint8_t *)data;
+        bytes->len = buffer->ByteLength();
         return true;
     }
-    if (value->IsArrayBufferView()) {
-        Local<ArrayBufferView> view = value.As<ArrayBufferView>();
-        bytes->store = view->Buffer()->GetBackingStore();
-        bytes->data = (const uint8_t *)bytes->store->Data() + view->ByteOffset();
-        bytes->len = view->ByteLength();
+    if (!value->IsArrayBufferView()) return false;
+    Local<ArrayBufferView> view = value.As<ArrayBufferView>();
+    if (view->HasBuffer()) {
+        /* Off-heap already: point at the backing store and change nothing.
+         * Buffer() would externalise an on-heap typed array (allocates). */
+        const void *base = view->Buffer()->Data();
+        if (base) {
+            bytes->data = (const uint8_t *)base + view->ByteOffset();
+            bytes->len = view->ByteLength();
+        }
         return true;
     }
-    return false;
+    bytes->len = view->CopyContents(bytes->storage, sizeof(bytes->storage));
+    return true;
 }
 
 enum Op {
@@ -469,23 +588,28 @@ static const Method kMethods[] = {
     {"uniform4fv", 2, OP_UNIFORM4FV}, {"uniformMatrix4fv", 3, OP_UNIFORM_MATRIX4FV},
 };
 
-/* Uploads a float uniform vector of `components` width. */
-static void upload_fv(GLContext *ctx, int32_t location, Local<Value> data,
+/* Uploads a float uniform vector of `components` width; shared by both paths.
+ * Returns false after throwing when `data` is not an ArrayBuffer/view. */
+static bool upload_fv(Isolate *isolate, int32_t location, Local<Value> data,
                       int components)
 {
-    (void)ctx;
     Bytes bytes;
-    if (!bytes_of(data, &bytes)) return;
+    if (!bytes_of(data, &bytes)) {
+        throw_type(isolate, "expected a float array");
+        return false;
+    }
     int32_t count = (int32_t)(bytes.len / (sizeof(float) * components));
-    const float *v = (const float *)bytes.data;
-    if (components == 1) gl.Uniform1fv(location, count, v);
-    else gl.Uniform4fv(location, count, v);
+    const float *values = (const float *)bytes.data;
+    if (components == 1) gl.Uniform1fv(location, count, values);
+    else gl.Uniform4fv(location, count, values);
+    return true;
 }
 /* Creates a JS wrapper for a buffer/VAO record; defined with its finalizers. */
 static Local<Object> make_object(Isolate *isolate, Local<Context> context,
                                  GLObject *object);
 /* Handles the context-state calls; false when `op` is another group's. */
-static bool slow_state(const FunctionCallbackInfo<Value> &info, Op op)
+static bool slow_state(const FunctionCallbackInfo<Value> &info, GLContext *ctx,
+                       Op op)
 {
     Isolate *isolate = info.GetIsolate();
     switch (op) {
@@ -504,10 +628,15 @@ static bool slow_state(const FunctionCallbackInfo<Value> &info, Op op)
         info.GetReturnValue().Set(
             gl.IsEnabled(arg_u32(isolate, info, 0)) == GL_TRUE);
         return true;
-    case OP_GET_ERROR:
-        info.GetReturnValue().Set(
-            Integer::NewFromUnsigned(isolate, gl.GetError()));
+    case OP_GET_ERROR: {
+        /* A synthetic error from a dead/foreign wrapper comes first, as it
+         * was recorded before any GL error. */
+        GLenum error = ctx->synth_error;
+        if (error) ctx->synth_error = GL_NO_ERROR;
+        else error = gl.GetError();
+        info.GetReturnValue().Set(Integer::NewFromUnsigned(isolate, error));
         return true;
+    }
     case OP_GET_PARAMETER: {
         uint32_t pname = arg_u32(isolate, info, 0);
         if (pname == GL_VERSION || pname == GL_VENDOR ||
@@ -523,7 +652,7 @@ static bool slow_state(const FunctionCallbackInfo<Value> &info, Op op)
     }
     case OP_ACTIVE_TEXTURE: gl.ActiveTexture(arg_u32(isolate, info, 0)); return true;
     case OP_BIND_FRAMEBUFFER:
-        gl.BindFramebuffer(arg_u32(isolate, info, 0), gl_name(info[1]));
+        gl.BindFramebuffer(arg_u32(isolate, info, 0), gl_name(ctx, info[1]));
         return true;
     default: return false;
     }
@@ -547,7 +676,7 @@ static bool slow_buffer(const FunctionCallbackInfo<Value> &info, GLContext *ctx,
         return true;
     }
     case OP_BIND_BUFFER:
-        gl.BindBuffer(arg_u32(isolate, info, 0), gl_name(info[1]));
+        gl.BindBuffer(arg_u32(isolate, info, 0), gl_name(ctx, info[1]));
         return true;
     case OP_BUFFER_DATA: {
         Local<Value> source = info[1];
@@ -603,7 +732,7 @@ static bool slow_vao(const FunctionCallbackInfo<Value> &info, GLContext *ctx,
         if (object && !object->buffer) object_delete(object);
         return true;
     }
-    case OP_BIND_VAO: gl.BindVertexArray(gl_name(info[0])); return true;
+    case OP_BIND_VAO: gl.BindVertexArray(gl_name(ctx, info[0])); return true;
     case OP_ENABLE_ATTRIB:
         gl.EnableVertexAttribArray(arg_u32(isolate, info, 0));
         return true;
@@ -637,9 +766,9 @@ static bool slow_uniform(const FunctionCallbackInfo<Value> &info, GLContext *ctx
     Isolate *isolate = info.GetIsolate();
     switch (op) {
     case OP_BIND_TEXTURE:
-        gl.BindTexture(arg_u32(isolate, info, 0), gl_name(info[1]));
+        gl.BindTexture(arg_u32(isolate, info, 0), gl_name(ctx, info[1]));
         return true;
-    case OP_USE_PROGRAM: gl.UseProgram(gl_name(info[0])); return true;
+    case OP_USE_PROGRAM: gl.UseProgram(gl_name(ctx, info[0])); return true;
     case OP_UNIFORM1F:
         gl.Uniform1f(arg_i32(isolate, info, 0), arg_f32(isolate, info, 1));
         return true;
@@ -651,15 +780,16 @@ static bool slow_uniform(const FunctionCallbackInfo<Value> &info, GLContext *ctx
                      arg_f32(isolate, info, 2), arg_f32(isolate, info, 3),
                      arg_f32(isolate, info, 4));
         return true;
-    case OP_UNIFORM1FV:
-        upload_fv(ctx, arg_i32(isolate, info, 0), info[1], 1);
+    case OP_UNIFORM1FV: upload_fv(isolate, arg_i32(isolate, info, 0), info[1], 1);
         return true;
-    case OP_UNIFORM4FV:
-        upload_fv(ctx, arg_i32(isolate, info, 0), info[1], 4);
+    case OP_UNIFORM4FV: upload_fv(isolate, arg_i32(isolate, info, 0), info[1], 4);
         return true;
     case OP_UNIFORM_MATRIX4FV: {
         Bytes bytes;
-        if (!bytes_of(info[2], &bytes)) return true;
+        if (!bytes_of(info[2], &bytes)) {
+            throw_type(isolate, "uniformMatrix4fv expects a float array");
+            return true;
+        }
         gl.UniformMatrix4fv(arg_i32(isolate, info, 0),
                             (GLsizei)(bytes.len / (16 * sizeof(float))),
                             arg_bool(isolate, info, 1) ? GL_TRUE : GL_FALSE,
@@ -677,90 +807,117 @@ static void slow_method(const FunctionCallbackInfo<Value> &info)
         static_cast<const Method *>(info.Data().As<External>()->Value());
     GLContext *ctx = live(context_of(info.This()));
     if (!ctx) {
-        throw_type(isolate, "Illegal invocation");
+        throw_illegal(isolate);
         return;
     }
     Op op = method->op;
-    if (!slow_state(info, op) && !slow_buffer(info, ctx, op) &&
+    if (!slow_state(info, ctx, op) && !slow_buffer(info, ctx, op) &&
         !slow_vao(info, ctx, op))
         slow_uniform(info, ctx, op);
 }
-/* Fast path for bindBuffer; receiver and buffer wrapper are borrowed. */
-void fast_bind_buffer(Local<Object> r, int32_t t, Local<Value> b)
+/* Returns the receiver's live context, or NULL after throwing exactly what
+ * the slow path throws, so optimisation cannot change JS behaviour. */
+static GLContext *fast_context(Isolate *isolate, Local<Object> receiver)
 {
-    GLContext *c = live(context_of(r));
-    if (c) gl.BindBuffer((GLenum)t, gl_name(b));
+    GLContext *ctx = live(context_of(receiver));
+    if (!ctx) throw_illegal(isolate);
+    return ctx;
+}
+/* Fast path for bindBuffer; receiver and buffer wrapper are borrowed. */
+void fast_bind_buffer(Local<Object> r, int32_t t, Local<Value> b,
+                      FastApiCallbackOptions &options)
+{
+    GLContext *c = fast_context(options.isolate, r);
+    if (c) gl.BindBuffer((GLenum)t, gl_name(c, b));
 }
 /* Fast path for bufferSubData; `d` is borrowed and stays alive for the call. */
-void fast_buffer_sub_data(Local<Object> r, int32_t t, int32_t o, Local<Value> d)
+void fast_buffer_sub_data(Local<Object> r, int32_t t, int32_t o, Local<Value> d,
+                          FastApiCallbackOptions &options)
 {
-    GLContext *c = live(context_of(r));
+    GLContext *c = fast_context(options.isolate, r);
+    if (!c) return;
     Bytes bytes;
-    if (c && bytes_of(d, &bytes))
-        gl.BufferSubData((GLenum)t, o, (GLsizeiptr)bytes.len, bytes.data);
+    if (!bytes_of(d, &bytes)) {
+        throw_type(options.isolate,
+                   "bufferSubData expects an ArrayBuffer or a view");
+        return;
+    }
+    gl.BufferSubData((GLenum)t, o, (GLsizeiptr)bytes.len, bytes.data);
 }
 /* Fast path for drawElements; count is indices, offset is bytes. */
 void fast_draw_elements(Local<Object> r, int32_t m, int32_t n, int32_t t,
-                        int32_t o)
+                        int32_t o, FastApiCallbackOptions &options)
 {
-    GLContext *c = live(context_of(r));
+    GLContext *c = fast_context(options.isolate, r);
     if (c) gl.DrawElements((GLenum)m, n, (GLenum)t, (const void *)(intptr_t)o);
 }
 /* Fast path for bindTexture; wrappers arrive with M2-T002. */
-void fast_bind_texture(Local<Object> r, int32_t t, Local<Value> x)
+void fast_bind_texture(Local<Object> r, int32_t t, Local<Value> x,
+                       FastApiCallbackOptions &options)
 {
-    GLContext *c = live(context_of(r));
-    if (c) gl.BindTexture((GLenum)t, gl_name(x));
+    GLContext *c = fast_context(options.isolate, r);
+    if (c) gl.BindTexture((GLenum)t, gl_name(c, x));
 }
 /* Fast path for bindVertexArray; the wrapper keeps ownership of the name. */
-void fast_bind_vertex_array(Local<Object> r, Local<Value> a)
+void fast_bind_vertex_array(Local<Object> r, Local<Value> a,
+                            FastApiCallbackOptions &options)
 {
-    GLContext *c = live(context_of(r));
-    if (c) gl.BindVertexArray(gl_name(a));
+    GLContext *c = fast_context(options.isolate, r);
+    if (c) gl.BindVertexArray(gl_name(c, a));
 }
 /* Fast path for useProgram; program wrappers arrive with M2-T003. */
-void fast_use_program(Local<Object> r, Local<Value> p)
+void fast_use_program(Local<Object> r, Local<Value> p,
+                      FastApiCallbackOptions &options)
 {
-    GLContext *c = live(context_of(r));
-    if (c) gl.UseProgram(gl_name(p));
+    GLContext *c = fast_context(options.isolate, r);
+    if (c) gl.UseProgram(gl_name(c, p));
 }
 /* Fast path for uniform1f(location, x); no result, main thread only. */
-void fast_uniform1f(Local<Object> r, int32_t l, double x)
+void fast_uniform1f(Local<Object> r, int32_t l, double x,
+                    FastApiCallbackOptions &options)
 {
-    GLContext *c = live(context_of(r));
+    GLContext *c = fast_context(options.isolate, r);
     if (c) gl.Uniform1f(l, (float)x);
 }
 /* Fast path for uniform1i(location, x); no result, main thread only. */
-void fast_uniform1i(Local<Object> r, int32_t l, int32_t x)
+void fast_uniform1i(Local<Object> r, int32_t l, int32_t x,
+                    FastApiCallbackOptions &options)
 {
-    GLContext *c = live(context_of(r));
+    GLContext *c = fast_context(options.isolate, r);
     if (c) gl.Uniform1i(l, x);
 }
 /* Fast path for uniform4f(location, x, y, z, w); main thread only. */
 void fast_uniform4f(Local<Object> r, int32_t l, double x, double y, double z,
-                    double w)
+                    double w, FastApiCallbackOptions &options)
 {
-    GLContext *c = live(context_of(r));
+    GLContext *c = fast_context(options.isolate, r);
     if (c) gl.Uniform4f(l, (float)x, (float)y, (float)z, (float)w);
 }
 /* Fast path for uniform1fv; `d` is a borrowed float ArrayBuffer/view. */
-void fast_uniform1fv(Local<Object> r, int32_t l, Local<Value> d)
+void fast_uniform1fv(Local<Object> r, int32_t l, Local<Value> d,
+                     FastApiCallbackOptions &options)
 {
-    GLContext *c = live(context_of(r));
-    if (c) upload_fv(c, l, d, 1);
+    GLContext *c = fast_context(options.isolate, r);
+    if (c) upload_fv(options.isolate, l, d, 1);
 }
 /* Fast path for uniform4fv; `d` is a borrowed float vector array. */
-void fast_uniform4fv(Local<Object> r, int32_t l, Local<Value> d)
+void fast_uniform4fv(Local<Object> r, int32_t l, Local<Value> d,
+                     FastApiCallbackOptions &options)
 {
-    GLContext *c = live(context_of(r));
-    if (c) upload_fv(c, l, d, 4);
+    GLContext *c = fast_context(options.isolate, r);
+    if (c) upload_fv(options.isolate, l, d, 4);
 }
 /* Fast path for uniformMatrix4fv; `d` is a borrowed 4x4 float matrix array. */
-void fast_uniform_matrix4fv(Local<Object> r, int32_t l, bool t, Local<Value> d)
+void fast_uniform_matrix4fv(Local<Object> r, int32_t l, bool t, Local<Value> d,
+                            FastApiCallbackOptions &options)
 {
-    GLContext *c = live(context_of(r));
+    GLContext *c = fast_context(options.isolate, r);
+    if (!c) return;
     Bytes bytes;
-    if (!c || !bytes_of(d, &bytes)) return;
+    if (!bytes_of(d, &bytes)) {
+        throw_type(options.isolate, "uniformMatrix4fv expects a float array");
+        return;
+    }
     gl.UniformMatrix4fv(l, (GLsizei)(bytes.len / (16 * sizeof(float))),
                         t ? GL_TRUE : GL_FALSE, (const float *)bytes.data);
 }
@@ -839,15 +996,15 @@ template <typename T> struct WeakRecord {
         : value(NULL), handle(isolate, object) {}
 };
 
-/* Second pass: destroy a collected context on the main thread. */
+/* Second pass: queue a collected context; GL runs only in webgl_drain. */
 void context_finalizer_second(const WeakCallbackInfo<WeakRecord<GLContext>> &info)
 {
     WeakRecord<GLContext> *record = info.GetParameter();
-    context_destroy(record->value);
+    context_enqueue(record->value);
     record->handle.Reset();
     delete record;
 }
-/* First pass: defer the context's GL work to the second pass. */
+/* First pass: defer the context's teardown to the second pass. */
 void context_finalizer(const WeakCallbackInfo<WeakRecord<GLContext>> &info)
 {
     info.SetSecondPassCallback(&context_finalizer_second);
@@ -880,43 +1037,80 @@ Local<Object> make_object(Isolate *isolate, Local<Context> context,
                            v8::WeakCallbackType::kParameter);
     return wrapper;
 }
-/* Installs every WebGL method/constant on one context instance. */
-static void define_methods(Isolate *isolate, Local<Context> context,
-                           Local<Object> target)
+/* Reads the drawing-buffer properties (defined beside make_context). */
+void get_drawing_width(Local<Name>, const PropertyCallbackInfo<Value> &info);
+void get_drawing_height(Local<Name>, const PropertyCallbackInfo<Value> &info);
+
+/* One template per isolate; reusing it avoids rebuilding every method and
+ * CFunction for each context. Allocated with new and released by
+ * webgl_shutdown so a static destructor never touches a disposed isolate. */
+static Global<ObjectTemplate> *s_template;
+static Isolate *s_template_isolate;
+
+/* Adds the methods, their CFunctions and the WebGL constants to `templ`. */
+static void fill_template(Isolate *isolate, Local<ObjectTemplate> templ)
 {
     for (size_t i = 0; i < sizeof(kMethods) / sizeof(kMethods[0]); i++) {
         const Method *method = &kMethods[i];
         CFunction fast = fast_for(method->op);
         bool hot = fast.GetAddress() != NULL;
-        Local<FunctionTemplate> templ = FunctionTemplate::New(
+        Local<FunctionTemplate> function = FunctionTemplate::New(
             isolate, slow_method, External::New(isolate, (void *)method),
-            Local<Signature>(), method->length,
+            Local<v8::Signature>(), method->length,
             v8::ConstructorBehavior::kThrow,
             v8::SideEffectType::kHasSideEffect, hot ? &fast : NULL);
-        Local<String> key = utf8(isolate, method->name);
-        Local<Function> function = templ->GetFunction(context).ToLocalChecked();
-        function->SetName(key);
-        target->Set(context, key, function).Check();
+        function->SetClassName(utf8(isolate, method->name));
+        templ->Set(isolate, method->name, function);
         if (hot) record_fast(method->name);
     }
     for (size_t i = 0; i < sizeof(kConstants) / sizeof(kConstants[0]); i++)
-        target->Set(context, utf8(isolate, kConstants[i].name),
-                    Integer::New(isolate, kConstants[i].value))
-            .Check();
+        templ->Set(isolate, kConstants[i].name,
+                   Integer::New(isolate, kConstants[i].value));
+}
+/* Rebuilds the per-isolate template and records its fast calls. */
+static void build_template(Isolate *isolate)
+{
+    g_fast_count = 0;
+    Local<ObjectTemplate> templ = ObjectTemplate::New(isolate);
+    templ->SetInternalFieldCount(1);
+    fill_template(isolate, templ);
+    templ->SetNativeDataProperty(
+        utf8(isolate, "drawingBufferWidth"), &get_drawing_width);
+    templ->SetNativeDataProperty(
+        utf8(isolate, "drawingBufferHeight"), &get_drawing_height);
+    s_template->Reset(isolate, templ);
+}
+/* Returns the per-isolate context template, building it on first use. */
+static Local<ObjectTemplate> context_template(Isolate *isolate)
+{
+    if (s_template_isolate != isolate) {
+        /* A Global belongs to one isolate. Abandon the previous handle rather
+         * than touch an isolate that may already be disposed. */
+        s_template = new Global<ObjectTemplate>();
+        s_template_isolate = isolate;
+    }
+    if (s_template->IsEmpty()) build_template(isolate);
+    return s_template->Get(isolate);
+}
+/* Reads a context's drawing-buffer width; the canvas resize keeps it live. */
+void get_drawing_width(Local<Name>, const PropertyCallbackInfo<Value> &info)
+{
+    GLContext *ctx = live(context_of(info.This()));
+    if (ctx) info.GetReturnValue().Set(Integer::New(info.GetIsolate(), ctx->width));
+}
+/* Reads a context's drawing-buffer height; the canvas resize keeps it live. */
+void get_drawing_height(Local<Name>, const PropertyCallbackInfo<Value> &info)
+{
+    GLContext *ctx = live(context_of(info.This()));
+    if (ctx) info.GetReturnValue().Set(Integer::New(info.GetIsolate(), ctx->height));
 }
 /* Creates the native context object returned by createContext. */
 Local<Object> make_context(Isolate *isolate, Local<Context> context,
                            GLContext *ctx)
 {
-    Local<ObjectTemplate> templ = ObjectTemplate::New(isolate);
-    templ->SetInternalFieldCount(1);
-    Local<Object> object = templ->NewInstance(context).ToLocalChecked();
+    Local<Object> object =
+        context_template(isolate)->NewInstance(context).ToLocalChecked();
     object->SetAlignedPointerInInternalField(0, ctx);
-    define_methods(isolate, context, object);
-    object->Set(context, utf8(isolate, "drawingBufferWidth"),
-                Integer::New(isolate, ctx->width)).Check();
-    object->Set(context, utf8(isolate, "drawingBufferHeight"),
-                Integer::New(isolate, ctx->height)).Check();
     WeakRecord<GLContext> *record =
         new WeakRecord<GLContext>(isolate, object);
     record->value = ctx;
@@ -924,15 +1118,32 @@ Local<Object> make_context(Isolate *isolate, Local<Context> context,
                            v8::WeakCallbackType::kParameter);
     return object;
 }
-/* createContext(width, height) -> a WebGL2 context or null. */
+/* createContext(width, height) -> a WebGL2 context or null. Draining here
+ * gives collected contexts their main-thread GL teardown outside GC. */
 void js_create_context(const FunctionCallbackInfo<Value> &info)
 {
     Isolate *isolate = info.GetIsolate();
+    drain_destroy_queue();
     GLContext *ctx = context_create(arg_i32(isolate, info, 0),
                                     arg_i32(isolate, info, 1));
     if (!ctx) { info.GetReturnValue().SetNull(); return; }
     info.GetReturnValue().Set(
         make_context(isolate, isolate->GetCurrentContext(), ctx));
+}
+/* resize(context, width, height) -> undefined. The canvas element calls this
+ * after its width/height setters so drawingBuffer* stays truthful (WebGL does
+ * not change the viewport on resize, so neither does this). */
+void js_resize_context(const FunctionCallbackInfo<Value> &info)
+{
+    Isolate *isolate = info.GetIsolate();
+    Local<Value> target = info[0];
+    GLContext *ctx = target->IsObject()
+                       ? live(context_of(target.As<Object>())) : NULL;
+    if (!ctx) { throw_illegal(isolate); return; }
+    int32_t width = arg_i32(isolate, info, 1);
+    int32_t height = arg_i32(isolate, info, 2);
+    ctx->width = width > 0 ? width : 0;
+    ctx->height = height > 0 ? height : 0;
 }
 /* fastApiInfo() -> {count, names}. */
 void js_fast_api_info(const FunctionCallbackInfo<Value> &info)
@@ -955,18 +1166,20 @@ bool define_module(jsb_ctx *ctx, void *user)
     (void)user;
     Isolate *isolate = Isolate::GetCurrent();
     Local<Context> context = isolate->GetCurrentContext();
-    g_fast_count = 0;
 
-    /* Register hot calls before a GL device exists so the fast-api test can
+    /* Build the template before a GL device exists so the fast-api test can
      * prove CFunction use on a headless machine. */
-    Local<Object> probe = Object::New(isolate);
-    define_methods(isolate, context, probe);
+    context_template(isolate);
 
     Local<Object> module = Object::New(isolate);
     Local<Function> create =
         Function::New(context, js_create_context).ToLocalChecked();
     create->SetName(utf8(isolate, "createContext"));
     module->Set(context, utf8(isolate, "createContext"), create).Check();
+    Local<Function> resize =
+        Function::New(context, js_resize_context).ToLocalChecked();
+    resize->SetName(utf8(isolate, "resize"));
+    module->Set(context, utf8(isolate, "resize"), resize).Check();
     Local<Function> fast_info =
         Function::New(context, js_fast_api_info).ToLocalChecked();
     fast_info->SetName(utf8(isolate, "fastApiInfo"));
@@ -986,6 +1199,23 @@ extern "C" bool webgl_define(jsb_runtime *rt)
         return false;
     }
     return jsb_runtime_setup(rt, define_module, NULL);
+}
+/* See webgl.h: webgl_drain. */
+extern "C" void webgl_drain(void)
+{
+    drain_destroy_queue();
+}
+/* See webgl.h: webgl_shutdown. */
+extern "C" void webgl_shutdown(void)
+{
+    drain_destroy_queue();
+    if (s_template) {
+        s_template->Reset();
+        delete s_template;
+        s_template = NULL;
+    }
+    s_template_isolate = NULL;
+    g_fast_count = 0;
 }
 /* See webgl.h: webgl_fast_api_count. */
 extern "C" size_t webgl_fast_api_count(void)

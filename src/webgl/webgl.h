@@ -25,6 +25,17 @@ struct jsb_runtime;
  * the reason when `rt` is NULL or V8 setup fails. Main thread only. */
 bool webgl_define(struct jsb_runtime *rt);
 
+/* Destroys contexts whose JS wrapper was garbage-collected. A GC finalizer
+ * only queues them (spec section 15.8 forbids GL calls there), so the frame
+ * loop or teardown must call this from the main thread; it is also called by
+ * the next `createContext` and is safe when nothing is queued. */
+void webgl_drain(void);
+
+/* Releases the per-isolate context template before the isolate is disposed.
+ * The frame loop or teardown calls this on the main thread; a later
+ * `webgl_define` with the same isolate rebuilds it. */
+void webgl_shutdown(void);
+
 /* Returns how many hot calls were registered through v8::CFunction. */
 size_t webgl_fast_api_count(void);
 

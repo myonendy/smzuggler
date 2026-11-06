@@ -84,8 +84,9 @@ int main(void)
     check(engine != NULL, "js_engine_init failed");
     check(webgl_define(js_engine_get_jsb(engine)), "webgl_define failed");
     check_registry(engine);
-    js_engine_shutdown(engine);
     printf("webgl_fast_api: %zu fast calls registered\n",
            webgl_fast_api_count());
+    webgl_shutdown();
+    js_engine_shutdown(engine);
     return 0;
 }

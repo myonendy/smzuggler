@@ -231,8 +231,8 @@ dump and rejection of a stale `name` row through the CLI.
 | `HTMLCanvasElement.prototype.transferControlToOffscreen.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Returns this; no OffscreenCanvas. |
 | `WebGL2RenderingContext.prototype.activeTexture` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Selects the active texture unit; texture wrappers are M2-T002. |
 | `WebGL2RenderingContext.prototype.canvas` | partial | `src/shims/dom_shim.js` | `tests/smz/test_webgl_context.c` | Set by the shim to the owning canvas element. |
-| `WebGL2RenderingContext.prototype.drawingBufferHeight` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Height of the default drawing buffer at context creation. |
-| `WebGL2RenderingContext.prototype.drawingBufferWidth` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Width of the default drawing buffer at context creation. |
+| `WebGL2RenderingContext.prototype.drawingBufferHeight` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Live height of the default drawing buffer; follows the canvas element's height setter. |
+| `WebGL2RenderingContext.prototype.drawingBufferWidth` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Live width of the default drawing buffer; follows the canvas element's width setter. |
 | `WebGL2RenderingContext.prototype.bindBuffer` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fast_api.cc` | Array/element buffer binding; V8 Fast API hot call. |
 | `WebGL2RenderingContext.prototype.bindFramebuffer` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Binds the default framebuffer (name 0); FBO wrappers are M2-T002. |
 | `WebGL2RenderingContext.prototype.bindTexture` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fast_api.cc` | Numeric/named texture binding; texture wrappers are M2-T002. |
