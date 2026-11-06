@@ -36,6 +36,16 @@
 #endif
 #include "smzuggler/perf_suite.h"
 
+/* Runtime uses image_loader.c's decoder; headless main.c tests supply it. */
+#ifdef RMMZ_TEST_DATA_DIR
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_PNG
+#define STBI_NO_STDIO
+#define STBI_NO_LINEAR
+#define STBI_NO_HDR
+#endif
+#include "../third_party/stb/stb_image.h"
+
 /* The game's fixture map ids live only in game_profile.c (AGENTS.md §4).
    The root CMake source list is outside this card's owns globs, so the
    profile translation unit is included here instead of linked separately. */
@@ -499,28 +509,23 @@ const char *smz_perf_profile_name(SmzPerfProfile profile)
         "dev-laptop", "steam-deck", "deck-proxy", "extra"};
     return (unsigned)profile < 4 ? names[profile] : "unknown";
 }
-/** See perf_suite.h. */
-bool smz_perf_fixture_name_valid(const char *name)
+/** Resolve one harness data directory without creating it. */
+static bool perf_data_subdir(char *out, size_t size, const char *leaf)
 {
-    return perf_fixture(name) != NULL;
+    char base[SMZ_PERF_PATH_MAX];
+    if (!out || size == 0) return false;
+    out[0] = '\0';
+    return perf_data_home(base, sizeof base) && perf_join(out, size, base, leaf);
 }
 /** See perf_suite.h. */
 bool smz_perf_fixtures_dir(char *out, size_t size)
 {
-    char base[SMZ_PERF_PATH_MAX];
-    if (!out || size == 0) return false;
-    out[0] = '\0';
-    return perf_data_home(base, sizeof base) &&
-           perf_join(out, size, base, "smzuggler-rt/fixtures");
+    return perf_data_subdir(out, size, "smzuggler-rt/fixtures");
 }
 /** See perf_suite.h. */
 bool smz_perf_scratch_dir(char *out, size_t size)
 {
-    char base[SMZ_PERF_PATH_MAX];
-    if (!out || size == 0) return false;
-    out[0] = '\0';
-    return perf_data_home(base, sizeof base) &&
-           perf_join(out, size, base, "smzuggler-rt/scratch");
+    return perf_data_subdir(out, size, "smzuggler-rt/scratch");
 }
 /** SMZUGGLER_SAVE_DIR, or the host saves directory as a fallback. */
 static bool perf_save_dir(char *out, size_t size)
@@ -563,6 +568,26 @@ static bool perf_json_map_id(const char *text, int *map_id)
     }
     return false;
 }
+/** Decode MZ's pako.deflate zlib stream into caller-owned bounded storage.
+ * Plain JSON remains supported for diagnostic saves. Both forms are capped.
+ */
+static char *perf_decode_save(char *raw, size_t size)
+{
+    char *text = raw;
+    char *decoded;
+    int length;
+    while (*text == ' ' || *text == '\t' || *text == '\r' || *text == '\n')
+        text++;
+    if (*text == '{' || *text == '[') return raw;
+    decoded = malloc(SMZ_PERF_SAVE_MAX + 1);
+    if (!decoded) { free(raw); return NULL; }
+    length = stbi_zlib_decode_buffer(decoded, (int)SMZ_PERF_SAVE_MAX,
+                                    raw, (int)size);
+    free(raw);
+    if (length <= 0) { free(decoded); return NULL; }
+    decoded[length] = '\0';
+    return decoded;
+}
 /** See perf_suite.h. */
 int smz_perf_read_save_map_id(const char *path, int *map_id, char *err,
                               size_t err_size)
@@ -591,19 +616,17 @@ int smz_perf_read_save_map_id(const char *path, int *map_id, char *err,
     }
     fclose(stream);
     raw[size] = '\0';
-    text = raw;
-    while (*text == ' ' || *text == '\t' || *text == '\r' || *text == '\n') text++;
-    if (*text != '{' && *text != '[') {
-        free(raw);
-        perf_error(err, err_size, "save file is not a JSON RPG Maker MZ save");
+    text = perf_decode_save(raw, (size_t)size);
+    if (!text) {
+        perf_error(err, err_size, "save file is not a valid zlib or JSON MZ save (or exceeds decoded size limit)");
         return 1;
     }
     if (!perf_json_map_id(text, map_id)) {
-        free(raw);
+        free(text);
         perf_error(err, err_size, "save file has no map id");
         return 1;
     }
-    free(raw);
+    free(text);
     return 0;
 }
 /** See perf_suite.h. Refuses before writing so no bad fixture appears. */
@@ -1051,26 +1074,31 @@ static bool perf_install_bridge(JSEngine *js, const char *scratch_dir,
         return false;
     }
     n = snprintf(source, sizeof source,
-        "globalThis.__smz_perf_bridge={scene:function(){try{return"
+        "globalThis.__smz_perf_bridge={loading:false,scene:function(){try{"
+        "if(this.loading||SceneManager._nextScene)return '';return"
         "(typeof SceneManager!=='undefined'&&SceneManager._scene)?"
         "String(SceneManager._scene.constructor.name):'';}catch(e){return '';}},"
         "map:function(){try{return(typeof $gameMap!=='undefined'&&$gameMap)?"
         "String($gameMap.mapId()):'';}catch(e){return '';}},"
         "saves:function(d){try{if(typeof StorageManager==='undefined')return"
         "'no StorageManager';StorageManager.localFileDirectoryPath=function(){"
-        "return d;};StorageManager.fileDirectoryPath=function(){return d;};"
+        "return d+'/';};StorageManager.fileDirectoryPath=function(){return d+'/';};"
         "return 'ok';}catch(e){return String(e);}},"
-        "load:function(s){try{if(typeof DataManager==='undefined')return"
-        "'no DataManager';DataManager.loadGame(s);return 'ok';}"
-        "catch(e){return String(e);}},"
+        "loadError:'',error:function(){return this.loadError;},"
+        "load:function(s){var b=this;b.loadError='';b.loading=true;try{"
+        "if(typeof DataManager==='undefined')return 'no DataManager';"
+        "DataManager.loadGame(s).then(function(){"
+        "$gamePlayer.reserveTransfer($gameMap.mapId(),$gamePlayer.x,$gamePlayer.y);"
+        "SceneManager.goto(Scene_Map);b.loading=false;"
+        "}).catch(function(e){b.loading=false;"
+        "b.loadError=String(e||'fixture load rejected');});"
+        "return 'ok';}catch(e){b.loading=false;"
+        "b.loadError=String(e);return b.loadError;}},"
         "title:function(){try{if(typeof Scene_Title==='undefined')return"
         "'no Scene_Title';if(this.scene()!=='Scene_Title')"
         "SceneManager.goto(Scene_Title);return 'ok';}catch(e){return String(e);}},"
         "push:function(n){try{var c=globalThis[n];if(typeof c!=='function')"
         "return 'missing '+n;if(this.scene()!==n)SceneManager.push(c);"
-        "return 'ok';}catch(e){return String(e);}},"
-        "quit:function(){try{if(typeof SceneManager!=='undefined'&&"
-        "typeof Scene_Title!=='undefined')SceneManager.goto(Scene_Title);"
         "return 'ok';}catch(e){return String(e);}}};"
         "__smz_perf_bridge.saves(\"%s\");\n", escaped);
     if (n <= 0 || (size_t)n >= sizeof source ||
@@ -1104,6 +1132,14 @@ static bool perf_wait_for_scene(GameLoop *loop, JSEngine *js,
 {
     int frame;
     for (frame = 0; frame < SMZ_PERF_SCENE_WAIT; frame++) {
+        char *load_error = perf_call(js, "error()");
+        if (load_error && load_error[0]) {
+            perf_error(err, err_size, "perf-suite: fixture load failed: %s",
+                       load_error);
+            js_engine_free_string(load_error);
+            return false;
+        }
+        js_engine_free_string(load_error);
         if (perf_scene_matches(js, want_scene, want_map)) return true;
         if (!game_loop_step(loop)) {
             perf_error(err, err_size,
@@ -1244,7 +1280,7 @@ static bool perf_suite_run(GameLoop *loop, JSEngine *js,
     }
     game_loop_enable_frame_stats(loop, "", SMZ_PERF_REFRESH_HZ);
     remove(setup);
-    perf_bridge_is(perf_call(js, "quit()"), "ok");
+    perf_bridge_is(perf_call(js, "title()"), "ok");
     return true;
 }
 /** Start the runtime on the main thread using borrowed CLI arguments; return

@@ -25,6 +25,15 @@ static void put(const char *path, const char *text)
     assert(stream && fwrite(text, 1, strlen(text), stream) == strlen(text));
     assert(fclose(stream) == 0);
 }
+/** Write a zlib-wrapped deflate save, as StorageManager.jsonToZip does.
+ * Vectors are zlib.compress UTF-8 JSON, compatible with pako.deflate.
+ */
+static void put_zip(const char *path, const char *data, size_t size)
+{
+    FILE *stream = fopen(path, "wb");
+    assert(stream && fwrite(data, 1, size, stream) == size);
+    assert(fclose(stream) == 0);
+}
 /** Parse ARGV and require STATUS; NEEDLE must appear in the error line. */
 static void parse(int argc, char **argv, int status, const char *needle)
 {
@@ -85,22 +94,25 @@ static void test_import(void)
     assert(smz_perf_import_fixture(&options, err, sizeof err) == 1);
     assert(strstr(err, "not found") != NULL);
     join(path, sizeof path, saves, "file2.rmmzsave");
-    put(path, "{\"map\":{\"_mapId\":5}}");
+    put_zip(path, "\x78\x9c\xab\x56\xca\x4d\x2c\x50\xb2\xaa\x56\x8a\x07\xd2\x9e\x29\x4a\x56\xa6\xb5\xb5\x00\x45\x91\x06\xaa", 26);
     options.import_slot = 2;
     assert(smz_perf_import_fixture(&options, err, sizeof err) == 1);
     assert(strstr(err, "requires map 92") != NULL);
     join(path, sizeof path, saves, "file3.rmmzsave");
-    put(path, "{\"map\":{\"_mapId\":92}}");
+    put_zip(path, "\x78\x9c\xab\x56\xca\x4d\x2c\x50\xb2\xaa\x56\x8a\x07\xd2\x9e\x29\x4a\x56\x96\x46\xb5\xb5\x00\x4b\xe7\x06\xe0", 27);
     options.import_slot = 3;
     assert(smz_perf_import_fixture(&options, err, sizeof err) == 0);
     join(fixture, sizeof fixture, xdg, "smzuggler-rt/fixtures/fx-map92");
     assert(access(fixture, R_OK) == 0);
     assert(smz_perf_validate_fixture("fx-map92", err, sizeof err) == 0);
-    put(fixture, "{\"map\":{\"_mapId\":7}}");
+    assert(unlink(fixture) == 0);
+    assert(smz_perf_validate_fixture("fx-map92", err, sizeof err) == 1);
+    assert(strstr(err, "missing fixture") != NULL);
+    put_zip(fixture, "\x78\x9c\xab\x56\xca\x4d\x2c\x50\xb2\xaa\x56\x8a\x07\xd2\x9e\x29\x4a\x56\xe6\xb5\xb5\x00\x45\x97\x06\xac", 26);
     assert(smz_perf_validate_fixture("fx-map92", err, sizeof err) == 1);
     assert(strstr(err, "map 7") && strstr(err, "map 92"));
     join(path, sizeof path, saves, "file4.rmmzsave");
-    put(path, "{\"map\":{\"mapId\":93}}");
+    put_zip(path, "\x78\x9c\xab\x56\xca\x4d\x2c\x50\xb2\xaa\x56\x8a\x07\xd2\x9e\x29\x4a\x56\x96\xc6\xb5\xb5\x00\x4b\xea\x06\xe1", 27);
     options.import_slot = 4;
     options.import_fixture = "fx-trade";
     assert(smz_perf_import_fixture(&options, err, sizeof err) == 0);
@@ -130,6 +142,7 @@ static void cleanup(void)
     assert(rmdir(path) == 0);
     assert(rmdir(root) == 0);
 }
+/** Exercise CLI and real encoded saves in an isolated temporary directory. */
 int main(void)
 {
     char template[] = "/tmp/smz-perf-args-XXXXXX";

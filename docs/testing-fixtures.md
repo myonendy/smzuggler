@@ -28,7 +28,7 @@ export SMZUGGLER_SAVE_DIR="<game save folder>"
 ./build/smzuggler-rt --import-fixture 6  fx-combat
 ```
 
-The slot numbers are examples. Import reads `file<slot>.rmmzsave`, checks its map id, refuses a missing slot or a save on a map the fixture does not accept, and copies the bytes to the fixture name. The source is never written. A refusal is a non-zero exit with one line naming the fixture and both maps.
+The slot numbers are examples. Import reads `file<slot>.rmmzsave`, inflates its zlib-deflated MZ JSON (plain JSON is also accepted for diagnostics), checks its map id, refuses a missing slot or a save on a map the fixture does not accept, and copies the bytes to the fixture name. Encoded and decoded saves are limited to 64 MiB; malformed compressed saves are refused. The source is never written. A refusal is a non-zero exit with one line naming the fixture and both maps.
 
 ## Run and analyse
 

@@ -411,7 +411,7 @@ Results: [M0 baseline](perf/binary-size.md).
 - `--import-fixture <slot> <fixture>` copies a normal-play save into the fixture directory, read-only at the source, and refuses a wrong map. See [testing-fixtures.md](testing-fixtures.md).
 - A suite without `--frame-stats`, a non-directory stats path, an unknown profile, or `--perf-suite` with `--import-fixture`, `--control` or `--frames` stops with status 2 before a window opens.
 
-The C harness injects the same `InputEvent` records a keyboard produces, so no `--control` channel is needed. S1 idles with a cursor move every 5 s; S2 loads `fx-map92` from a scratch copy and holds a right/down/left/up walk loop with an action tap every 8 s; S3 starts from `fx-map92` and enters one submenu every 12 s. A missing or wrong-map fixture stops the run before the window with a line naming the fixture and the needed map.
+The C harness injects the same `InputEvent` records a keyboard produces, so no `--control` channel is needed. S1 idles with a cursor move every 5 s; S2 loads `fx-map92` from a scratch copy and holds a right/down/left/up walk loop with an action tap every 8 s; S3 starts from `fx-map92` and replays Enter, Escape and Down on a 12 s cycle. This is an approximation: it does not verify which submenu opened and does not guarantee 10 s in every named §14.6 subscene; complete named-subscene coverage still needs a GUI-validated route. A missing or wrong-map fixture stops the run before the window with a line naming the fixture and the needed map.
 
 `tools/perf/analyse.py` turns the streams into §14.7 reports:
 
@@ -420,3 +420,5 @@ python3 tools/perf/analyse.py --dir "$HOME/perf" --out-dir "$HOME/perf"
 ```
 
 It drops the first 600 frames, applies §14.5 rules 1-4, and excludes rule-5 scene/transfer windows (marker plus 30 frames) and save/load pairs. With several runs it keeps the worst value. Reports are `perf-report-<profile>-<scene>.json` and `.md`, profile and scene names only. The gate field is `pass`/`fail` for `dev-laptop`, `confirm-pass`/`confirm-fail` for `steam-deck`, and `proxy` or `extra` for the runs that are evidence, never a milestone sign-off. Reports go through `tools/privacy/scan.py` before storage or sharing; nothing is uploaded automatically.
+
+Fixture loads decode zlib-deflated MZ saves before checking the map, then load a scratch copy, reserve the saved map transfer and enter `Scene_Map`. A rejected load stops scene setup with its error instead of waiting for a timeout. The scratch save-directory overrides retain the trailing slash required by MZ.
