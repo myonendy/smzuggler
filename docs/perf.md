@@ -4,6 +4,7 @@ Copyright (C) 2026 The smzuggler contributors
 Modified 2026-11-01: document the Map 92 report tool and owner-run recipe.
 Modified 2026-11-05: document --js-flags and the V8 perf record recipe.
 Modified 2026-11-05: document the runtime's --cpu-prof recording.
+Modified 2026-11-05: document --frame-stats JSON Lines, markers and overhead.
 How to record a CPU profile (tools/perf/attribute.py), turn a Map 92 run into
 the M0 report (tools/perf/map92_report.py), and measure the shipped binary
 (tools/perf/binsize.py). Repository tooling, not part of the runtime.
@@ -149,6 +150,65 @@ above, so use both when a frame is split between JS and native work. Profiles
 are runtime output, never commit one from a game run. `tools/share/make_bundle.py`
 collects `.cpuprofile` files under `profiles/` and scrubs them like any other
 text artefact, so a shared run bundle carries the profile without host paths.
+
+## Frame timing (`--frame-stats`)
+
+Spec §14.3 makes frame work time the number the budget applies to: CPU time
+from the start of the frame (timers, rAF, game update and render) through the
+swap, plus GPU time from a GL timer query. `--frame-stats=<file>` (or the
+two-argument `--frame-stats <file>`) writes one JSON object per line and a
+summary at exit. Without the flag the writer is never opened; the loop's calls
+are NULL-safe no-ops.
+
+```sh
+./build/smzuggler-rt --game <game-dir> --frame-stats=run/frames.jsonl
+```
+
+Each frame record has `type`, `frame`, `work_ms`, `gpu_ms` (null when no query
+result was ready), `present_interval_ms`, `missed_vblank` and `over_budget`.
+A missed vblank is a present interval longer than 1.5 refresh periods; a frame
+is over budget when its work time exceeds one refresh period. The refresh rate
+defaults to the loop's 60 Hz target; the writer API accepts another rate.
+
+The final record is a summary with `frames`, `refresh_hz`, `budget_ms`,
+`mean_work_ms`, `p50_work_ms`, `p95_work_ms`, `p99_work_ms`,
+`p99_9_work_ms`, `max_work_ms`, `frames_over_budget`, `missed_vblanks`,
+`gpu_frames` and `mean_gpu_ms` (null when no GPU result was available).
+Percentiles use the nearest-rank definition: pN is the value at rank
+`ceil(N/100 * frames)`, 1-based. The `frame_stats` ctest pins this maths with a
+hand-computed ten-frame fixture.
+
+GPU timing uses `GL_TIME_ELAPSED` through `glGenQueries`/`glBeginQuery`/
+`glEndQuery`, falling back to the `EXT_disjoint_timer_query` entry points on
+GLES. The result is read one frame later with `GL_QUERY_RESULT_AVAILABLE`, so
+the CPU never waits for the GPU; a result that is not ready is written as
+`null` rather than invented. A build or run without a current GL context still
+records CPU work and present intervals.
+
+Markers let an analyser exclude transition windows (§14.5). The loop wraps
+`SceneManager.goto` and `Game_Player.prototype.performTransfer` as point
+events, and `DataManager.saveGame`/`loadGame` as begin/end windows. Each marker
+is its own JSON line:
+
+```json
+{"type":"marker","frame":42,"kind":"scene","phase":"point"}
+{"type":"marker","frame":77,"kind":"save","phase":"begin"}
+{"type":"marker","frame":77,"kind":"save","phase":"end"}
+```
+
+A scene marker starts the exclusion at that frame and the analyser extends it
+to 30 frames after the new scene's first frame; a transfer marker uses the same
+rule. Save and load markers bracket the call, so their duration is the window.
+The marker API in `src/smzuggler/frame_stats.h` is also callable directly by a
+future binding.
+
+Overhead: the `frame_stats` ctest runs a 5,000-frame microbench of the enabled
+writer and fails if the mean reaches 0.2 ms/frame. On the build host it
+measured **0.0011 ms/frame**. The writer flushes the previous frame before the
+work clock starts and drains markers after the swap, so its cost is outside
+the reported `work_ms`. Paths in the runtime log are passed through
+`log_scrub`, and the JSON records contain no paths, host names or user names
+(§16).
 
 ## Bucket rules
 

@@ -12,6 +12,7 @@
  * Modified 2026-11-05: validate and forward --js-flags to V8 before startup
  * (card M1-T029).
  * Modified 2026-11-05: start an optional V8 CPU profile from --cpu-prof.
+ * Modified 2026-11-05: enable --frame-stats JSON Lines and summary output.
  *
  * Runtime entry point; owns startup and shutdown on the main thread.
  * See docs/DECISIONS.md (DEC-M0-T001) for identity ownership.
@@ -268,6 +269,7 @@ int smz_js_flags_parse(int argc, char **argv, char *out, size_t out_size)
 #ifdef SMZUGGLER_NAME
 #include "smzuggler/data_dirs.h"
 #endif
+#include "smzuggler/log_scrub.h"
 #include "smzuggler/dump_surface.h"
 #include "engine/js_engine.h"
 #include "engine/js_profiler.h"
@@ -298,6 +300,11 @@ int smz_js_flags_parse(int argc, char **argv, char *out, size_t out_size)
 #include "io/file_io.h"
 #include "platform/win_console.h"
 #include "platform/android_support.h"
+
+/* game_loop.h is outside this card's owns list, so the new --frame-stats
+ * entry point is declared here instead of in the shared header. */
+bool game_loop_enable_frame_stats(GameLoop *loop, const char *path,
+                                  double refresh_hz);
 
 /* js_engine_v8.cc stores the validated --js-flags value for js_engine_init.
    js_engine.h is outside this card's file list, so the entry point is declared
@@ -549,6 +556,7 @@ static int runtime_main(int argc, char *argv[])
     const char *share_path = NULL;
     bool cpu_prof_requested = false;
     const char *cpu_prof_path = NULL;
+    const char *frame_stats_path = NULL;
 #ifdef SMZUGGLER_NAME
     SmzHostDirs host_dirs = {0};
 #else
@@ -605,6 +613,11 @@ static int runtime_main(int argc, char *argv[])
         } else if (strncmp(argv[i], "--cpu-prof=", 11) == 0) {
             cpu_prof_requested = true;
             cpu_prof_path = argv[i] + 11;
+        } else if (strcmp(argv[i], "--frame-stats") == 0 && i + 1 < argc) {
+            /* Per-frame timing JSON Lines and summary (spec §14.3). */
+            frame_stats_path = argv[++i];
+        } else if (strncmp(argv[i], "--frame-stats=", 14) == 0) {
+            frame_stats_path = argv[i] + 14;
         } else if (strcmp(argv[i], "--no-audio") == 0) {
             no_audio = 1;
         } else if (strcmp(argv[i], "--js-flags") == 0 && i + 1 < argc) {
@@ -897,6 +910,16 @@ static int runtime_main(int argc, char *argv[])
         return 1;
     }
 
+    if (frame_stats_path) {
+        char scrubbed[1024];
+        log_scrub(frame_stats_path, scrubbed, sizeof(scrubbed));
+        if (game_loop_enable_frame_stats(loop, frame_stats_path, 60.0)) {
+            error_handler_log(LOG_INFO, "Frame stats: writing to %s", scrubbed);
+        } else {
+            error_handler_log(LOG_ERROR, "Could not open frame stats file %s",
+                              scrubbed);
+        }
+    }
     if (perf_every > 0) {
         game_loop_set_perf_report(loop, perf_every);
     }

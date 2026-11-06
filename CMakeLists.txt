@@ -13,6 +13,7 @@
 # Modified 2026-11-04: size V8 recursion for the process main thread.
 # Modified 2026-11-05: add the optional V8 CPU profiler (--cpu-prof).
 # Modified 2026-11-05: add the MZ_GLES provider switch (system or ANGLE).
+# Modified 2026-11-05: build the always-compiled --frame-stats writer.
 # Build orchestration; see docs/DECISIONS.md (DEC-M0-T001).
 
 cmake_minimum_required(VERSION 3.20)
@@ -213,6 +214,7 @@ set(RMMZ_RUNTIME_SOURCES
     src/engine/game_loop.c
     src/engine/error_handler.c
     src/smzuggler/dump_surface.c
+    src/smzuggler/frame_stats.c
     src/smzuggler/log_scrub.c
     src/smzuggler/data_dirs.c
     src/engine/script_loader.c

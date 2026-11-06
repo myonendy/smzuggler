@@ -8,6 +8,7 @@
  * Modified 2026-11-01: a microtask checkpoint after every macrotask, with
  * process.nextTick jobs ahead of promise jobs (card M1-T010).
  * Modified 2026-11-04: move V8 callback and tick integration to context startup.
+ * Modified 2026-11-05: forward --frame-stats timings and scene/save markers.
  */
 
 /*
@@ -36,6 +37,7 @@
 #include "engine/error_handler.h"
 #include "audio/audio_engine.h"
 #include "rendering/renderer.h"
+#include "smzuggler/frame_stats.h"
 #include "video/video_player.h"
 
 #include <SDL3/SDL.h>
@@ -81,6 +83,11 @@ struct GameLoop {
     int           perf_count;
     GameLoopStats perf_acc;
 
+    /* --frame-stats writer (NULL when disabled) and the present clock it uses
+       for the interval between swaps. */
+    FrameStats *frame_stats;
+    uint64_t    last_present_ticks;
+
     /* Control mode (--control): commands read from stdin by a thread. */
     bool         control_enabled;
     bool         control_started;      /* first command received */
@@ -124,7 +131,19 @@ static const char kLoopJs[] =
     "  var NAMES = ['__dom_setWindowSize', '__dom_flushInputEvents',\n"
     "               '__dom_updateGamepads', '__dom_flushTimers',\n"
     "               '__dom_flushAnimationFrames'];\n"
-    "  var phases = {}, controlEval, outbox = [];\n"
+    "  var phases = {}, controlEval, outbox = [], markerQueue = [];\n"
+    "  function marker(kind, phase) { markerQueue.push(kind + ':' + phase); }\n"
+    "  function wrapMarker(obj, name, kind, mode) {\n"
+    "    if (!obj || typeof obj[name] !== 'function' || obj[name].__smzMarkerWrapped) return;\n"
+    "    var orig = obj[name];\n"
+    "    var wrapped = function () {\n"
+    "      if (mode === 'point') { marker(kind, 'point'); return orig.apply(this, arguments); }\n"
+    "      marker(kind, 'begin');\n"
+    "      try { return orig.apply(this, arguments); } finally { marker(kind, 'end'); }\n"
+    "    };\n"
+    "    wrapped.__smzMarkerWrapped = true;\n"
+    "    obj[name] = wrapped;\n"
+    "  }\n"
     "  function report(e) {\n"
     "    var msg = 'Unknown error', stack = null;\n"
     "    try { msg = String(e); } catch (ignored) {}\n"
@@ -172,6 +191,25 @@ static const char kLoopJs[] =
     "        try { m = String(e); } catch (ignored) {}\n"
     "        return 'e' + m;\n"
     "      }\n"
+    "    },\n"
+    "    installMarkers: function () {\n"
+    "      if (typeof SceneManager !== 'undefined') {\n"
+    "        wrapMarker(SceneManager, 'goto', 'scene', 'point');\n"
+    "      }\n"
+    "      if (typeof Game_Player !== 'undefined' && Game_Player.prototype) {\n"
+    "        wrapMarker(Game_Player.prototype, 'performTransfer', 'transfer', 'point');\n"
+    "      }\n"
+    "      if (typeof DataManager !== 'undefined') {\n"
+    "        wrapMarker(DataManager, 'saveGame', 'save', 'window');\n"
+    "        wrapMarker(DataManager, 'loadGame', 'load', 'window');\n"
+    "      }\n"
+    "      return 't';\n"
+    "    },\n"
+    "    markers: function () {\n"
+    "      if (markerQueue.length === 0) return 'e';\n"
+    "      var text = markerQueue.join('\\n');\n"
+    "      markerQueue.length = 0;\n"
+    "      return 'v' + text;\n"
     "    }\n"
     "  };\n"
     "  Object.defineProperty(g, '__smz_gameLoop', { value: function (op) {\n"
@@ -318,15 +356,59 @@ static void call_phase(GameLoop *loop, const char *name, int argc,
     call_js(loop, "phase", argc + 1, argv);
 }
 
-/* Snapshots the dom_shim.js phase functions inside JS on the first frame.
-   Why: as in Outsider, later reassignment of those globals does not change
-   what the loop calls, and lookups by name are not repeated per frame.
-   Tried once per loop; if it fails the phases are skipped. */
+/* Snapshots the dom_shim.js phase functions inside JS on the first frame and,
+   when frame stats are on, installs the scene/save marker wrappers. Why: as in
+   Outsider, later reassignment of those globals does not change what the loop
+   calls, and lookups by name are not repeated per frame. Tried once per loop;
+   if it fails the phases are skipped and no markers are recorded. */
 static void cache_js_functions(GameLoop *loop)
 {
     if (loop->js_cache_tried) return;
     loop->js_cache_tried = true;
     loop->js_funcs_cached = call_js(loop, "cache", 0, NULL) == 't';
+    if (loop->js_funcs_cached && loop->frame_stats) {
+        call_js(loop, "installMarkers", 0, NULL);
+    }
+}
+
+/* Drain marker events queued by the wrappers installed in kLoopJs. Why: scene,
+ * transfer, save and load boundaries live in game JS, so the loop wraps their
+ * public entry points once and forwards events to the stats writer. The JS
+ * call happens after the frame's swap, outside the measured work time. */
+static void drain_frame_markers(GameLoop *loop)
+{
+    if (!loop->frame_stats) return;
+    char *result = loop_js(loop, "markers", 0, NULL);
+    if (!result) return;
+    if (result[0] != 'v') {
+        js_engine_free_string(result);
+        return;
+    }
+    char *line = result + 1;
+    while (line && *line) {
+        char *newline = strchr(line, '\n');
+        if (newline) *newline = '\0';
+        char *colon = strchr(line, ':');
+        if (colon) {
+            *colon = '\0';
+            FrameStatsMarker kind;
+            FrameStatsMarkerPhase phase;
+            bool known = true;
+            if (strcmp(line, "scene") == 0) kind = FRAME_STATS_MARKER_SCENE;
+            else if (strcmp(line, "transfer") == 0) kind = FRAME_STATS_MARKER_TRANSFER;
+            else if (strcmp(line, "save") == 0) kind = FRAME_STATS_MARKER_SAVE;
+            else if (strcmp(line, "load") == 0) kind = FRAME_STATS_MARKER_LOAD;
+            else known = false;
+            if (known) {
+                if (strcmp(colon + 1, "begin") == 0) phase = FRAME_STATS_MARKER_BEGIN;
+                else if (strcmp(colon + 1, "end") == 0) phase = FRAME_STATS_MARKER_END;
+                else phase = FRAME_STATS_MARKER_POINT;
+                frame_stats_marker(loop->frame_stats, kind, phase);
+            }
+        }
+        line = newline ? newline + 1 : NULL;
+    }
+    js_engine_free_string(result);
 }
 
 /* Allocates a loop bound to borrowed `platform` and `engine`.
@@ -359,13 +441,14 @@ GameLoop *game_loop_create(Platform *platform, JSEngine *engine, int target_fps)
     return loop;
 }
 
-/* Frees the loop. The engine must still be alive: control mode flushes
-   its last replies through JS. Neither the platform nor the engine is
-   destroyed. */
+/* Frees the loop and closes its --frame-stats writer. The engine must still
+   be alive: control mode flushes its last replies through JS. Neither the
+   platform nor the engine is destroyed. */
 void game_loop_destroy(GameLoop *loop)
 {
     if (!loop) return;
     control_shutdown(loop);
+    frame_stats_close(loop->frame_stats);
     free(loop->screenshot_path);
     free(loop->probe_expr);
     free(loop);
@@ -380,6 +463,19 @@ void game_loop_set_perf_report(GameLoop *loop, int every_frames)
     loop->perf_interval = every_frames > 0 ? every_frames : 0;
     loop->perf_count = 0;
     memset(&loop->perf_acc, 0, sizeof(loop->perf_acc));
+}
+
+/* Opens the --frame-stats writer and hands ownership to `loop`. Why: main
+ * must be able to run without the flag and the loop must close the file even
+ * on an early exit. `path` is borrowed. Main thread, with a current GL
+ * context when GPU timing is wanted. */
+bool game_loop_enable_frame_stats(GameLoop *loop, const char *path,
+                                  double refresh_hz)
+{
+    if (!loop || !path) return false;
+    frame_stats_close(loop->frame_stats);
+    loop->frame_stats = frame_stats_open(path, refresh_hz, 0.0);
+    return loop->frame_stats != NULL;
 }
 
 /* Sets the JS expression logged when the frame limit stops the loop.
@@ -840,12 +936,15 @@ static void pace_frame(GameLoop *loop, uint64_t now)
 }
 
 /* Runs one frame: events, timers, jobs, rAF (+ jobs), video, audio,
-   control and frame-limit checks, present, then stats and pacing. Returns
-   false once the loop should exit. Main thread only. */
+   control and frame-limit checks, present, then frame stats, markers and
+   pacing. Returns false once the loop should exit. Main thread only. */
 bool game_loop_step(GameLoop *loop)
 {
     if (!loop || !loop->running) return false;
 
+    /* Flush the previous frame's JSON and start this frame's GPU query before
+       the work clock starts, so the writer is not charged to the frame. */
+    if (loop->frame_stats) frame_stats_begin_frame(loop->frame_stats);
     uint64_t frame_start = SDL_GetPerformanceCounter();
     uint64_t phase_start, phase_end;
 
@@ -902,6 +1001,15 @@ bool game_loop_step(GameLoop *loop)
     phase_end = SDL_GetPerformanceCounter();
     loop->stats.swap_ms = ticks_to_ms(loop, phase_end - phase_start);
     loop->stats.total_ms = ticks_to_ms(loop, phase_end - frame_start);
+
+    if (loop->frame_stats) {
+        double present_ms = loop->last_present_ticks
+                                ? ticks_to_ms(loop, phase_end - loop->last_present_ticks)
+                                : 0.0;
+        frame_stats_end_frame(loop->frame_stats, loop->stats.total_ms, present_ms);
+        loop->last_present_ticks = phase_end;
+        drain_frame_markers(loop);
+    }
 
     report_perf(loop);
     pace_frame(loop, phase_end);
