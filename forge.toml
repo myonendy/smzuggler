@@ -152,6 +152,6 @@ test_detection = ['getenv\("(TEST|CI|FORGE|RMMZ_TEST|SMZUGGLER_TEST)', 'FORGE_TE
 assert_regex = '\b(ASSERT\w*|CHECK|FAIL|assert)\(|self\.assert\w+\(|\bassert\s'   # FAIL( is upstream's C test check (DEC-U9-FAIL-ASSERT)
 max_file_lines = 5100              # OWNER: upstream src/shims/pixi_shim.js is 4928 lines and the
                                    # generated shaders header 5017; lower once those are split
-max_diff_lines = 1500
+max_diff_lines = 2500              # OWNER: raised so M2 WebGL context work (~1829-line first pass) can land; revisit after M2
 doc_check = true
 gd_strict_typing = false
