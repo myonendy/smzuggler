@@ -2085,6 +2085,24 @@
         return true;
     }
 
+    /* filterArea is in top-left target coordinates. Convert to the native
+       bottom-left scissor after clipping against the active destination, not
+       the screen: Window contents can be rendered into a smaller texture. */
+    function _setFilterAreaScissor(renderer, area) {
+        var target = _fboStack.length > 0
+            ? _fboStack[_fboStack.length - 1]
+            : null;
+        var width = target ? target.w
+            : (renderer && renderer.screen ? renderer.screen.width : 816);
+        var height = target ? target.h
+            : (renderer && renderer.screen ? renderer.screen.height : 624);
+        var left = Math.max(0, Math.min(width, Math.round(area.x)));
+        var top = Math.max(0, Math.min(height, Math.round(area.y)));
+        var right = Math.max(left, Math.min(width, Math.round(area.x + area.width)));
+        var bottom = Math.max(top, Math.min(height, Math.round(area.y + area.height)));
+        __native_renderer.setScissor(left, height - bottom, right - left, bottom - top);
+    }
+
     Container.prototype.render = function(renderer) {
         if (!this.visible || this.worldAlpha <= 0 || !this.renderable) return;
         /* A display object used as another's mask is not drawn itself; an
@@ -2108,11 +2126,7 @@
         var useScissor = fa && fa.width > 0 && fa.height > 0 &&
             typeof __native_renderer !== "undefined" && __native_renderer._active;
         if (useScissor) {
-            var screenH = renderer && renderer.screen ? renderer.screen.height : 624;
-            __native_renderer.setScissor(
-                Math.round(fa.x), Math.round(screenH - fa.y - fa.height),
-                Math.round(fa.width), Math.round(fa.height)
-            );
+            _setFilterAreaScissor(renderer, fa);
         }
 
         this._render(renderer);
@@ -2372,11 +2386,7 @@
         var useScissor = fa && fa.width > 0 && fa.height > 0 &&
             typeof __native_renderer !== "undefined" && __native_renderer._active;
         if (useScissor) {
-            var screenH = renderer && renderer.screen ? renderer.screen.height : 624;
-            __native_renderer.setScissor(
-                Math.round(fa.x), Math.round(screenH - fa.y - fa.height),
-                Math.round(fa.width), Math.round(fa.height)
-            );
+            _setFilterAreaScissor(renderer, fa);
         }
 
         if (!this._texture || !this._texture.valid) {

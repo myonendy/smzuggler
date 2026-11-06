@@ -1827,6 +1827,50 @@ TEST(test_pixi_render_to_texture)
     js_teardown();
 }
 
+/* Window client areas use Sprite; Container must use the same target-aware
+   clipping. Record native calls to cover both paths without a GPU readback. */
+TEST(test_pixi_render_target_scissor)
+{
+    js_setup_with_shims();
+    ASSERT(js_eval_bool(
+        "var renderer = new PIXI.Renderer({ width: 1280, height: 720 });"
+        "var nextFbo = 100, scissors = [];"
+        "__native_renderer.createRenderTexture = function() {"
+        "  return {fbo: ++nextFbo, texture: nextFbo}; };"
+        "__native_renderer.setScissor = function(x,y,w,h) { scissors.push([x,y,w,h]); };"
+        "__native_renderer.clearScissor = function() {};"
+        "__native_renderer.bindRenderTexture = function() {};"
+        "__native_renderer.unbindRenderTexture = function() {};"
+        "__native_renderer.beginFrameTransparent = function() {};"
+        "__native_renderer.beginFrame = function() {};"
+        "__native_renderer.endFrame = function() {};"
+        "var shortTarget = PIXI.RenderTexture.create({width:1280, height:160});"
+        "var fullTarget = PIXI.RenderTexture.create({width:1280, height:720});"
+        "var objects = [new PIXI.Container(), new PIXI.Sprite()];"
+        "objects.forEach(function(obj) {"
+        "  obj.filterArea = new PIXI.Rectangle(12,12,336,136);"
+        "  renderer.render(obj, shortTarget);"
+        "  renderer.render(obj, fullTarget);"
+        "  renderer.render(obj);"
+        "});"
+        "JSON.stringify(scissors) === JSON.stringify(["
+        " [12,12,336,136], [12,572,336,136], [12,572,336,136],"
+        " [12,12,336,136], [12,572,336,136], [12,572,336,136]]);"
+    ));
+    ASSERT(js_eval_bool(
+        "scissors = [];"
+        "objects.forEach(function(obj) {"
+        "  obj.filterArea = new PIXI.Rectangle(-10,100,1400,100);"
+        "  renderer.render(obj, shortTarget);"
+        "  obj.filterArea = new PIXI.Rectangle(1400,200,50,30);"
+        "  renderer.render(obj, shortTarget);"
+        "});"
+        "JSON.stringify(scissors) === JSON.stringify(["
+        " [0,0,1280,60], [1280,0,0,0], [0,0,1280,60], [1280,0,0,0]]);"
+    ));
+    js_teardown();
+}
+
 TEST(test_pixi_bitmap_snap_flow)
 {
     js_setup_with_shims();
@@ -2074,6 +2118,7 @@ int main(void)
 
     printf("--- Render-to-texture tests ---\n");
     RUN(test_pixi_render_to_texture);
+    RUN(test_pixi_render_target_scissor);
     RUN(test_pixi_bitmap_snap_flow);
     RUN(test_pixi_readpixels_binding);
     RUN(test_pixi_graphics_texture_fill);
