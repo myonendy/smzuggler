@@ -12,6 +12,7 @@
 # Modified 2026-11-04: add the V8 code cache store smz_js_codecache.
 # Modified 2026-11-04: size V8 recursion for the process main thread.
 # Modified 2026-11-05: add the optional V8 CPU profiler (--cpu-prof).
+# Modified 2026-11-05: add the MZ_GLES provider switch (system or ANGLE).
 # Build orchestration; see docs/DECISIONS.md (DEC-M0-T001).
 
 cmake_minimum_required(VERSION 3.20)
@@ -174,6 +175,12 @@ else()
     set(RMMZ_GL_LIB OpenGL::GL)
 endif()
 
+# OpenGL ES provider for the WebGL2 stack (spec §4.2). `system` is the Linux,
+# Steam Deck and Android default; `angle` selects an installed ANGLE and is
+# the Windows/macOS production path and the Linux CI reference oracle. Q5 is
+# still open, so neither choice is forced here; see docs/build.md.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/GLES.cmake)
+
 if(RMMZ_RENDER_BACKEND STREQUAL "gpu")
     set(RMMZ_RENDER_SOURCES
         src/rendering/gpu_backend.c
@@ -284,6 +291,13 @@ target_link_libraries(outsider PRIVATE
     soloud
     ${RMMZ_SYS_LIBS}
 )
+
+# The WebGL2 stack reaches the GPU through the selected provider. On a host
+# with only the other provider installed SMZ_GLES_AVAILABLE is FALSE and the
+# runtime is left unlinked until that provider is selected (docs/build.md).
+if(SMZ_GLES_AVAILABLE)
+    target_link_libraries(outsider PRIVATE smz_gles)
+endif()
 
 if(RMMZ_RUNTIME_SHADERS)
     target_link_libraries(outsider PRIVATE
