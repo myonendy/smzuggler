@@ -216,6 +216,7 @@ changes together.
 | `src/shims/` | Browser/NW.js/Node and engine compatibility JavaScript; upstream. |
 | `src/smzuggler/` | Runtime identity and privacy log scrubbing; fork. |
 | `src/video/` | Video decode, playback timing and drawing; upstream. |
+| `src/webgl/` | Native WebGL2 context over GLES 3.0 / GL 3.3 core and its V8 fast-call bindings ([WebGL](docs/webgl.md)); fork. |
 | `tools/` | Build, packaging and evaluation utilities; mixed upstream and fork. |
 | `tools/commitmsg/` | Commit subject checks and fixtures; fork. |
 | `tools/compat/` | Plugin require/process surface scanner; fork. |
