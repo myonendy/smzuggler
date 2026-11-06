@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-11-06: grow the context registry for late-created window text.
+ * Modified 2026-11-06: cache hot canvas lookups during gradient rasterization.
  */
 
 #include "rendering/canvas2d.h"
@@ -89,10 +90,21 @@ static size_t        s_ctx_capacity;
 static Canvas2DHandle s_next_handle = 1;
 static size_t         s_ctx_count   = 0;
 
+/* Gradient/path fills issue many consecutive calls on one canvas. Cache an
+   index, not a pointer: registry growth may realloc, and recycled slots must
+   still validate both liveness and handle. Runtime thread only. */
+static size_t s_last_ctx_index = SIZE_MAX;
+
 static Canvas2DCtx *find_ctx(Canvas2DHandle h)
 {
+    if (h == CANVAS2D_HANDLE_INVALID) return NULL;
+    if (s_last_ctx_index < s_ctx_capacity) {
+        Canvas2DCtx *ctx = &s_contexts[s_last_ctx_index];
+        if (ctx->active && ctx->handle == h) return ctx;
+    }
     for (size_t i = 0; i < s_ctx_capacity; i++) {
         if (s_contexts[i].active && s_contexts[i].handle == h) {
+            s_last_ctx_index = i;
             return &s_contexts[i];
         }
     }
@@ -268,6 +280,7 @@ void canvas2d_shutdown(void)
     s_contexts = NULL;
     s_ctx_capacity = 0;
     s_ctx_count = 0;
+    s_last_ctx_index = SIZE_MAX;
 
     for (int i = 0; i < s_font_count; i++) {
         free(s_fonts[i].name);
