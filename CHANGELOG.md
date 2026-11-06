@@ -43,6 +43,11 @@ All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
 - Add a native WebGL2 context over GLES 3.0 with buffer/VAO state, draws and V8 Fast API hot calls. (M2-T001)
+- Add the outside-tester kit: `--scrub-report` packs only the fixed report schema, writes `SCRUBBED.txt` and refuses saves or local identities while preserving Deck profile tokens; optional `deck-proxy` caps carry `gate: proxy`. (M2-T008)
+- Add the §14 perf harness with compressed MZ fixture validation, scratch scene loading, scripted S1-S3 windows and profile-aware analysis. (M2-T007)
+- Add always-compiled frame-timing instrumentation with `--frame-stats` JSON Lines, markers and a summary. (M2-T006)
+- Add the `-DMZ_GLES=angle` provider switch, a Release-safe host probe test and the Linux CI oracle build recipe. (M2-T004)
+- Alias `global` to `globalThis` in the DOM shim so NW.js map-transfer plugins can probe `global.gc` safely. (M2-T010)
 - Add a V8 attribution rules file (JIT code, interpreter, GC, builtins) and document the blocked Gate G1 Map 92 measurement. (M1-T033)
 - Document the blocked Map 92 JIT-less preflight and the owner rerun recipe. (M1-T031)
 - Complete the jsb API guide and §15.8 handle rules with examples, and document every jsb, binding and engine function. (M1-T030)

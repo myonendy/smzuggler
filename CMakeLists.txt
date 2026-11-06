@@ -13,6 +13,8 @@
 # Modified 2026-11-04: size V8 recursion for the process main thread.
 # Modified 2026-11-05: add the WebGL2 context module under src/webgl/.
 # Modified 2026-11-05: add the optional V8 CPU profiler (--cpu-prof).
+# Modified 2026-11-05: add the MZ_GLES provider switch (system or ANGLE).
+# Modified 2026-11-05: build the always-compiled --frame-stats writer.
 # Build orchestration; see docs/DECISIONS.md (DEC-M0-T001).
 
 cmake_minimum_required(VERSION 3.20)
@@ -175,6 +177,12 @@ else()
     set(RMMZ_GL_LIB OpenGL::GL)
 endif()
 
+# OpenGL ES provider for the WebGL2 stack (spec §4.2). `system` is the Linux,
+# Steam Deck and Android default; `angle` selects an installed ANGLE and is
+# the Windows/macOS production path and the Linux CI reference oracle. Q5 is
+# still open, so neither choice is forced here; see docs/build.md.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/GLES.cmake)
+
 if(RMMZ_RENDER_BACKEND STREQUAL "gpu")
     set(RMMZ_RENDER_SOURCES
         src/rendering/gpu_backend.c
@@ -207,6 +215,7 @@ set(RMMZ_RUNTIME_SOURCES
     src/engine/game_loop.c
     src/engine/error_handler.c
     src/smzuggler/dump_surface.c
+    src/smzuggler/frame_stats.c
     src/smzuggler/log_scrub.c
     src/smzuggler/data_dirs.c
     src/engine/script_loader.c
@@ -292,6 +301,13 @@ target_link_libraries(outsider PRIVATE
 # define call through webgl_runtime.c, which then defines WebGL2 too.
 if(UNIX AND NOT APPLE AND NOT ANDROID)
     target_link_options(outsider PRIVATE "-Wl,--wrap=bind_canvas2d_define")
+endif()
+
+# The WebGL2 stack reaches the GPU through the selected provider. On a host
+# with only the other provider installed SMZ_GLES_AVAILABLE is FALSE and the
+# runtime is left unlinked until that provider is selected (docs/build.md).
+if(SMZ_GLES_AVAILABLE)
+    target_link_libraries(outsider PRIVATE smz_gles)
 endif()
 
 if(RMMZ_RUNTIME_SHADERS)

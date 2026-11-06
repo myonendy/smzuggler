@@ -682,6 +682,20 @@ static void test_window(void)
     if (r && strcmp(r, "true") == 0) { PASS(); } else { FAIL(r ? r : "NULL"); }
     js_engine_free_string(r);
 
+    TEST(window_global_alias);
+    r = js_engine_eval_string(tc->engine,
+        "String(typeof global !== 'undefined' && global === globalThis && global === window)",
+        "test");
+    if (r && strcmp(r, "true") == 0) { PASS(); } else { FAIL(r ? r : "NULL"); }
+    js_engine_free_string(r);
+
+    TEST(window_global_gc_probe_does_not_throw);
+    r = js_engine_eval_string(tc->engine,
+        "String((function() { return typeof global.gc === 'function'; })())",
+        "test");
+    if (r && strcmp(r, "false") == 0) { PASS(); } else { FAIL(r ? r : "NULL"); }
+    js_engine_free_string(r);
+
     destroy_test_ctx(tc);
 }
 

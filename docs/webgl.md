@@ -1,14 +1,38 @@
 <!--
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
+The WebGL2 context, state, buffers, VAOs and draws over GLES 3.0, and the
+GLES provider switch they run on. Spec §4.2 and §11 Q5.
 -->
 
 # WebGL2 over GLES 3.0
 
 The WebGL2 surface real PIXI and UltraMode7 drive, implemented in
-`src/webgl/webgl.cc` on GLES 3.0 / GL 3.3 core (spec §4.2). This card covers
-context state, buffers, vertex arrays and the draw entry points. Textures,
-framebuffers, shaders and extensions follow in M2-T002 and M2-T003.
+`src/webgl/webgl.cc` on GLES 3.0 / GL 3.3 core (spec §4.2). This page covers the
+GLES provider switch and the context, state, buffer, vertex-array and draw
+entry points. Textures, framebuffers, shaders and extensions follow in M2-T002
+and M2-T003. Spec §4.2 and §11 Q5: Q5 is open, so this page describes the
+switch, not a ruling.
+
+## What this milestone provides
+
+- A CMake switch, `-DMZ_GLES=system|angle`, that resolves one provider into
+  the `smz_gles` target. The runtime links that target, so the selected
+  provider is what the WebGL2 entry points call.
+- A native WebGL2 context in `src/webgl/`: `getContext('webgl2')` returns it
+  instead of a stub, with full context state, buffers, VAOs and
+  `drawArrays`/`drawElements`.
+- V8 Fast API registration for the hot calls listed below.
+- An `angle_switch` ctest that runs a binary built against the selected
+  provider and confirms from the EGL client extensions that the linked library
+  is the one the switch asked for.
+- Pinned ANGLE metadata and a documented Linux CI oracle job, in
+  [Building smzuggler](build.md).
+
+It deliberately does **not** implement textures, framebuffers, shaders or
+extensions yet (M2-T002 and M2-T003), and it does not claim that PIXI runs on
+it yet.
+
 ## Context binding
 
 `src/shims/dom_shim.js` maps `getContext('webgl2')`, `'webgl'` and
@@ -55,3 +79,46 @@ with the texture and framebuffer lifetime rules.
 state, uploads buffers, binds a VAO and clears without a GL error; it skips only
 when the backend reports no GL device or entry point. The fast-api test needs no
 device. Rows for every entry point are in [compat-surface.md](compat-surface.md).
+
+## Platform matrix
+
+| Platform | Intended provider | Why |
+|---|---|---|
+| Linux, Steam Deck | `system` (Mesa EGL/GLES) | The §14 frame budgets are measured on this path, and it needs no extra binary size |
+| Windows | `angle` (D3D11) | Native GLES does not exist; ANGLE is the Chrome-exact route |
+| macOS | `angle` (Metal) | Apple caps OpenGL at 4.1 and has no GLES; Metal through ANGLE is the supported route |
+| Android | `system` (EGL/GLES) | Deferred by spec §17; the switch already resolves EGL/GLES |
+| Linux CI oracle | `angle` | Same provider Chrome uses, without changing the measured Linux target |
+
+The default is `system` everywhere, so a machine without ANGLE still configures
+and builds. Windows and macOS release builds pass `-DMZ_GLES=angle` and
+`-DSMZ_ANGLE_DIR=<staged ANGLE>`; the configure step names whichever variable
+is missing. On Linux, `-DMZ_GLES=angle` builds the CI reference oracle.
+
+## Link-time identity
+
+EGL and GLES have one ABI, so ANGLE and Mesa are indistinguishable by symbol
+names or by a successful link. The client extension query is the difference:
+ANGLE advertises `EGL_ANGLE_*` platform extensions even before a display is
+created, while Mesa does not. `tests/smz/test_angle_switch.c` therefore:
+
+1. prints the provider recorded at compile time (`SMZ_GLES_ANGLE` or
+   `SMZ_GLES_SYSTEM`) and the EGL client extension string;
+2. fails an ANGLE build whose client does not advertise `EGL_ANGLE_*`;
+3. fails a system build whose client *does* advertise it.
+
+Failures exit nonzero independently of assertions, including in Release builds.
+A regression test supplies missing and mismatched EGL responses with `NDEBUG`
+defined to verify that ctest cannot mistake those failures for success.
+
+It creates no window and no GPU device, so it runs on a headless CI runner.
+The system build's link line contains the platform EGL/GLES libraries only, so
+it has no ANGLE dependency at run time.
+
+## Q5 is still open
+
+Spec §11 Q5 asks whether ANGLE should be used everywhere or only on platforms
+without good native GL, with the Linux CI oracle also using it. §4.2 recommends
+the second option and this milestone implements the switch it describes, but
+the choice belongs to the owner. Nothing here forecloses "ANGLE everywhere":
+the same `-DMZ_GLES=angle` build would then become the measured build too.

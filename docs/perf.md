@@ -4,6 +4,8 @@ Copyright (C) 2026 The smzuggler contributors
 Modified 2026-11-01: document the Map 92 report tool and owner-run recipe.
 Modified 2026-11-05: document --js-flags and the V8 perf record recipe.
 Modified 2026-11-05: document the runtime's --cpu-prof recording.
+Modified 2026-11-05: document --frame-stats JSON Lines, markers and overhead.
+Modified 2026-11-06: document the §14 perf suite, fixture import and analyser.
 How to record a CPU profile (tools/perf/attribute.py), turn a Map 92 run into
 the M0 report (tools/perf/map92_report.py), and measure the shipped binary
 (tools/perf/binsize.py). Repository tooling, not part of the runtime.
@@ -149,6 +151,65 @@ above, so use both when a frame is split between JS and native work. Profiles
 are runtime output, never commit one from a game run. `tools/share/make_bundle.py`
 collects `.cpuprofile` files under `profiles/` and scrubs them like any other
 text artefact, so a shared run bundle carries the profile without host paths.
+
+## Frame timing (`--frame-stats`)
+
+Spec §14.3 makes frame work time the number the budget applies to: CPU time
+from the start of the frame (timers, rAF, game update and render) through the
+swap, plus GPU time from a GL timer query. `--frame-stats=<file>` (or the
+two-argument `--frame-stats <file>`) writes one JSON object per line and a
+summary at exit. Without the flag the writer is never opened; the loop's calls
+are NULL-safe no-ops.
+
+```sh
+./build/smzuggler-rt --game <game-dir> --frame-stats=run/frames.jsonl
+```
+
+Each frame record has `type`, `frame`, `work_ms`, `gpu_ms` (null when no query
+result was ready), `present_interval_ms`, `missed_vblank` and `over_budget`.
+A missed vblank is a present interval longer than 1.5 refresh periods; a frame
+is over budget when its work time exceeds one refresh period. The refresh rate
+defaults to the loop's 60 Hz target; the writer API accepts another rate.
+
+The final record is a summary with `frames`, `refresh_hz`, `budget_ms`,
+`mean_work_ms`, `p50_work_ms`, `p95_work_ms`, `p99_work_ms`,
+`p99_9_work_ms`, `max_work_ms`, `frames_over_budget`, `missed_vblanks`,
+`gpu_frames` and `mean_gpu_ms` (null when no GPU result was available).
+Percentiles use the nearest-rank definition: pN is the value at rank
+`ceil(N/100 * frames)`, 1-based. The `frame_stats` ctest pins this maths with a
+hand-computed ten-frame fixture.
+
+GPU timing uses `GL_TIME_ELAPSED` through `glGenQueries`/`glBeginQuery`/
+`glEndQuery`, falling back to the `EXT_disjoint_timer_query` entry points on
+GLES. The result is read one frame later with `GL_QUERY_RESULT_AVAILABLE`, so
+the CPU never waits for the GPU; a result that is not ready is written as
+`null` rather than invented. A build or run without a current GL context still
+records CPU work and present intervals.
+
+Markers let an analyser exclude transition windows (§14.5). The loop wraps
+`SceneManager.goto` and `Game_Player.prototype.performTransfer` as point
+events, and `DataManager.saveGame`/`loadGame` as begin/end windows. Each marker
+is its own JSON line:
+
+```json
+{"type":"marker","frame":42,"kind":"scene","phase":"point"}
+{"type":"marker","frame":77,"kind":"save","phase":"begin"}
+{"type":"marker","frame":77,"kind":"save","phase":"end"}
+```
+
+A scene marker starts the exclusion at that frame and the analyser extends it
+to 30 frames after the new scene's first frame; a transfer marker uses the same
+rule. Save and load markers bracket the call, so their duration is the window.
+The marker API in `src/smzuggler/frame_stats.h` is also callable directly by a
+future binding.
+
+Overhead: the `frame_stats` ctest runs a 5,000-frame microbench of the enabled
+writer and fails if the mean reaches 0.2 ms/frame. On the build host it
+measured **0.0011 ms/frame**. The writer flushes the previous frame before the
+work clock starts and drains markers after the swap, so its cost is outside
+the reported `work_ms`. Paths in the runtime log are passed through
+`log_scrub`, and the JSON records contain no paths, host names or user names
+(§16).
 
 ## Bucket rules
 
@@ -335,3 +396,29 @@ Tests: `tests/tools/test_binsize.py` builds a fake build directory from ELF
 objects and ar archives that it generates itself, then checks every total.
 
 Results: [M0 baseline](perf/binary-size.md).
+
+## §14 harness: --perf-suite, input replay and the analyser
+
+`--frame-stats` records one stream. The harness around it runs S1-S3 with the §14.4 timing: 10 s warm-up (not scored), 120 s scored, three runs, worst counts. Later scenes and the battery gate runs are separate owner work.
+
+```sh
+./build/smzuggler-rt --game "<game folder>" \
+    --perf-suite=dev-laptop --frame-stats="$HOME/perf/"
+```
+
+- `--perf-suite` takes `dev-laptop` (default), `steam-deck` (alias `deck`), `deck-proxy` or `extra`; the profile decides the report's `gate` word.
+- `--frame-stats=DIR/` must be a directory. Each scene and run gets its own `frame-stats-<profile>-<scene>-run<N>.jsonl`.
+- `--import-fixture <slot> <fixture>` copies a normal-play save into the fixture directory, read-only at the source, and refuses a wrong map. See [testing-fixtures.md](testing-fixtures.md).
+- A suite without `--frame-stats`, a non-directory stats path, an unknown profile, or `--perf-suite` with `--import-fixture`, `--control` or `--frames` stops with status 2 before a window opens.
+
+The C harness injects the same `InputEvent` records a keyboard produces, so no `--control` channel is needed. S1 idles with a cursor move every 5 s; S2 loads `fx-map92` from a scratch copy and holds a right/down/left/up walk loop with an action tap every 8 s; S3 starts from `fx-map92` and replays Enter, Escape and Down on a 12 s cycle. This is an approximation: it does not verify which submenu opened and does not guarantee 10 s in every named §14.6 subscene; complete named-subscene coverage still needs a GUI-validated route. A missing or wrong-map fixture stops the run before the window with a line naming the fixture and the needed map.
+
+`tools/perf/analyse.py` turns the streams into §14.7 reports:
+
+```sh
+python3 tools/perf/analyse.py --dir "$HOME/perf" --out-dir "$HOME/perf"
+```
+
+It drops the first 600 frames, applies §14.5 rules 1-4, and excludes rule-5 scene/transfer windows (marker plus 30 frames) and save/load pairs. With several runs it keeps the worst value. Reports are `perf-report-<profile>-<scene>.json` and `.md`, profile and scene names only. The gate field is `pass`/`fail` for `dev-laptop`, `confirm-pass`/`confirm-fail` for `steam-deck`, and `proxy` or `extra` for the runs that are evidence, never a milestone sign-off. Reports go through `tools/privacy/scan.py` before storage or sharing; nothing is uploaded automatically.
+
+Fixture loads decode zlib-deflated MZ saves before checking the map, then load a scratch copy, reserve the saved map transfer and enter `Scene_Map`. A rejected load stops scene setup with its error instead of waiting for a timeout. The scratch save-directory overrides retain the trailing slash required by MZ.

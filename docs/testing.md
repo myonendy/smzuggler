@@ -8,6 +8,7 @@ Modified 2026-11-01: export scratch HOME/XDG in the NW.js reference recipe so th
 child inherits isolated save paths.
 Modified 2026-11-05: tests reach the engine through js_engine.h and jsb.h in both
 engine modes; no test calls QuickJS directly.
+Modified 2026-11-06: add the outside tester pass and scrubbed-report packing.
 
 Local and CI validation of the JavaScript engine baseline, part of build infrastructure.
 Keep the game-free suite independent of any installed game; do not bypass skips.
@@ -209,3 +210,60 @@ If the game copy or GUI is unavailable, the entry point reports
 bundle are the owner's checkpoint after merge (docs/FORGE.md,
 DEC-M0-T015-OWNER-RUN); the owner keeps the real `summary.json`, bundle path
 and archive README summary locally and attaches them to that checkpoint.
+
+## Outside tester kit (Steam Deck)
+
+This section is written for a tester who does not work on smzuggler. A Deck
+run is a confirmation pass (spec §14.8); the owner's laptop battery run remains
+the operative milestone gate. The kit ships no game content and no saves: use
+your own legitimately installed copy.
+
+0. Once, in normal play, make the three fixture saves described in
+   [testing-fixtures.md](testing-fixtures.md) and import them with
+   `--import-fixture`. The suite checks each fixture's map before it starts.
+1. On the Deck, switch to desktop mode, copy the AppImage to a folder of your
+   choice, and mark it executable.
+2. Optional for the game-mode run: in Steam, add the AppImage as a non-Steam
+   game and put the command from step 3 in its launch options. This uses
+   ordinary Steam UI; smzuggler uses no Steam API.
+3. Run the suite at default TDP, with no frame limit, at 60 Hz:
+
+   ```sh
+   ./smzuggler-rt-<version>.AppImage --game "<path to the game folder>" \
+     --perf-suite=deck --frame-stats="$HOME/smzuggler/perf/"
+   ```
+
+   The suite plays its scripted scenes (S1-S3 in this build) without manual
+   input. Leave the controls alone until it reports that it is finished.
+4. Scrub and pack the result:
+
+   ```sh
+   ./smzuggler-rt-<version>.AppImage --scrub-report "$HOME/smzuggler/perf/" \
+     --out "$HOME/smzuggler/deck-report.tar.gz"
+   ```
+
+   `--scrub-report` keeps only the fixed report schema (frame records,
+   summaries, markers and run metadata), writes home prefixes as `~`, adds
+   `SCRUBBED.txt`, and refuses to pack when it finds a local user or host
+   name or any save file. Identity checks use whole tokens and exempt the
+   fixed `steam-deck` and `deck-proxy` vocabulary, so the default SteamOS
+   account can pack reports; a bare account name in notes is refused.
+   Packing goes through
+   `tools/share/make_bundle.py`, so the archive is scanned before it is
+   written. Nothing is uploaded automatically.
+5. Optional: open the `.json` files and read them. They are plain text.
+6. Send `deck-report.tar.gz` to the owner through the channel you both agree.
+   Record `profile: steam-deck`, `run_on: borrowed` or `run_on:
+   outside-tester`, the Deck model, SteamOS version and channel, the session,
+   TDP and refresh rate. Never add a tester name, Steam account, serial or
+   host name.
+
+On receipt the owner runs `tools/privacy/scan.py --paths` over the extracted
+archive before storing or committing it, and records the result as the
+Deck-equivalent confirmation for that commit.
+
+The optional Deck-proxy recipe is
+[../tools/perf/deck-proxy.md](../tools/perf/deck-proxy.md). It is a developer
+convenience only: it produces `profile: deck-proxy` with `gate: proxy` and is
+never a pass.
+
