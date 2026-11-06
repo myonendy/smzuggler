@@ -453,6 +453,17 @@ bool script_loader_load_all_for(JSEngine *engine, const char *shim_dir,
 {
     if (!engine || !shim_dir || !game_dir) return false;
 
+    /* Outsider keeps getContext('webgl') on the capability stub so startup
+       does not create an EGL context beside the GPU window. Real-PIXI opts
+       into the native WebGL2 module. */
+    if (!js_engine_eval(engine,
+            renderer == SCRIPT_LOADER_RENDERER_REAL_PIXI
+                ? "globalThis.__SMZUGGLER_WEBGL_NATIVE = true;"
+                : "globalThis.__SMZUGGLER_WEBGL_NATIVE = false;",
+            "<set-webgl-native>")) {
+        return false;
+    }
+
     /* Step 1: Load shims */
     if (!script_loader_load_shims_for(engine, shim_dir, renderer)) {
         return false;

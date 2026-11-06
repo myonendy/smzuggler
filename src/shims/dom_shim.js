@@ -769,7 +769,8 @@
                     __native_canvas2d.resize(this._context2d._handle, this._width, this._height);
                 }
             }
-            if (this._contextWebGL && typeof __native_webgl !== "undefined" &&
+            if (this._contextWebGL && this._contextWebGL._native &&
+                typeof __native_webgl !== "undefined" &&
                 typeof __native_webgl.resize === "function") {
                 __native_webgl.resize(this._contextWebGL, this._width, this._height);
             }
@@ -789,7 +790,8 @@
                     __native_canvas2d.resize(this._context2d._handle, this._width, this._height);
                 }
             }
-            if (this._contextWebGL && typeof __native_webgl !== "undefined" &&
+            if (this._contextWebGL && this._contextWebGL._native &&
+                typeof __native_webgl !== "undefined" &&
                 typeof __native_webgl.resize === "function") {
                 __native_webgl.resize(this._contextWebGL, this._width, this._height);
             }
@@ -809,17 +811,31 @@
             return this._context2d;
         }
         if (type === "webgl" || type === "webgl2" || type === "experimental-webgl") {
-            /* WebGL2 is the native context (spec 4.2); null only when the
-               build or the machine has no GL device, as Chrome reports. */
+            /* Real-PIXI uses the native WebGL2 context (spec 4.2). Outsider
+               keeps the capability stub so SceneManager.checkBrowser passes
+               without creating an EGL context beside the SDL_GPU window,
+               which breaks Wayland presentation. No module means null, the
+               same answer Chrome gives when no GL device exists. */
             if (!this._contextWebGL) {
-                if (typeof __native_webgl === "undefined" ||
+                if (globalThis.__SMZUGGLER_WEBGL_NATIVE === false) {
+                    this._contextWebGL = {
+                        canvas: this,
+                        drawingBufferWidth: this._width,
+                        drawingBufferHeight: this._height,
+                        getParameter: function() { return null; },
+                        getExtension: function() { return null; },
+                        isContextLost: function() { return false; }
+                    };
+                } else if (typeof __native_webgl === "undefined" ||
                     typeof __native_webgl.createContext !== "function") {
                     return null;
-                }
-                this._contextWebGL = __native_webgl.createContext(
-                    this._width, this._height, attrs || null);
-                if (this._contextWebGL) {
-                    this._contextWebGL.canvas = this;
+                } else {
+                    this._contextWebGL = __native_webgl.createContext(
+                        this._width, this._height, attrs || null);
+                    if (this._contextWebGL) {
+                        this._contextWebGL.canvas = this;
+                        this._contextWebGL._native = true;
+                    }
                 }
             }
             return this._contextWebGL;
