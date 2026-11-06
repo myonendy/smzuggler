@@ -1,6 +1,7 @@
 <!--
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
+Modified 2026-11-06: document real-PIXI versus --renderer=outsider (M2-T005).
 The WebGL2 context, state, buffers, VAOs, textures, framebuffers,
 renderbuffers, draws, shader pipeline, extensions and parameters over GLES 3.0,
 and the GLES provider switch they run on. Spec §4.2 and §11 Q5.
@@ -47,6 +48,31 @@ the switch, not a ruling.
 - `webgl_shaders` and `webgl_extensions` ctests covering both GLSL ES
   versions, the compile-error log, the recorded PIXI extension probes and the
   parameter types and limits.
+- Real-PIXI mode as the startup default, with `--renderer=outsider` keeping
+  the pre-WebGL2 shim route, and a `real_pixi_loader` ctest over both planned
+  script lists.
+
+## Real-PIXI mode and `--renderer=outsider`
+
+`src/main.c` defaults to `--renderer=real-pixi` and passes that choice to
+`script_loader_load_all_for`. In this mode the loader skips `pixi_shim.js` and
+`tilemap_shim.js` and loads the game's own `js/libs/pixi.js` before
+`pako.min.js` and the RMMZ core scripts. Real PIXI asks
+`getContext('webgl2')`, which returns the context described on this page, so
+the game's graphics, including UltraMode7, run against the same API Chrome
+exposes.
+
+`--renderer=outsider` keeps the previous route: both shims load, the game's
+`pixi.js` is not forced in, and the sprite-batch renderer path is unchanged.
+It exists for comparison and for tracking upstream (§8.3); it is not a second
+WebGL2 implementation. The accepted
+spellings are `real-pixi`, `real_pixi`, `realpixi` and `outsider`; an unknown
+value fails startup rather than silently choosing a mode.
+`script_loader_get_load_order_for` returns each mode's planned list without
+evaluating anything, which `tests/smz/test_real_pixi_loader.c` uses to pin
+the split. Which path actually renders correctly on the owner's machine is a
+GUI run on the test copy (title, Map 92 and the Mode 7 floor), not something
+this test claims.
 
 ## Context binding
 

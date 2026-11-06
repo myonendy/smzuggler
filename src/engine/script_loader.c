@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
  * Copyright (C) 2026 The smzuggler contributors
  * Modified 2026-11-05: document the loader's public functions (M1-T030).
+ * Modified 2026-11-06: select real PIXI or the Outsider shims at load time (M2-T005).
  *
  * Loads the shims, library scripts, RMMZ core scripts, enabled plugins and
  * main.js in the order NW.js would, then hands control to the game. Why:
@@ -245,6 +246,31 @@ void script_loader_free_plugins(PluginList *list)
     free(list);
 }
 
+/* Maps a --renderer value to a mode.
+ *
+ * Why: main.c and the evaluator must accept the same spellings, and a typo
+ * must fail loudly instead of silently booting the other renderer. `name`
+ * is borrowed; NULL means the default real-PIXI mode, while an empty or
+ * unknown name is rejected. `*out` is written only on success. Returns false
+ * for an unknown name or NULL `out`; main thread, before any script is
+ * loaded. */
+bool script_loader_renderer_parse(const char *name, ScriptLoaderRenderer *out)
+{
+    if (!out) return false;
+    if (!name ||
+        strcmp(name, "real-pixi") == 0 ||
+        strcmp(name, "real_pixi") == 0 ||
+        strcmp(name, "realpixi") == 0) {
+        *out = SCRIPT_LOADER_RENDERER_REAL_PIXI;
+        return true;
+    }
+    if (strcmp(name, "outsider") == 0) {
+        *out = SCRIPT_LOADER_RENDERER_OUTSIDER;
+        return true;
+    }
+    return false;
+}
+
 /* Tell the DOM shim a game script (path relative to the game directory)
    has been evaluated, so a <script src> the game inserts for the same file
    later is not run a second time (browsers never run a script twice
@@ -258,7 +284,7 @@ static void note_script_loaded(JSEngine *engine, const char *rel_path)
     js_engine_eval(engine, code, "<note-script-loaded>");
 }
 
-/* Shim files loaded before any game scripts. Order matters. */
+/* Shim files loaded before any game scripts in Outsider mode. Order matters. */
 static const char *SHIM_FILES[] = {
     "dom_shim.js",
     "canvas2d_shim.js",
@@ -274,19 +300,43 @@ static const char *SHIM_FILES[] = {
     NULL
 };
 
-/* Evaluates every pre-core shim in SHIM_FILES order.
+/* Pre-core shims in real-PIXI mode. The same list minus pixi_shim.js: the
+   game's own js/libs/pixi.js defines PIXI, and the shim would replace it. */
+static const char *SHIM_FILES_REAL_PIXI[] = {
+    "dom_shim.js",
+    "canvas2d_shim.js",
+    "font_shim.js",
+    "navigator_shim.js",
+    "xhr_shim.js",
+    "storage_shim.js",
+    "webaudio_shim.js",
+    "effekseer_shim.js",
+    "dom_overlay.js",
+    "plugin_compat.js",
+    NULL
+};
+
+/* Returns the pre-core shim list for RENDERER; never NULL. */
+static const char *const *pre_core_shims(ScriptLoaderRenderer renderer)
+{
+    return renderer == SCRIPT_LOADER_RENDERER_REAL_PIXI ? SHIM_FILES_REAL_PIXI : SHIM_FILES;
+}
+
+/* Loads every pre-core shim in RENDERER's order.
  *
  * Why: the compatibility layer must exist before libraries or game scripts
  * touch browser globals, and its own order matters. `engine` and
  * `shim_dir` are borrowed. Returns false at the first shim that cannot be
- * joined or evaluated; the same shims are still evaluated by load_all.
+ * joined or evaluated; the same shims are still evaluated by load_all_for.
  * Main thread, outside any JS call. */
-bool script_loader_load_shims(JSEngine *engine, const char *shim_dir)
+bool script_loader_load_shims_for(JSEngine *engine, const char *shim_dir,
+                                  ScriptLoaderRenderer renderer)
 {
     if (!engine || !shim_dir) return false;
 
-    for (int i = 0; SHIM_FILES[i] != NULL; i++) {
-        char *path = join_path(shim_dir, SHIM_FILES[i]);
+    const char *const *files = pre_core_shims(renderer);
+    for (int i = 0; files[i] != NULL; i++) {
+        char *path = join_path(shim_dir, files[i]);
         if (!path) return false;
 
         bool ok = js_engine_eval_file(engine, path);
@@ -301,6 +351,13 @@ bool script_loader_load_shims(JSEngine *engine, const char *shim_dir)
     return true;
 }
 
+/* Outsider-mode wrapper kept for existing callers and tests. */
+bool script_loader_load_shims(JSEngine *engine, const char *shim_dir)
+{
+    return script_loader_load_shims_for(engine, shim_dir,
+                                        SCRIPT_LOADER_RENDERER_OUTSIDER);
+}
+
 /* RPG Maker MZ core scripts in load order. */
 static const char *RMMZ_CORE_SCRIPTS[] = {
     "js/rmmz_core.js",
@@ -312,55 +369,100 @@ static const char *RMMZ_CORE_SCRIPTS[] = {
     NULL
 };
 
-/* Shims loaded after the core scripts and plugins, to patch RPG Maker
-   classes that depend on PIXI internals the runtime does not implement. */
+/* Shims loaded after the core scripts and plugins in Outsider mode, to patch
+   RPG Maker classes that depend on PIXI internals the runtime does not
+   implement. Real-PIXI mode has no post-core shims (spec §4.2). */
 static const char *POST_CORE_SHIMS[] = {
     "tilemap_shim.js",
     NULL
 };
 
-const char *const *script_loader_shim_files(void)
+/* Returns the post-core shim list for RENDERER; real PIXI loads none. */
+static const char *const *post_core_shims(ScriptLoaderRenderer renderer)
 {
-    static const char *all[32];
+    static const char *none[] = { NULL };
+    return renderer == SCRIPT_LOADER_RENDERER_REAL_PIXI ? none : POST_CORE_SHIMS;
+}
+
+/* Returns RENDERER's combined shim file list in load order.
+ *
+ * Why: --dump-surface and Android extraction need every shim name without
+ * loading them. Built once per mode into static storage; the returned array
+ * is borrowed and must not be freed. Main thread. */
+const char *const *script_loader_shim_files_for(ScriptLoaderRenderer renderer)
+{
+    static const char *outsider_all[32];
+    static const char *real_pixi_all[32];
     static bool built = false;
+    const char *const *all = renderer == SCRIPT_LOADER_RENDERER_REAL_PIXI
+                                 ? real_pixi_all : outsider_all;
+
     if (!built) {
         int n = 0;
-        for (int i = 0; SHIM_FILES[i] && n < 31; i++) all[n++] = SHIM_FILES[i];
-        for (int i = 0; POST_CORE_SHIMS[i] && n < 31; i++) all[n++] = POST_CORE_SHIMS[i];
-        all[n] = NULL;
+        for (int i = 0; SHIM_FILES[i] && n < 31; i++) outsider_all[n++] = SHIM_FILES[i];
+        for (int i = 0; POST_CORE_SHIMS[i] && n < 31; i++) outsider_all[n++] = POST_CORE_SHIMS[i];
+        outsider_all[n] = NULL;
+
+        n = 0;
+        for (int i = 0; SHIM_FILES_REAL_PIXI[i] && n < 31; i++) real_pixi_all[n++] = SHIM_FILES_REAL_PIXI[i];
+        real_pixi_all[n] = NULL;
         built = true;
     }
     return all;
 }
 
-/* Library scripts loaded before core. */
+/* Outsider-mode wrapper kept for existing callers and tests. */
+const char *const *script_loader_shim_files(void)
+{
+    return script_loader_shim_files_for(SCRIPT_LOADER_RENDERER_OUTSIDER);
+}
+
+/* Library scripts loaded before core in Outsider mode, which supplies its own
+   PIXI through pixi_shim.js. */
 static const char *LIB_SCRIPTS[] = {
     "js/libs/pako.min.js",
     NULL
 };
 
-/* Loads the whole game in NW.js order, then starts its first scene.
+/* Real-PIXI library scripts: the game's own pixi.js first, then pako, the
+   order its main.js uses (spec §4.2 and §13). */
+static const char *LIB_SCRIPTS_REAL_PIXI[] = {
+    "js/libs/pixi.js",
+    "js/libs/pako.min.js",
+    NULL
+};
+
+/* Returns RENDERER's pre-core library list; never NULL. */
+static const char *const *lib_scripts(ScriptLoaderRenderer renderer)
+{
+    return renderer == SCRIPT_LOADER_RENDERER_REAL_PIXI ? LIB_SCRIPTS_REAL_PIXI : LIB_SCRIPTS;
+}
+
+/* Loads the whole game in NW.js order for RENDERER, then starts its first scene.
  *
  * Why: RPG Maker MZ assumes the browser loaded shims, libraries, core
  * scripts, enabled plugins, post-core shims and main.js in this exact
- * order; doing it here keeps that contract in one place. `engine`,
- * `shim_dir` and `game_dir` are borrowed for the call. Returns false for a
- * missing argument or failed shim load; later script and plugin errors are
- * logged and do not stop the route, matching a browser's tolerant
- * `<script>` loading. Main thread, outside any JS call. */
-bool script_loader_load_all(JSEngine *engine, const char *shim_dir, const char *game_dir)
+ * order; doing it here keeps that contract in one place. In real-PIXI mode
+ * the game's own pixi.js is loaded instead of pixi_shim.js/tilemap_shim.js
+ * (spec §4.2). `engine`, `shim_dir` and `game_dir` are borrowed for the
+ * call. Returns false for a missing argument or failed shim load; later
+ * script and plugin errors are logged and do not stop the route, matching a
+ * browser's tolerant `<script>` loading. Main thread, outside any JS call. */
+bool script_loader_load_all_for(JSEngine *engine, const char *shim_dir,
+                                const char *game_dir, ScriptLoaderRenderer renderer)
 {
     if (!engine || !shim_dir || !game_dir) return false;
 
     /* Step 1: Load shims */
-    if (!script_loader_load_shims(engine, shim_dir)) {
+    if (!script_loader_load_shims_for(engine, shim_dir, renderer)) {
         return false;
     }
     printf("script_loader: shims loaded\n");
 
-    /* Step 2: Load library scripts (pako, etc.) */
-    for (int i = 0; LIB_SCRIPTS[i] != NULL; i++) {
-        char *path = join_path(game_dir, LIB_SCRIPTS[i]);
+    /* Step 2: Load library scripts (the game's pixi.js in real-PIXI mode). */
+    const char *const *libs = lib_scripts(renderer);
+    for (int i = 0; libs[i] != NULL; i++) {
+        char *path = join_path(game_dir, libs[i]);
         if (!path) return false;
 
         if (file_io_exists(path)) {
@@ -369,7 +471,7 @@ bool script_loader_load_all(JSEngine *engine, const char *shim_dir, const char *
                 fprintf(stderr, "script_loader: warning: failed to load lib: %s\n", path);
             }
             js_engine_execute_pending_jobs(engine);
-            note_script_loaded(engine, LIB_SCRIPTS[i]);
+            note_script_loaded(engine, libs[i]);
         } else {
             fprintf(stderr, "script_loader: warning: lib not found: %s\n", path);
         }
@@ -501,9 +603,11 @@ bool script_loader_load_all(JSEngine *engine, const char *shim_dir, const char *
     free(plugins_path);
 
     /* Step 4b: Post-core shims go after plugins so they win over plugin
-       patches to the same engine classes (e.g. Tilemap.Layer.prototype.render). */
-    for (int i = 0; POST_CORE_SHIMS[i] != NULL; i++) {
-        char *path = join_path(shim_dir, POST_CORE_SHIMS[i]);
+       patches to the same engine classes (e.g. Tilemap.Layer.prototype.render).
+       Real-PIXI mode has none. */
+    const char *const *post = post_core_shims(renderer);
+    for (int i = 0; post[i] != NULL; i++) {
+        char *path = join_path(shim_dir, post[i]);
         if (!path) return false;
 
         bool ok = js_engine_eval_file(engine, path);
@@ -559,6 +663,13 @@ bool script_loader_load_all(JSEngine *engine, const char *shim_dir, const char *
     return true;
 }
 
+/* Outsider-mode wrapper kept for existing callers and tests. */
+bool script_loader_load_all(JSEngine *engine, const char *shim_dir, const char *game_dir)
+{
+    return script_loader_load_all_for(engine, shim_dir, game_dir,
+                                      SCRIPT_LOADER_RENDERER_OUTSIDER);
+}
+
 /* Load order query (for testing) */
 
 static bool append_path(char ***list, size_t *count, size_t *cap, const char *path)
@@ -575,14 +686,17 @@ static bool append_path(char ***list, size_t *count, size_t *cap, const char *pa
     return true;
 }
 
-/* Returns the paths load_all would use, without evaluating any of them.
+/* Returns the paths load_all_for would use for RENDERER, without evaluating any of them.
  *
  * Why: the evaluator and tests need to assert the browser-compatible load
- * order without a runnable game. `shim_dir` and `game_dir` are borrowed;
- * `*out_count` (may be NULL) receives the number of paths. Returns a
- * malloc'd NULL-terminated array, or NULL on a missing argument or
- * allocation failure; free with script_loader_free_path_list. Main thread. */
-char **script_loader_get_load_order(const char *shim_dir, const char *game_dir, size_t *out_count)
+ * order without a runnable game, including which renderer's scripts appear.
+ * `shim_dir` and `game_dir` are borrowed; `*out_count` (may be NULL)
+ * receives the number of paths. Returns a malloc'd NULL-terminated array,
+ * or NULL on a missing argument or allocation failure; free with
+ * script_loader_free_path_list. Main thread. */
+char **script_loader_get_load_order_for(ScriptLoaderRenderer renderer,
+                                        const char *shim_dir, const char *game_dir,
+                                        size_t *out_count)
 {
     if (!shim_dir || !game_dir) return NULL;
 
@@ -591,17 +705,19 @@ char **script_loader_get_load_order(const char *shim_dir, const char *game_dir, 
     size_t cap = 0;
 
     /* 1. Shims */
-    for (int i = 0; SHIM_FILES[i] != NULL; i++) {
-        char *path = join_path(shim_dir, SHIM_FILES[i]);
+    const char *const *pre = pre_core_shims(renderer);
+    for (int i = 0; pre[i] != NULL; i++) {
+        char *path = join_path(shim_dir, pre[i]);
         if (path) {
             append_path(&list, &count, &cap, path);
             free(path);
         }
     }
 
-    /* 2. Libs */
-    for (int i = 0; LIB_SCRIPTS[i] != NULL; i++) {
-        char *path = join_path(game_dir, LIB_SCRIPTS[i]);
+    /* 2. Libs (the game's pixi.js in real-PIXI mode) */
+    const char *const *libs = lib_scripts(renderer);
+    for (int i = 0; libs[i] != NULL; i++) {
+        char *path = join_path(game_dir, libs[i]);
         if (path) {
             append_path(&list, &count, &cap, path);
             free(path);
@@ -618,8 +734,9 @@ char **script_loader_get_load_order(const char *shim_dir, const char *game_dir, 
     }
 
     /* 3b. Post-core shims */
-    for (int i = 0; POST_CORE_SHIMS[i] != NULL; i++) {
-        char *path = join_path(shim_dir, POST_CORE_SHIMS[i]);
+    const char *const *post = post_core_shims(renderer);
+    for (int i = 0; post[i] != NULL; i++) {
+        char *path = join_path(shim_dir, post[i]);
         if (path) {
             append_path(&list, &count, &cap, path);
             free(path);
@@ -661,7 +778,14 @@ char **script_loader_get_load_order(const char *shim_dir, const char *game_dir, 
     return list;
 }
 
-/* Frees `count` strings and the list from script_loader_get_load_order.
+/* Outsider-mode wrapper kept for existing callers and tests. */
+char **script_loader_get_load_order(const char *shim_dir, const char *game_dir, size_t *out_count)
+{
+    return script_loader_get_load_order_for(SCRIPT_LOADER_RENDERER_OUTSIDER,
+                                            shim_dir, game_dir, out_count);
+}
+
+/* Frees `count` strings and a list from script_loader_get_load_order_for.
  * NULL is ignored. Main thread; the strings must not be used afterwards. */
 void script_loader_free_path_list(char **list, size_t count)
 {

@@ -2,6 +2,7 @@
 Copyright (C) 2026 The smzuggler contributors
 Modified 2026-10-31: record process.argv/cwd/exit and throwing require.
 Modified 2026-11-05: note the global alias installed by dom_shim.js.
+Modified 2026-11-06: document the real-PIXI versus --renderer=outsider lists.
 Shim inventory and ordering contract for the loader and diagnostic walker.
 Keep this order aligned with src/engine/script_loader.c; no game is required.
 -->
@@ -44,9 +45,11 @@ listed, `_`-prefixed members included. The runtime dump measured with
 `./build/smzuggler-rt --dump-surface | wc -l` on 2026-10-31 has 2,003 lines,
 down from 6,124. `tests/smz/test_dump_surface_members.c` pins both exclusions.
 
-The pre-core list is defined in
-[src/engine/script_loader.c:245](../src/engine/script_loader.c#L245), and evaluated
-by [script_loader_load_shims:260](../src/engine/script_loader.c#L260):
+The pre-core list below is the `--renderer=outsider` list, defined in
+[src/engine/script_loader.c](../src/engine/script_loader.c) (`SHIM_FILES`) and
+evaluated by
+[script_loader_load_shims_for](../src/engine/script_loader.c)
+with `SCRIPT_LOADER_RENDERER_OUTSIDER`:
 
 1. `dom_shim.js`
 2. `canvas2d_shim.js`
@@ -60,16 +63,25 @@ by [script_loader_load_shims:260](../src/engine/script_loader.c#L260):
 10. `dom_overlay.js`
 11. `plugin_compat.js`
 
-The post-core list is defined at
-[script_loader.c:293](../src/engine/script_loader.c#L293): `tilemap_shim.js`.
-The dump uses [script_loader_shim_files:298](../src/engine/script_loader.c#L298)
-to obtain both lists in that order. With no game classes installed, conditional
-post-core patches naturally do nothing.
+The default real-PIXI mode uses the same list without `pixi_shim.js`
+(`SHIM_FILES_REAL_PIXI`): the game's own `js/libs/pixi.js` is loaded in the
+library phase, before `pako.min.js` and the core scripts, and defines `PIXI`.
+Loading the shim as well would replace the real library. Its post-core list is
+empty; `tilemap_shim.js` patches PIXI internals that only the Outsider shim
+needs. Select either mode with `--renderer=real-pixi` (default) or
+`--renderer=outsider` (spec §4.2, §8.3).
+
+The post-core Outsider list is defined by `POST_CORE_SHIMS` in
+[script_loader.c](../src/engine/script_loader.c): `tilemap_shim.js`. The dump
+uses [script_loader_shim_files_for](../src/engine/script_loader.c) to obtain
+both lists in that order; the legacy `script_loader_shim_files()` keeps
+returning the Outsider inventory for `--dump-surface` and Android extraction.
+With no game classes installed, conditional post-core patches naturally do
+nothing.
 
 Normal game startup interleaves the pre-core list, libraries, core scripts,
 enabled plugins, post-core list, and `main.js`, then starts the game; see
-[script_loader_load_all:318](../src/engine/script_loader.c#L318) and the
-[post-core phase:470](../src/engine/script_loader.c#L470).
+[script_loader_load_all_for](../src/engine/script_loader.c).
 `control_shim.js` is an optional automation script loaded by the runtime,
 outside the loader's shim sequence, so it is outside this inventory.
 

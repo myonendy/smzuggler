@@ -15,6 +15,8 @@
  * Modified 2026-11-05: enable --frame-stats JSON Lines and summary output.
  * Modified 2026-11-06: add the §14 perf-suite and fixture-import harness.
  * Modified 2026-11-06: dispatch --scrub-report to the outside-tester scrubber.
+ * Modified 2026-11-06: default to real PIXI and select the Outsider shims
+ * with --renderer=outsider (spec §4.2).
  *
  * Runtime entry point; owns startup and shutdown on the main thread.
  * See docs/DECISIONS.md (DEC-M0-T001) for identity ownership.
@@ -1375,6 +1377,9 @@ static int runtime_main(int argc, char *argv[])
     bool cpu_prof_requested = false;
     const char *cpu_prof_path = NULL;
     const char *frame_stats_path = NULL;
+    /* Real-PIXI is the default once the WebGL2 context exists (spec §4.2);
+       --renderer=outsider keeps the pre-WebGL2 shim route for comparison. */
+    ScriptLoaderRenderer renderer = SCRIPT_LOADER_RENDERER_REAL_PIXI;
 #ifdef SMZUGGLER_NAME
     SmzHostDirs host_dirs = {0};
 #else
@@ -1411,6 +1416,18 @@ static int runtime_main(int argc, char *argv[])
             game_dir = argv[++i];
         } else if (strcmp(argv[i], "--shims") == 0 && i + 1 < argc) {
             shim_dir = argv[++i];
+        } else if (strcmp(argv[i], "--renderer") == 0) {
+            /* Renderer choice; the loader needs it before it plans scripts. */
+            if (i + 1 >= argc || !script_loader_renderer_parse(argv[i + 1], &renderer)) {
+                fatal_error("Invalid --renderer value (use real-pixi or outsider)");
+                return 1;
+            }
+            i++;
+        } else if (strncmp(argv[i], "--renderer=", 11) == 0) {
+            if (!script_loader_renderer_parse(argv[i] + 11, &renderer)) {
+                fatal_error("Invalid --renderer value (use real-pixi or outsider)");
+                return 1;
+            }
         } else if (strcmp(argv[i], "--frames") == 0 && i + 1 < argc) {
             /* Debug: exit cleanly after N frames. */
             max_frames = atoi(argv[++i]);
@@ -1710,8 +1727,9 @@ static int runtime_main(int argc, char *argv[])
 #endif
 
     int scripts_ok = 1;
-    error_handler_log(LOG_INFO, "Loading game from: %s", game_dir);
-    if (!script_loader_load_all(js, shim_dir, game_dir)) {
+    error_handler_log(LOG_INFO, "Loading game from: %s (renderer=%s)", game_dir,
+                      renderer == SCRIPT_LOADER_RENDERER_REAL_PIXI ? "real-pixi" : "outsider");
+    if (!script_loader_load_all_for(js, shim_dir, game_dir, renderer)) {
         /* A bad --shims/--game path must not produce a black window that
            exits 0. Fail loudly instead. */
         fatal_error("Failed to load game scripts from:\n%s\n\nShims: %s\n\n"
