@@ -1,6 +1,7 @@
 <!--
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
+Modified 2026-11-05: record the native WebGL2 context surface (M2-T001).
 Modified 2026-10-31: seed dom_shim.js inventory rows.
 Modified 2026-10-31: seed pixi_shim.js inventory rows.
 Modified 2026-10-31: record PIXI.Circle, Ellipse, Polygon and SHAPES (U8).
@@ -219,8 +220,8 @@ dump and rejection of a stale `name` row through the CLI.
 | `HTMLCanvasElement.prototype._destroyNativeContext` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Frees the native 2d handle on the current context. |
 | `HTMLCanvasElement.prototype._destroyNativeContext.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/smz/test_dump_surface.c` | Frees the native 2d handle on the current context. |
 | `HTMLCanvasElement.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Canvas element; 2d context comes from canvas2d_shim when loaded. |
-| `HTMLCanvasElement.prototype.getContext` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | 2d via native or stub context; webgl is a parameter stub. |
-| `HTMLCanvasElement.prototype.getContext.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | 2d via native or stub context; webgl is a parameter stub. |
+| `HTMLCanvasElement.prototype.getContext` | partial | `src/shims/dom_shim.js` | `tests/smz/test_webgl_context.c` | 2d via native or stub context; webgl/webgl2/experimental-webgl returns the native WebGL2 context, or null with no GL device. |
+| `HTMLCanvasElement.prototype.getContext.prototype.constructor` | partial | `src/shims/dom_shim.js` | `tests/smz/test_webgl_context.c` | 2d via native or stub context; webgl/webgl2/experimental-webgl returns the native WebGL2 context, or null with no GL device. |
 | `HTMLCanvasElement.prototype.height` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Resizes the native 2d surface when a handle exists. |
 | `HTMLCanvasElement.prototype.toBlob` | stub | `src/shims/dom_shim.js` | `-` | Callback with an empty PNG Blob. |
 | `HTMLCanvasElement.prototype.toBlob.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Callback with an empty PNG Blob. |
@@ -228,6 +229,38 @@ dump and rejection of a stale `name` row through the CLI.
 | `HTMLCanvasElement.prototype.toDataURL.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Empty data:image/png;base64, string. |
 | `HTMLCanvasElement.prototype.transferControlToOffscreen` | stub | `src/shims/dom_shim.js` | `-` | Returns this; no OffscreenCanvas. |
 | `HTMLCanvasElement.prototype.transferControlToOffscreen.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Returns this; no OffscreenCanvas. |
+| `WebGL2RenderingContext.prototype.activeTexture` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Selects the active texture unit; texture wrappers are M2-T002. |
+| `WebGL2RenderingContext.prototype.bindBuffer` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fast_api.cc` | Array/element buffer binding; V8 Fast API hot call. |
+| `WebGL2RenderingContext.prototype.bindFramebuffer` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Binds the default framebuffer (name 0); FBO wrappers are M2-T002. |
+| `WebGL2RenderingContext.prototype.bindTexture` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fast_api.cc` | Numeric/named texture binding; texture wrappers are M2-T002. |
+| `WebGL2RenderingContext.prototype.bindVertexArray` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fast_api.cc` | VAO binding; V8 Fast API hot call. |
+| `WebGL2RenderingContext.prototype.blendFunc` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | GLES blend function. |
+| `WebGL2RenderingContext.prototype.bufferData` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Uploads bytes or an explicit size. |
+| `WebGL2RenderingContext.prototype.bufferSubData` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fast_api.cc` | Partial upload from an ArrayBuffer/view; V8 Fast API hot call. |
+| `WebGL2RenderingContext.prototype.clear` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Clears the default framebuffer. |
+| `WebGL2RenderingContext.prototype.clearColor` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Sets the clear colour. |
+| `WebGL2RenderingContext.prototype.createBuffer` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Returns a wrapper owning one GL buffer name. |
+| `WebGL2RenderingContext.prototype.createVertexArray` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Returns a wrapper owning one GL vertex-array name. |
+| `WebGL2RenderingContext.prototype.deleteBuffer` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Frees the buffer name and marks the wrapper dead. |
+| `WebGL2RenderingContext.prototype.deleteVertexArray` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Frees the VAO name and marks the wrapper dead. |
+| `WebGL2RenderingContext.prototype.disable` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Disables a GL capability. |
+| `WebGL2RenderingContext.prototype.disableVertexAttribArray` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Disables a VAO attribute. |
+| `WebGL2RenderingContext.prototype.drawArrays` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Non-indexed draw. |
+| `WebGL2RenderingContext.prototype.drawElements` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fast_api.cc` | Indexed draw; V8 Fast API hot call. |
+| `WebGL2RenderingContext.prototype.enable` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Enables a GL capability. |
+| `WebGL2RenderingContext.prototype.enableVertexAttribArray` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Enables a VAO attribute. |
+| `WebGL2RenderingContext.prototype.getError` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Returns and clears the GL error. |
+| `WebGL2RenderingContext.prototype.getParameter` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Scalar, vector and capability state; full limits are M2-T003. |
+| `WebGL2RenderingContext.prototype.isEnabled` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Reads a GL capability. |
+| `WebGL2RenderingContext.prototype.uniform1f` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fast_api.cc` | Scalar float uniform; V8 Fast API hot call. |
+| `WebGL2RenderingContext.prototype.uniform1fv` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fast_api.cc` | Float vector uniform; V8 Fast API hot call. |
+| `WebGL2RenderingContext.prototype.uniform1i` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fast_api.cc` | Scalar integer uniform; V8 Fast API hot call. |
+| `WebGL2RenderingContext.prototype.uniform4f` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fast_api.cc` | Vec4 float uniform; V8 Fast API hot call. |
+| `WebGL2RenderingContext.prototype.uniform4fv` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fast_api.cc` | Vec4 float uniform array; V8 Fast API hot call. |
+| `WebGL2RenderingContext.prototype.uniformMatrix4fv` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fast_api.cc` | 4x4 matrix uniform; V8 Fast API hot call. |
+| `WebGL2RenderingContext.prototype.useProgram` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fast_api.cc` | Numeric/named program binding; program wrappers are M2-T003. |
+| `WebGL2RenderingContext.prototype.vertexAttribPointer` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Float attribute layout. |
+| `WebGL2RenderingContext.prototype.viewport` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Drawing viewport. |
 | `HTMLCanvasElement.prototype.width` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Resizes the native 2d surface when a handle exists. |
 | `HTMLElement` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | In-memory element; no layout, CSSOM or live NodeList. |
 | `HTMLElement.prototype.appendChild` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Reparents and runs an inserted script when connected. |

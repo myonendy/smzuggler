@@ -1,6 +1,9 @@
 /*
  * Copyright (c) 2026 General Arcade (Pte. Ltd.)
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
+ * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-05: return the native WebGL2 context from getContext and
+ * resize it with the canvas (card M2-T001).
  */
 
 /*
@@ -753,7 +756,9 @@
     HTMLCanvasElement.prototype.constructor = HTMLCanvasElement;
 
     Object.defineProperty(HTMLCanvasElement.prototype, "width", {
+        /* Reads the canvas width in CSS pixels. */
         get: function() { return this._width; },
+        /* Stores the width and resizes any live 2d or WebGL surface. */
         set: function(v) {
             this._width = v;
             if (this._context2d) {
@@ -763,11 +768,17 @@
                     __native_canvas2d.resize(this._context2d._handle, this._width, this._height);
                 }
             }
+            if (this._contextWebGL && typeof this._contextWebGL._resize === "function" &&
+                this._width > 0 && this._height > 0) {
+                this._contextWebGL._resize(this._width, this._height);
+            }
         }
     });
 
     Object.defineProperty(HTMLCanvasElement.prototype, "height", {
+        /* Reads the canvas height in CSS pixels. */
         get: function() { return this._height; },
+        /* Stores the height and resizes any live 2d or WebGL surface. */
         set: function(v) {
             this._height = v;
             if (this._context2d) {
@@ -777,9 +788,14 @@
                     __native_canvas2d.resize(this._context2d._handle, this._width, this._height);
                 }
             }
+            if (this._contextWebGL && typeof this._contextWebGL._resize === "function" &&
+                this._width > 0 && this._height > 0) {
+                this._contextWebGL._resize(this._width, this._height);
+            }
         }
     });
 
+    /* Returns the native 2d or WebGL2 context, or null for an unknown type. */
     HTMLCanvasElement.prototype.getContext = function(type, attrs) {
         if (type === "2d") {
             if (!this._context2d) {
@@ -792,16 +808,18 @@
             return this._context2d;
         }
         if (type === "webgl" || type === "webgl2" || type === "experimental-webgl") {
-            /* WebGL context stub; rendering goes through the native renderer. */
+            /* WebGL2 is the native context (spec 4.2); null only when the
+               build or the machine has no GL device, as Chrome reports. */
             if (!this._contextWebGL) {
-                this._contextWebGL = {
-                    canvas: this,
-                    drawingBufferWidth: this._width,
-                    drawingBufferHeight: this._height,
-                    getParameter: function() { return null; },
-                    getExtension: function() { return null; },
-                    isContextLost: function() { return false; }
-                };
+                if (typeof __native_webgl === "undefined" ||
+                    typeof __native_webgl.createContext !== "function") {
+                    return null;
+                }
+                this._contextWebGL = __native_webgl.createContext(
+                    this._width, this._height, attrs || null);
+                if (this._contextWebGL) {
+                    this._contextWebGL.canvas = this;
+                }
             }
             return this._contextWebGL;
         }

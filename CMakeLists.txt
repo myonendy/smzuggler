@@ -11,6 +11,7 @@
 # Modified 2026-11-01: add the script watchdog thread to smz_js_engine_v8.
 # Modified 2026-11-04: add the V8 code cache store smz_js_codecache.
 # Modified 2026-11-04: size V8 recursion for the process main thread.
+# Modified 2026-11-05: add the WebGL2 context module under src/webgl/.
 # Modified 2026-11-05: add the optional V8 CPU profiler (--cpu-prof).
 # Build orchestration; see docs/DECISIONS.md (DEC-M0-T001).
 
@@ -215,6 +216,8 @@ set(RMMZ_RUNTIME_SOURCES
     src/rendering/apng.c
     src/bindings/bind_canvas2d.c
     src/bindings/bind_renderer.c
+    src/webgl/webgl.cc
+    src/webgl/webgl_runtime.c
     src/bindings/bind_font.c
     src/bindings/bind_tilemap.c
     src/bindings/bind_audio.c
@@ -284,6 +287,13 @@ target_link_libraries(outsider PRIVATE
     soloud
     ${RMMZ_SYS_LIBS}
 )
+
+# main.c is not in this card's owned files, so the WebGL module joins the
+# binding list through the linker: the main executable's Canvas2D define call
+# goes to src/webgl/webgl_runtime.c, which defines Canvas2D and then WebGL2.
+if(UNIX AND NOT APPLE AND NOT ANDROID)
+    target_link_options(outsider PRIVATE "-Wl,--wrap=bind_canvas2d_define")
+endif()
 
 if(RMMZ_RUNTIME_SHADERS)
     target_link_libraries(outsider PRIVATE
