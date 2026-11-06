@@ -1,6 +1,13 @@
 /*
  * Copyright (c) 2026 General Arcade (Pte. Ltd.)
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
+ * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-05: document the loader interface (M1-T030).
+ *
+ * Declares the script load-order entry points used by main.c and tests.
+ * Why: the game must see shims, libraries, core scripts, plugins and main.js
+ * in NW.js order; callers use these functions instead of reimplementing it.
+ * See docs/js-binding.md; main thread only.
  */
 
 #ifndef RMMZ_SCRIPT_LOADER_H

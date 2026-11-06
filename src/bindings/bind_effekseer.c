@@ -403,6 +403,13 @@ static bool effekseer_define_setup(jsb_ctx *ctx, void *user)
     return jsb_define_module(ctx, "__native_effekseer", effekseer_module_init);
 }
 
+/* Defines the __native_effekseer global on `rt` inside jsb's setup scope.
+ *
+ * Why: this is the binding's only public entry, called once by the host
+ * after the engine exists (spec section 4.1). `rt` is borrowed and must
+ * outlive the module; no jsb handle is kept. Main thread only. Returns
+ * false, after printing on stderr or from jsb, when `rt` is NULL or the
+ * module could not be defined. */
 bool bind_effekseer_define(jsb_runtime *rt)
 {
     if (!rt) {

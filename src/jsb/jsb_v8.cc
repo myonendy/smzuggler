@@ -818,9 +818,9 @@ jsb_val *wrap_maybe(jsb_ctx *ctx, v8::MaybeLocal<v8::Value> value) {
     return nullptr;
 }
 
+template <typename T, typename U>
 // Stores a Maybe result of a V8 conversion in `*out`, or records its
 // pending exception as the call's throw. Returns whether it converted.
-template <typename T, typename U>
 bool take(jsb_ctx *ctx, v8::Maybe<U> result, T *out) {
     U value;
     if (!result.To(&value)) {

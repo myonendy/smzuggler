@@ -1,6 +1,14 @@
 /*
  * Copyright (c) 2026 General Arcade (Pte. Ltd.)
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
+ * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-05: document the loader's public functions (M1-T030).
+ *
+ * Loads the shims, library scripts, RMMZ core scripts, enabled plugins and
+ * main.js in the order NW.js would, then hands control to the game. Why:
+ * RPG Maker MZ expects a browser load order, and plugins mutate globals in
+ * that order, so the loader is the single place that establishes it.
+ * See docs/js-binding.md ("Game loop", "js_engine on V8"); main thread only.
  */
 
 #include "engine/script_loader.h"
@@ -70,6 +78,13 @@ static char *extract_quoted_string(const char **pp)
     return result;
 }
 
+/* Parses plugins.js into enabled/disabled plugin names.
+ *
+ * Why: load_all must evaluate only enabled plugin scripts, in file order,
+ * without running plugins.js a second time. `plugins_js_path` is borrowed.
+ * Returns a malloc'd list the caller frees with
+ * script_loader_free_plugins, or NULL after reporting a read failure or
+ * allocation failure on stderr. Main thread. */
 PluginList *script_loader_parse_plugins(const char *plugins_js_path)
 {
     if (!plugins_js_path) return NULL;
@@ -218,6 +233,8 @@ PluginList *script_loader_parse_plugins(const char *plugins_js_path)
     return list;
 }
 
+/* Frees a list from script_loader_parse_plugins and every name in it.
+ * NULL is ignored. Main thread; the list must not be used afterwards. */
 void script_loader_free_plugins(PluginList *list)
 {
     if (!list) return;
@@ -257,6 +274,13 @@ static const char *SHIM_FILES[] = {
     NULL
 };
 
+/* Evaluates every pre-core shim in SHIM_FILES order.
+ *
+ * Why: the compatibility layer must exist before libraries or game scripts
+ * touch browser globals, and its own order matters. `engine` and
+ * `shim_dir` are borrowed. Returns false at the first shim that cannot be
+ * joined or evaluated; the same shims are still evaluated by load_all.
+ * Main thread, outside any JS call. */
 bool script_loader_load_shims(JSEngine *engine, const char *shim_dir)
 {
     if (!engine || !shim_dir) return false;
@@ -315,6 +339,15 @@ static const char *LIB_SCRIPTS[] = {
     NULL
 };
 
+/* Loads the whole game in NW.js order, then starts its first scene.
+ *
+ * Why: RPG Maker MZ assumes the browser loaded shims, libraries, core
+ * scripts, enabled plugins, post-core shims and main.js in this exact
+ * order; doing it here keeps that contract in one place. `engine`,
+ * `shim_dir` and `game_dir` are borrowed for the call. Returns false for a
+ * missing argument or failed shim load; later script and plugin errors are
+ * logged and do not stop the route, matching a browser's tolerant
+ * `<script>` loading. Main thread, outside any JS call. */
 bool script_loader_load_all(JSEngine *engine, const char *shim_dir, const char *game_dir)
 {
     if (!engine || !shim_dir || !game_dir) return false;
@@ -542,6 +575,13 @@ static bool append_path(char ***list, size_t *count, size_t *cap, const char *pa
     return true;
 }
 
+/* Returns the paths load_all would use, without evaluating any of them.
+ *
+ * Why: the evaluator and tests need to assert the browser-compatible load
+ * order without a runnable game. `shim_dir` and `game_dir` are borrowed;
+ * `*out_count` (may be NULL) receives the number of paths. Returns a
+ * malloc'd NULL-terminated array, or NULL on a missing argument or
+ * allocation failure; free with script_loader_free_path_list. Main thread. */
 char **script_loader_get_load_order(const char *shim_dir, const char *game_dir, size_t *out_count)
 {
     if (!shim_dir || !game_dir) return NULL;
@@ -621,6 +661,8 @@ char **script_loader_get_load_order(const char *shim_dir, const char *game_dir, 
     return list;
 }
 
+/* Frees `count` strings and the list from script_loader_get_load_order.
+ * NULL is ignored. Main thread; the strings must not be used afterwards. */
 void script_loader_free_path_list(char **list, size_t count)
 {
     if (!list) return;

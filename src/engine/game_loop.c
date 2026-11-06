@@ -329,6 +329,12 @@ static void cache_js_functions(GameLoop *loop)
     loop->js_funcs_cached = call_js(loop, "cache", 0, NULL) == 't';
 }
 
+/* Allocates a loop bound to borrowed `platform` and `engine`.
+ *
+ * Why: the host needs one object holding the frame clock and statistics;
+ * it owns the loop but neither dependency, which must outlive it. A
+ * non-positive `target_fps` means 60. Returns NULL when allocation fails.
+ * Main thread, where every later call and the JS engine live. */
 GameLoop *game_loop_create(Platform *platform, JSEngine *engine, int target_fps)
 {
     if (!platform || !engine) return NULL;
@@ -365,6 +371,9 @@ void game_loop_destroy(GameLoop *loop)
     free(loop);
 }
 
+/* Averages per-phase times over `every_frames` frames and logs them.
+ * 0 (or less) turns reporting off; each change restarts the accumulator.
+ * `loop` is borrowed; does nothing when NULL. Main thread. */
 void game_loop_set_perf_report(GameLoop *loop, int every_frames)
 {
     if (!loop) return;
@@ -373,6 +382,9 @@ void game_loop_set_perf_report(GameLoop *loop, int every_frames)
     memset(&loop->perf_acc, 0, sizeof(loop->perf_acc));
 }
 
+/* Sets the JS expression logged when the frame limit stops the loop.
+ * The text is copied, so `js_expression` may be temporary; NULL restores
+ * the default active-scene name. `loop` is borrowed. Main thread. */
 void game_loop_set_exit_probe(GameLoop *loop, const char *js_expression)
 {
     if (!loop) return;
@@ -380,6 +392,12 @@ void game_loop_set_exit_probe(GameLoop *loop, const char *js_expression)
     loop->probe_expr = js_expression ? strdup(js_expression) : NULL;
 }
 
+/* Stops after `max_frames` frames (0 = never) and optionally screenshots.
+ *
+ * Why: the evaluator and smoke runs need a bounded session instead of a
+ * human closing the window. `screenshot_path` is copied; `renderer_slot`
+ * is borrowed and dereferenced only at capture time, because the game
+ * creates its renderer lazily. `loop` is borrowed. Main thread. */
 void game_loop_set_frame_limit(GameLoop *loop, int max_frames,
                                const char *screenshot_path, Renderer **renderer_slot)
 {
@@ -466,6 +484,12 @@ static char *read_stdin_line(void)
     return buf;
 }
 
+/* Reads stdin lines and queues them for the main loop.
+ *
+ * Why: blocking reads must not stall rendering. This thread owns only the
+ * queue under `control_mutex`; it never evaluates JS or touches engine
+ * handles (spec section 15.8). `arg` is the borrowed GameLoop. Returns 0
+ * at EOF, after marking the queue closed; the main thread frees lines. */
 static int control_reader_thread(void *arg)
 {
     GameLoop *loop = arg;
@@ -490,6 +514,10 @@ static int control_reader_thread(void *arg)
     }
 }
 
+/* Removes and returns the oldest queued control line, or NULL.
+ * `*eof` becomes true when the reader has seen EOF and the queue is empty.
+ * The caller owns the returned malloc'd line and frees it. Main thread;
+ * the queue is guarded by `control_mutex` because the reader appends. */
 static ControlLine *control_pop(GameLoop *loop, bool *eof)
 {
     SDL_LockMutex(loop->control_mutex);
@@ -627,6 +655,8 @@ static double ticks_to_ms(const GameLoop *loop, uint64_t ticks)
     return (double)ticks * 1000.0 / (double)loop->perf_freq;
 }
 
+/* Returns milliseconds since creation, the same clock rAF receives.
+ * `loop` is borrowed; NULL yields 0.0. Main thread. */
 double game_loop_elapsed_ms(const GameLoop *loop)
 {
     if (!loop) return 0.0;
@@ -634,12 +664,16 @@ double game_loop_elapsed_ms(const GameLoop *loop)
     return ticks_to_ms(loop, now - loop->start_ticks);
 }
 
+/* Returns the average FPS measured over recent frames; `loop` is borrowed
+ * and NULL yields 0.0. Main thread. */
 double game_loop_get_fps(const GameLoop *loop)
 {
     if (!loop) return 0.0;
     return loop->fps;
 }
 
+/* Returns the timings of the last completed frame, by value; `loop` is
+ * borrowed and NULL yields a zeroed struct. Main thread. */
 GameLoopStats game_loop_get_stats(const GameLoop *loop)
 {
     GameLoopStats empty = {0};
@@ -647,6 +681,10 @@ GameLoopStats game_loop_get_stats(const GameLoop *loop)
     return loop->stats;
 }
 
+/* Asks the loop to exit after the current frame; NULL is ignored.
+ * Why: JS quit handlers and other threads have no other way to stop it.
+ * The flag is a plain bool read on the main thread, so no JS handle or
+ * lock is involved. */
 void game_loop_request_stop(GameLoop *loop)
 {
     if (loop) loop->running = false;
@@ -870,6 +908,9 @@ bool game_loop_step(GameLoop *loop)
     return true;
 }
 
+/* Runs frames until game_loop_step asks to stop. Blocking; `loop` is
+ * borrowed and NULL returns at once. Main thread, which owns the window,
+ * the engine and every JS handle the frames use. */
 void game_loop_run(GameLoop *loop)
 {
     if (!loop) return;

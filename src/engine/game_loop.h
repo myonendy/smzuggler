@@ -47,11 +47,12 @@ void game_loop_run(GameLoop *loop);
 /* Request the game loop to stop (from JS or another thread). */
 void game_loop_request_stop(GameLoop *loop);
 
+struct Renderer;
+
 /* Debug aid: stop automatically after max_frames frames (0 = never). When
    screenshot_path is non-NULL, the final frame is read back through
    *renderer_slot (dereferenced at capture time, since the renderer is created
    lazily by the game) and written there as a binary PPM (P6). */
-struct Renderer;
 void game_loop_set_frame_limit(GameLoop *loop, int max_frames,
                                const char *screenshot_path, struct Renderer **renderer_slot);
 

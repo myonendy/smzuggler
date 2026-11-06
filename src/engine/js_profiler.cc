@@ -62,6 +62,7 @@ constexpr const char *kTitle = "smzuggler";
 // Collects CpuProfile::Serialize output in memory, because URLs have to be
 // made game-relative before the file is written.
 class StringStream : public v8::OutputStream {
+    // Output is buffered in memory so URLs can be rewritten before writing.
    public:
     // Nothing left to flush: the bytes are already in `data`.
     void EndOfStream() override {}
