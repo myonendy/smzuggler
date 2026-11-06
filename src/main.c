@@ -14,6 +14,7 @@
  * Modified 2026-11-05: start an optional V8 CPU profile from --cpu-prof.
  * Modified 2026-11-05: enable --frame-stats JSON Lines and summary output.
  * Modified 2026-11-06: add the §14 perf-suite and fixture-import harness.
+ * Modified 2026-11-06: dispatch --scrub-report to the outside-tester scrubber.
  *
  * Runtime entry point; owns startup and shutdown on the main thread.
  * See docs/DECISIONS.md (DEC-M0-T001) for identity ownership.
@@ -796,13 +797,14 @@ static void fatal_error(const char *fmt, ...)
     platform_show_error_dialog(APP_TITLE, msg);
 }
 
-/** True when DIR contains the packager; copies its path into OUT (caller-owned). */
-static bool share_try_script(const char *dir, char *out, size_t n)
+/** True when DIR contains REL (or its packaged FALLBACK); copy the path to OUT. */
+static bool tool_script_at(const char *dir, const char *rel, const char *fallback,
+                           char *out, size_t n)
 {
-    int k = snprintf(out, n, "%s/tools/share/make_bundle.py", dir);
-    if (k > 0 && (size_t)k < n && file_io_exists(out)) return true;
-    k = snprintf(out, n, "%s/share/make_bundle.py", dir);
-    return k > 0 && (size_t)k < n && file_io_exists(out);
+    int written = snprintf(out, n, "%s/%s", dir, rel);
+    if (written > 0 && (size_t)written < n && file_io_exists(out)) return true;
+    written = snprintf(out, n, "%s/%s", dir, fallback);
+    return written > 0 && (size_t)written < n && file_io_exists(out);
 }
 
 /** Strip a trailing slash so parent walking does not stall on SDL_GetBasePath. */
@@ -813,8 +815,9 @@ static void share_trim(char *dir)
         dir[--n] = '\0';
 }
 
-/** Walk START and its parents looking for the packager; OUT is caller-owned. */
-static bool share_walk(const char *start, char *out, size_t n)
+/** Walk START and its parents looking for a tool; OUT is caller-owned. */
+static bool tool_walk(const char *start, const char *rel, const char *fallback,
+                      char *out, size_t n)
 {
     char dir[1024];
     if (!start || !start[0]) return false;
@@ -822,7 +825,7 @@ static bool share_walk(const char *start, char *out, size_t n)
     share_trim(dir);
     for (int i = 0; i < 8; i++) {
         char *slash;
-        if (share_try_script(dir, out, n)) return true;
+        if (tool_script_at(dir, rel, fallback, out, n)) return true;
         slash = strrchr(dir, '/');
 #ifdef _WIN32
         {
@@ -837,13 +840,15 @@ static bool share_walk(const char *start, char *out, size_t n)
     return false;
 }
 
-/** Locate make_bundle.py from the executable, argv0 or cwd; OUT is caller-owned. */
-static bool share_find(const char *argv0, char *out, size_t n)
+/** Locate a Python tool from the executable, argv0 or cwd; OUT is caller-owned. */
+static bool tool_find(const char *argv0, const char *rel, const char *fallback,
+                      char *out, size_t n)
 {
     const char *base = SDL_GetBasePath();
     char cwd[1024];
-    if (base && share_walk(base, out, n)) return true;
-    if (smz_getcwd(cwd, sizeof(cwd)) && share_walk(cwd, out, n)) return true;
+    if (base && tool_walk(base, rel, fallback, out, n)) return true;
+    if (smz_getcwd(cwd, sizeof(cwd)) && tool_walk(cwd, rel, fallback, out, n))
+        return true;
     if (argv0 && strpbrk(argv0, "/\\")) {
         char *slash;
         snprintf(cwd, sizeof(cwd), "%s", argv0);
@@ -857,7 +862,7 @@ static bool share_find(const char *argv0, char *out, size_t n)
 #endif
         if (slash) {
             *slash = '\0';
-            if (share_walk(cwd, out, n)) return true;
+            if (tool_walk(cwd, rel, fallback, out, n)) return true;
         }
     }
     return false;
@@ -891,7 +896,8 @@ static int share_bundle_run(const char *out_path, const char *argv0)
     char script[1024];
     const char *out;
     char *args[6];
-    if (!share_find(argv0, script, sizeof(script))) {
+    if (!tool_find(argv0, "tools/share/make_bundle.py",
+                   "share/make_bundle.py", script, sizeof(script))) {
         fprintf(stderr, "share-bundle: tools/share/make_bundle.py not found\n");
         return 1;
     }
@@ -900,6 +906,35 @@ static int share_bundle_run(const char *out_path, const char *argv0)
     args[1] = script;
     args[2] = "--last-run";
     args[3] = "-o";
+    args[4] = (char *)out;
+    args[5] = NULL;
+    return share_spawn(args);
+}
+
+/** Dispatch --scrub-report to tools/perf/scrub_report.py (spec §14.8).
+ * report_dir is the --perf-suite output directory; out_path may be NULL for
+ * the default archive name. argv0 locates the source tree. The calling thread
+ * owns the strings and this function keeps none of them. */
+static int scrub_report_run(const char *report_dir, const char *out_path,
+                            const char *argv0)
+{
+    char script[1024];
+    const char *out;
+    char *args[7];
+    if (!report_dir || !report_dir[0]) {
+        fprintf(stderr, "scrub-report: give the report directory\n");
+        return 2;
+    }
+    if (!tool_find(argv0, "tools/perf/scrub_report.py",
+                   "perf/scrub_report.py", script, sizeof(script))) {
+        fprintf(stderr, "scrub-report: tools/perf/scrub_report.py not found\n");
+        return 1;
+    }
+    out = (out_path && out_path[0]) ? out_path : "deck-report.zip";
+    args[0] = "python3";
+    args[1] = script;
+    args[2] = (char *)report_dir;
+    args[3] = "--out";
     args[4] = (char *)out;
     args[5] = NULL;
     return share_spawn(args);
@@ -1334,6 +1369,9 @@ static int runtime_main(int argc, char *argv[])
     const char *dump_path = NULL;
     bool share_requested = false;
     const char *share_path = NULL;
+    bool scrub_requested = false;
+    const char *scrub_path = NULL;
+    const char *scrub_out = NULL;
     bool cpu_prof_requested = false;
     const char *cpu_prof_path = NULL;
     const char *frame_stats_path = NULL;
@@ -1356,6 +1394,16 @@ static int runtime_main(int argc, char *argv[])
         } else if (strncmp(argv[i], "--share-bundle=", 15) == 0) {
             share_requested = true;
             share_path = argv[i] + 15;
+        } else if (strcmp(argv[i], "--scrub-report") == 0 && i + 1 < argc) {
+            scrub_requested = true;
+            scrub_path = argv[++i];
+        } else if (strncmp(argv[i], "--scrub-report=", 15) == 0) {
+            scrub_requested = true;
+            scrub_path = argv[i] + 15;
+        } else if (strcmp(argv[i], "--out") == 0 && i + 1 < argc) {
+            scrub_out = argv[++i];
+        } else if (strncmp(argv[i], "--out=", 6) == 0) {
+            scrub_out = argv[i] + 6;
         } else if (strcmp(argv[i], "--game") == 0 && i + 1 < argc) {
             game_dir = argv[++i];
         } else if (strcmp(argv[i], "--shims") == 0 && i + 1 < argc) {
@@ -1393,6 +1441,15 @@ static int runtime_main(int argc, char *argv[])
         } else if (strncmp(argv[i], "--cpu-prof=", 11) == 0) {
             cpu_prof_requested = true;
             cpu_prof_path = argv[i] + 11;
+        } else if (strcmp(argv[i], "--scrub-report") == 0 &&
+                   i + 1 < argc) {
+            i++; /* consumed by the scrub dispatch above */
+        } else if (strncmp(argv[i], "--scrub-report=", 15) == 0) {
+            continue; /* consumed by the scrub dispatch above */
+        } else if (strcmp(argv[i], "--out") == 0 && i + 1 < argc) {
+            i++; /* consumed by the scrub dispatch above */
+        } else if (strncmp(argv[i], "--out=", 6) == 0) {
+            continue; /* consumed by the scrub dispatch above */
         } else if (strcmp(argv[i], "--perf-suite") == 0 ||
                    strncmp(argv[i], "--perf-suite=", 13) == 0) {
             continue; /* validated with the other §14 options above */
@@ -1426,6 +1483,10 @@ static int runtime_main(int argc, char *argv[])
 
     if (share_requested) {
         return share_bundle_run(share_path, argv[0]);
+    }
+
+    if (scrub_requested) {
+        return scrub_report_run(scrub_path, scrub_out, argv[0]);
     }
 
     if (dump_requested) {
