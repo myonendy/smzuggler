@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
 Modified 2026-10-31: record process.argv/cwd/exit and throwing require.
+Modified 2026-11-05: note the global alias installed by dom_shim.js.
 Shim inventory and ordering contract for the loader and diagnostic walker.
 Keep this order aligned with src/engine/script_loader.c; no game is required.
 -->
@@ -76,6 +77,12 @@ outside the loader's shim sequence, so it is outside this inventory.
 and navigator members, row structure, strict sorting and identical successive
 in-process runs without device bindings. This diagnostic is the runtime input
 for the compatibility table described in spec §15.4.
+
+`dom_shim.js` installs `window`, `self` and `global` as aliases of
+`globalThis`, all referring to the same object. `global` mirrors the NW.js/Node
+global alias so map-transfer plugins can probe `typeof global.gc` without a
+`ReferenceError`; the shim does not expose garbage collection, so that probe is
+false and the plugin skips its `global.gc()` call.
 
 `storage_shim.js` finishes the §5.3 `process` surface: `process.argv` is
 Chrome/NW.js-shaped (`chrome`, `index.html`), `process.cwd()` is the game

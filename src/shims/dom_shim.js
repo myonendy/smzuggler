@@ -1711,6 +1711,9 @@
 
     globalThis.window = window;
     globalThis.self = window;
+    /* NW.js/Node alias: plugins probe `global.gc` (for example during map
+       transfer). Without the alias that read is a ReferenceError. */
+    globalThis.global = window;
     globalThis.document = document;
     globalThis.Event = Event;
     /* window.name: the browsing context name, "" by default. Scripts read
