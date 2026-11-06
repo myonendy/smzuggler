@@ -51,6 +51,11 @@ void error_handler_init(const char *log_file_path, LogLevel min_level)
     }
 }
 
+/* Closes the log file and forgets the capture callback.
+ *
+ * Why: the file and callback are process-wide resources; shutdown releases
+ * them deterministically instead of relying on exit. The callback itself
+ * stays owned by its installer. Main thread; safe to call twice. */
 void error_handler_shutdown(void)
 {
     if (s_log_file) {
@@ -61,22 +66,32 @@ void error_handler_shutdown(void)
     s_callback_userdata = NULL;
 }
 
+/* Returns the fixed spelling of `level`, or "UNKNOWN" outside the enum.
+ * The result points at static storage and must not be freed. Any thread. */
 const char *error_handler_level_name(LogLevel level)
 {
     if (level < LOG_DEBUG || level > LOG_ERROR) return "UNKNOWN";
     return s_level_names[level];
 }
 
+/* Sets the process-wide minimum level; lower messages are discarded.
+ * `min_level` is borrowed by value and kept until changed again. Main
+ * thread, where the level is read. */
 void error_handler_set_level(LogLevel min_level)
 {
     s_min_level = min_level;
 }
 
+/* Returns the current minimum level (LOG_DEBUG when never set). Main thread. */
 LogLevel error_handler_get_level(void)
 {
     return s_min_level;
 }
 
+/* Installs `cb` as an additional log sink and `userdata` as its argument.
+ * Why: tests and hosts need to observe log lines without scraping stdio.
+ * NULL `cb` removes the sink; the installer owns `userdata`, which is
+ * borrowed for each call. Main thread. */
 void error_handler_set_callback(LogCallback cb, void *userdata)
 {
     s_callback = cb;
@@ -130,6 +145,12 @@ void error_handler_log(LogLevel level, const char *fmt, ...)
     }
 }
 
+/* Logs at ERROR and, when SDL is initialised, shows a message box.
+ *
+ * Why: fatal startup errors have no JS or window owner to report through.
+ * `title` and `message` are borrowed for the call and may be NULL (they
+ * default to "Error" and ""); the text is scrubbed by the logger. Main
+ * thread; the SDL call blocks until the user dismisses it. */
 void error_handler_show_error_dialog(const char *title, const char *message)
 {
     error_handler_log(LOG_ERROR, "%s: %s", title ? title : "Error", message ? message : "");

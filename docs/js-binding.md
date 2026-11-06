@@ -1,6 +1,8 @@
 <!--
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
+Modified 2026-11-05: complete the jsb API reference, the §15.8 lifetime
+rules with examples, and the binding, error and threading guides (M1-T030).
 Modified 2026-11-05: make V8 the sole engine and retire the adoption bridge.
 Modified 2026-11-04: document the Canvas2D binding port and baseline.
 Modified 2026-11-01: add persistent callbacks.
@@ -31,9 +33,12 @@ How native C bindings talk to the JS engine through jsb.h, and the handle rules.
 bindings move to V8 by near-mechanical rewriting (spec §4.1). It is **not** an engine
 abstraction: its one real implementation is `src/jsb/jsb_v8.cc`.
 
-Status: core API (M1-T003), zero-copy buffers (M1-T005) and persistent callbacks
-(M1-T006). The library target is `smz_jsb`; `jsb.h` itself is plain C11 and includes no C++ or V8 header (checked by
-`tests/smz/test_jsb_header.c` on V8).
+Status: core API (M1-T003), zero-copy buffers (M1-T005), persistent callbacks
+(M1-T006) and the complete API guide with the §15.8 rules and examples (M1-T030).
+The library target is `smz_jsb`; `jsb.h` itself is plain C11 and includes no C++ or V8
+header (checked by `tests/smz/test_jsb_header.c` on V8). Every function in `src/jsb/`,
+`src/bindings/` and `src/engine/` carries a §15.1 doc comment, checked by
+`tools/doclint/doclint.py`.
 
 V8 is the sole engine (M1-T027); the former backend and adoption bridge
 have been removed, ending DEC-SETUP-003. CMake imports the prebuilt monolith
@@ -80,7 +85,7 @@ in a `TryCatch` that it resets. On V8 `jsb_throw_internal` makes an `Error` whos
 | `JS_ThrowInternalError`, `JS_ThrowOutOfMemory` | `jsb_throw_internal` (`"out of memory"`) |
 | `JS_GetVersion` | `jsb_engine_version` |
 
-## Ported bindings
+## Ported asset and media bindings
 
 Each port defines its module in `bind_<x>_define(jsb_runtime *rt, ...)`. M1-T026 removed
 the transitional `bind_<x>_register(struct JSContext *, ...)` wrappers; every caller now
@@ -202,38 +207,105 @@ the new parity test supplies that coverage.
 
 ## API
 
-### Host side
-| Call | Purpose |
-| --- | --- |
-| `jsb_set_flags(flags)` | Engine flags such as `--expose-gc`, process-wide. Only before the first runtime (V8 freezes its flags); false afterwards. |
-| `jsb_runtime_create(argv0, icu_data_path)` | One isolate and one context. The first call starts V8 for the process. NULL on failure, reason on stderr. |
-| `jsb_runtime_destroy(rt)` | Frees the runtime. |
-| `jsb_runtime_setup(rt, fn, user)` | Runs `fn(ctx, user)` in a fresh handle scope, for defining modules. |
-| `jsb_runtime_eval(rt, src, file, out, cap)` | Runs a classic script; writes `String(result)` or the thrown value's string to `out`. True when it completed. |
+`jsb.h` is the complete interface; this section is the guide to it. Unless an entry says
+otherwise, every call runs on the main thread. *Borrowed* arguments are read during the
+call and never kept; *call-scoped* handles (`jsb_val *`, `jsb_ctx *`) die when the native
+call or setup callback that received the context returns.
 
-### Inside a native function (`void fn(jsb_ctx *ctx)`)
-| Call | Behaviour |
+### Runtime (host side)
+
+| Call | Contract |
 | --- | --- |
-| `jsb_arg_count` | Number of arguments the caller passed. |
-| `jsb_arg_i32(ctx, i, &out)` | Needs a Number; converted like ToInt32 (wraps, NaN is 0). |
+| `jsb_set_flags(flags)` | Passes space-separated V8 flags such as `--expose-gc` for every runtime of the process. `flags` is borrowed. Only before the first runtime (V8 freezes its flags); false afterwards, with a message. Main thread. |
+| `jsb_runtime_create(argv0, icu_data_path)` | Creates one isolate and one context; the first call starts V8 for the process. `argv0` and `icu_data_path` are borrowed. Returns NULL and prints the reason on stderr on failure. Free with `jsb_runtime_destroy`. Main thread. |
+| `jsb_runtime_destroy(rt)` | Destroys `rt` and every JS object it owns, releasing live callbacks and external buffers; NULL is ignored. Native pointers that bindings stored in JS objects are not freed here. Main thread. |
+| `jsb_runtime_setup(rt, fn, user)` | Runs `fn(ctx, user)` inside a fresh handle scope so host code can define modules. `user` is passed through untouched. Returns false, after printing a pending exception on stderr, when `fn` failed. Main thread. |
+| `jsb_runtime_eval(rt, src, file, out, cap)` | Compiles and runs `src` (UTF-8, borrowed) as a classic script named `file` (borrowed). Writes `String(result)`, or on a throw the thrown value's `String()`, as UTF-8 into `out` (`cap` bytes, truncated, NUL-terminated) when `out` is non-NULL. Returns true when the script completed. Main thread. |
+| `jsb_engine_version()` | Returns the engine's version string in static storage (never NULL), for `process.versions`-style reports. Any thread. |
+| `jsb_set_error_handler(rt, fn, user)` | Routes exceptions thrown by `jsb_callback_call` to `fn(message, stack, user)`; NULL restores the stderr default. `user` is borrowed. Main thread. |
+
+### Arguments
+
+Every typed getter takes a 0-based `index`; a missing argument counts as `undefined`.
+On a wrong type the getter throws a `TypeError: argument N must be ...` (N counts from 1)
+and returns false or NULL. **When that happens, return at once.** Getters never coerce
+(DEC-M1-T003).
+
+| Call | Contract |
+| --- | --- |
+| `jsb_arg_count(ctx)` | Number of arguments the caller passed (0 outside a call). |
+| `jsb_arg_i32(ctx, i, &out)` | Needs a Number, converted like ToInt32 (wraps modulo 2^32, NaN becomes 0). |
 | `jsb_arg_f64(ctx, i, &out)` | Needs a Number. |
-| `jsb_arg_bool(ctx, i, &out)` | Needs a Boolean; no truthiness. |
-| `jsb_arg_str(ctx, i, buf, cap, &len)` | Needs a String; UTF-8 into `buf`, NUL-terminated. RangeError if it needs more than `cap - 1` bytes. |
-| `jsb_arg_obj(ctx, i)` | Needs an Object (functions and arrays count, `null` does not). |
-| `jsb_arg_val(ctx, i)` | Any value; never throws. |
-| `jsb_arg_bytes(ctx, i, &data, &len)` | Needs an ArrayBuffer, TypedArray or DataView; gives its bytes in place (see "Buffers"). TypeError if detached. |
+| `jsb_arg_bool(ctx, i, &out)` | Needs a Boolean; there is no truthiness. |
+| `jsb_arg_str(ctx, i, buf, cap, &len)` | Needs a String; copies UTF-8 into `buf`, NUL-terminates, and writes the byte length (embedded NULs kept) to `len` when non-NULL. RangeError, writing nothing, when the text needs more than `cap - 1` bytes. `buf` is caller-owned. |
+| `jsb_arg_obj(ctx, i)` | Needs an Object (functions and arrays count; `null` does not). Returns NULL after a TypeError otherwise. |
+| `jsb_arg_val(ctx, i)` | Any value, `undefined` when missing; never throws. |
+| `jsb_arg_bytes(ctx, i, &data, &len)` | Needs an ArrayBuffer, TypedArray or DataView; returns its bytes in place (byte offset applied, length in bytes). `data` may be NULL when `len` is 0. The memory stays JS-owned and is valid only for this call, and only while no JS runs (see "Buffers"). TypeError for another type, a detached buffer or a view on one; SharedArrayBuffer is refused. |
 | `jsb_arg_is_array_buffer(ctx, i)` | True only for a plain ArrayBuffer, not a TypedArray, DataView or SharedArrayBuffer. An intrinsic brand check that runs no getters; never throws. |
-| `jsb_new_external_buffer(ctx, data, len, free_fn, user)` | Wraps native memory as an ArrayBuffer without copying; JS then owns it. |
-| `jsb_adjust_external_memory(ctx, change)` | Reports native memory held by JS wrappers to the GC; returns the runtime's total. |
-| `jsb_ret_undefined/_bool/_i32/_f64/_str/_val` | Set the result; the last call wins; ignored after a throw. |
-| `jsb_throw_type/_range(ctx, fmt, ...)` | Throw TypeError/RangeError with a printf-style message. Only the first throw of a call counts. |
-| `jsb_new_object`, `jsb_set_fn`, `jsb_set_prop`, `jsb_get_prop` | Build and read objects. `jsb_set_fn` defines a writable, configurable, non-enumerable function property; set and get are ordinary `[[Set]]`/`[[Get]]`, so accessors run. |
-| `jsb_define_module(ctx, name, init)` | Makes a fresh object, fills it with `init`, then sets the global `name`. A failed `init` leaves no global. |
+| `jsb_arg_truthy(ctx, i)` | Returns ToBoolean(`arg[i]`) (JS_ToBool). Never throws. |
+| `jsb_arg_to_i32(ctx, i, &out)` | Coerces with ToInt32, running `valueOf`/`toString`/`Symbol.toPrimitive`; a Symbol is a TypeError. False with the exception pending on a throw. |
+| `jsb_arg_to_u32(ctx, i, &out)` | Coerces with ToUint32; otherwise as `jsb_arg_to_i32`. |
+| `jsb_arg_to_f64(ctx, i, &out)` | Coerces with ToNumber; otherwise as `jsb_arg_to_i32`. |
+| `jsb_arg_to_str(ctx, i, &len)` | Coerces with ToString and returns NUL-terminated UTF-8 in new memory; write the byte length (embedded NULs kept) to `len` when non-NULL. The caller frees it with `jsb_free_str`. NULL after a conversion throw or an InternalError "out of memory". |
+| `jsb_free_str(str)` | Frees a string from `jsb_arg_to_str`; NULL is ignored and it is safe after the call has returned. |
 
-**Missing arguments** count as `undefined`, so every typed getter throws
-`TypeError: argument N must be ...` (N counts from 1) for them. Getters never coerce
-(DEC-M1-T003). When a getter returns false or NULL, an exception is pending: return at
-once. A function that sets no result returns `undefined`.
+### Return values
+
+| Call | Contract |
+| --- | --- |
+| `jsb_ret_undefined`, `jsb_ret_bool`, `jsb_ret_i32`, `jsb_ret_f64`, `jsb_ret_str`, `jsb_ret_val` | Sets the function's result; the last call wins and calls after a throw are ignored. `jsb_ret_str` copies NUL-terminated UTF-8 (`NULL` throws a TypeError); `jsb_ret_val` copies the handle (`NULL` means `undefined`). Nothing set means `undefined`. |
+| `jsb_new_i32/_u32/_f64/_bool/_null` | Builds a call-scoped Number, Boolean or `null` handle; never NULL. |
+| `jsb_new_str(ctx, utf8)` | Builds a String copied from NUL-terminated UTF-8 (borrowed); `NULL` throws a TypeError and returns NULL. |
+| `jsb_new_str_len(ctx, utf8, len)` | Builds a String from `len` UTF-8 bytes that may contain embedded NULs and need not be NUL-terminated. `utf8` may be NULL only when `len` is 0; more than `INT32_MAX` bytes is a RangeError. |
+| `jsb_new_array(ctx)` | Builds a new empty Array; never NULL. |
+| `jsb_new_object(ctx)` | Builds a new empty plain object; never NULL. |
+| `jsb_new_buffer_copy(ctx, data, len)` | Builds an ArrayBuffer holding a copy of `len` bytes; the engine owns the copy and the caller keeps `data` (borrowed). `data` may be NULL only when `len` is 0; more than `INT32_MAX` bytes is a RangeError. |
+| `jsb_set_index(ctx, obj, i, val)` | Ordinary `obj[i] = val`, so an array grows; a non-object `obj` or NULL `val` is a TypeError. False with the exception pending when the assignment threw. |
+| `jsb_get_index(ctx, obj, i)` | Returns `obj[i]` (`undefined` if absent), running getters. A non-object `obj` is a TypeError; NULL is also returned when a getter threw (exception pending). |
+| `jsb_is_array(ctx, val)` | `Array.isArray`; NULL is false and it never throws. |
+| `jsb_val_to_f64/_i32/_u32(ctx, val, &out)` | ToNumber/ToInt32/ToUint32 of an element; NULL `val` is a TypeError and throws as the `jsb_arg_to_*` calls do. |
+| `jsb_val_type(ctx, val)` | Kind of `val` (JS_IsNull/JS_IsUndefined and friends); NULL counts as undefined, and objects, functions, symbols and BigInts are all `JSB_TYPE_OBJECT`. Never throws. |
+
+### Objects, functions and modules
+
+| Call | Contract |
+| --- | --- |
+| `jsb_set_fn(ctx, obj, name, fn)` | `JS_CFUNC_DEF`: defines `obj[name]` as a function calling `fn`, with `name` as its `name`. The property is writable, configurable and non-enumerable. `fn` must stay valid for the runtime's lifetime. False with the exception pending when the set failed. |
+| `jsb_set_fn_n(ctx, obj, name, fn, length)` | As `jsb_set_fn`, and sets the function's `length` to `length` (0..255), like `JS_CFUNC_DEF`'s arity; out of range is a RangeError. The function is non-constructable on V8. |
+| `jsb_set_prop(ctx, obj, name, val)` | Ordinary `obj[name] = val`, so setters run. False with the exception pending when it threw. |
+| `jsb_get_prop(ctx, obj, name)` | Returns `obj[name]` (`undefined` if absent), running getters. NULL when a getter threw (exception pending). |
+| `jsb_define_module(ctx, name, init)` | Makes a fresh object, fills it with `init`, then sets the global `name` (for example `__native_audio`). The global appears only after `init` succeeds, so a failed init leaves no half-built module. False when `init` failed or the global could not be set. |
+
+### Errors
+
+| Call | Contract |
+| --- | --- |
+| `jsb_throw_type/_range(ctx, fmt, ...)` | Throws a TypeError or RangeError with a printf-style message (truncated to 255 bytes). Only the first throw of a call counts. |
+| `jsb_throw_error(ctx, fmt, ...)` | Throws a plain Error. |
+| `jsb_throw_internal(ctx, fmt, ...)` | Throws an InternalError; on V8, which has no InternalError, it is an Error whose own `name` is `"InternalError"`, so `String(e)` and `e.name` match and `e instanceof Error` holds. `jsb_throw_internal(ctx, "out of memory")` replaces JS_ThrowOutOfMemory. |
+| `jsb_clear_exception(ctx)` | Drops the call's pending exception so the binding can continue (for example to try a fallback argument form); `jsb_ret_*` and `jsb_throw_*` work again. A watchdog termination is never dropped. Does nothing when nothing is pending. |
+
+### Native memory
+
+| Call | Contract |
+| --- | --- |
+| `jsb_new_external_buffer(ctx, data, len, free_fn, user)` | Wraps `len` bytes of native memory as an ArrayBuffer without copying; on success JS owns the memory and `free_fn(data, len, user)` runs exactly once (after collection or detach, or at `jsb_runtime_destroy`). NULL `data`/`free_fn` is a TypeError, an oversize `len` a RangeError; on failure the caller still owns `data`. See "Buffers". |
+| `jsb_adjust_external_memory(ctx, change)` | Adds `change` bytes to the runtime's external-memory accounting (V8's `AdjustAmountOfExternalAllocatedMemory`) and returns the new total. Use it for native memory reachable through a small JS wrapper, adding when made and subtracting when freed. A negative total is refused with -1 and a message. |
+
+### Persistent callbacks
+
+| Call | Contract |
+| --- | --- |
+| `jsb_callback_new(ctx, fn, &cb)` | Keeps a callable `fn` in a strong `Global`; the handle survives the call. TypeError (false, `cb` zeroed) when `fn` is NULL or not callable. Main thread. |
+| `jsb_callback_call(cb, argc, argv, &ret)` | Calls the function with `this` undefined in its own handle scope, using 0..64 `jsb_cval` arguments (`argv` may be NULL at 0). Returns `JSB_OK`, `JSB_ERR_THREW` (reported to the error handler; `ret` is `undefined`), `JSB_ERR_HANDLE` or `JSB_ERR_ARG`. Main thread. |
+| `jsb_callback_free(&cb)` | Releases the function and zeroes `*cb`; false for a zero, freed or stale handle. Never from a `jsb_free_fn`. Main thread. |
+
+Types used by callbacks: `jsb_cval` (undefined, null, Boolean, Number or borrowed String
+argument), `jsb_result` (type plus Boolean/Number or a caller `str`/`str_cap` buffer with
+`str_len`), `jsb_status`, `jsb_type` and `jsb_error_fn`. No `jsb_val` crosses a callback
+boundary as an argument or result.
+
+### A complete module
 
 ```c
 static void fn_add(jsb_ctx *ctx) {
@@ -242,11 +314,58 @@ static void fn_add(jsb_ctx *ctx) {
     jsb_ret_f64(ctx, a + b);
 }
 static bool init_math(jsb_ctx *ctx, jsb_val *m) {
-    return jsb_set_fn(ctx, m, "add", fn_add);
+    return jsb_set_fn_n(ctx, m, "add", fn_add, 2);
 }
 /* in a jsb_runtime_setup callback: */
 jsb_define_module(ctx, "__native_math", init_math);
 ```
+
+## Error conventions
+
+Every native function follows the same pattern, so a binding reads as one shape:
+
+1. **A getter that fails throws and returns false or NULL.** The pending exception is
+   already the best message (`TypeError: argument N must be ...`, a conversion error from
+   user code, or a RangeError). Return immediately; do not overwrite it with a second,
+   vaguer error.
+2. **Throw once.** Only the first `jsb_throw_*` of a call counts; later throws are ignored
+   so the most specific error reaches JS. After a throw, `jsb_ret_*` is ignored too.
+3. **Catching and continuing** is explicit: `jsb_clear_exception` drops a pending
+   exception when a binding has a fallback. It never drops a watchdog termination.
+4. **Error types keep the pre-port contract.** `TypeError` for a wrong argument or a
+   failed brand check, `RangeError` for an out-of-range size or index, `Error` for a
+   general failure, and `InternalError` for allocation and internal failures. On V8 the
+   last is an `Error` whose own `name` is `"InternalError"`, so `e.name`, `String(e)` and
+   `e instanceof Error` all match what the QuickJS binding produced.
+5. **Messages name the function and the argument**, for example
+   `TypeError: loadFromMemory requires an ArrayBuffer` or
+   `RangeError: invalid audio bus: 4`. They are ASCII UTF-8 and are truncated to 255
+   bytes by the seam.
+6. **Exceptions never cross into C.** A `jsb_callback_call` catches the throw, passes
+   `String(exception)` and its `stack` to the runtime's error handler, and returns
+   `JSB_ERR_THREW`. It does not reach the enclosing JS caller either, because the
+   callback has no JS stack frame of its own.
+7. **C never unwinds past a JS call.** A native function that cannot continue returns
+   after a throw; it does not `longjmp`, call JS again, or free engine-owned handles.
+
+```c
+static void fn_load(jsb_ctx *ctx) {
+    char path[4096];
+    size_t len = 0;
+    if (!jsb_arg_str(ctx, 0, path, sizeof(path), &len)) return;  /* TypeError */
+    if (!audio_load(path)) {
+        jsb_throw_error(ctx, "load: %s", path);                  /* one throw */
+        return;
+    }
+    jsb_ret_bool(ctx, true);
+}
+```
+
+`jsb_runtime_setup` and `jsb_runtime_eval` report a pending exception on stderr and
+return false; the caller decides whether that is fatal. The engine's error handler
+(`src/engine/error_handler.c`) turns exceptions that reach C from game code into a log
+line, a `window.onerror` dispatch and optionally a dialog; jsb callback errors are logged
+only, because a jsb error handler must not run JS.
 
 ## Ownership of strings
 * **Strings in** (`name`, `fmt`, `jsb_ret_str` text, script source) are borrowed for the
@@ -375,7 +494,7 @@ auto-save outcome, and that a throwing jsb callback is logged with its stack.
 The older `tests/test_error_handler.c` now reports through the engine-neutral
 `error_handler_report_js_error` on V8 without exposing engine handles.
 
-## Ported bindings
+## Ported platform and rendering bindings
 Each port keeps its JS API byte-for-byte (names, order, `length`, results, errors) and
 adds `bind_<x>_define(jsb_runtime *rt, ...)`; M1-T026 removed the old
 `bind_<x>_register(struct JSContext *, ...)` wrappers, and callers pass
@@ -469,25 +588,322 @@ adds `bind_<x>_define(jsb_runtime *rt, ...)`; M1-T026 removed the old
   `Platform *` is kept in a file static (jsb modules have no user pointer); no jsb handle
   is stored. `engine` is `jsb_engine_version()`, the running engine's version.
 
-## Handle rules (§15.8)
-These are the rules for code that touches V8 handles, in jsb and elsewhere (WebGL has
-its own GL-object rules in `webgl.md`).
+## How to add a binding
 
-* A `Local<T>` is a temporary handle, valid only until the `HandleScope` it was created
-  in ends. **Never store a `Local` in a C struct, a global or a static.**
-* Every native function called from JS and every callback we drive (timers, rAF, audio
-  and video events) opens its own `HandleScope`. A loop that creates many handles opens
-  one scope per iteration.
-* Return a `Local` out of a scope only with `EscapableHandleScope::Escape`.
-* To keep a JS object beyond the current call, use `v8::Global<T>`. Each Global has
-  exactly one owner, which calls `Reset()` when done; a leaked Global is leaked memory.
-* Weak Globals with finalizers only release native resources; the finalizer never runs
-  JS or touches GL.
-* Every `ArrayBuffer` backing store says who owns its memory (V8 or our allocator), and
-  external memory is reported with `AdjustAmountOfExternalAllocatedMemory`.
-* Only the main thread enters the isolate. Other threads post work to it.
+A binding is one C file pair plus one test. The goal is to keep the JS API identical to
+the one Outsider's QuickJS binding exposed, so the shim above it does not change.
 
-How jsb applies them:
+1. **Header.** Declare one entry point in `src/bindings/bind_<name>.h`:
+   `bool bind_<name>_define(jsb_runtime *rt, ...)`. Document that `rt` is borrowed, the
+   function is main-thread only, and what the extra borrowed services are (a `Platform *`
+   or `Renderer *`, for example). Include only `jsb/jsb.h`, not a V8 or engine header.
+2. **Module init.** Write `static bool <name>_module_init(jsb_ctx *ctx, jsb_val *module)`
+   that defines every function with `jsb_set_fn_n`, in the original order and with the
+   original `length`. Use `jsb_set_prop` for constants. Return `false` at the first
+   failure; `jsb_define_module` then leaves no global behind.
+3. **Setup callback.** A `jsb_setup_fn` calls
+   `jsb_define_module(ctx, "__native_<name>", <name>_module_init)`. The public entry
+   wraps it in `jsb_runtime_setup(rt, <name>_setup, NULL)`.
+4. **Arguments.** Read in the same order the QuickJS binding did. Use the typed getters
+   (`jsb_arg_i32`, `jsb_arg_f64`, `jsb_arg_bool`, `jsb_arg_str`, `jsb_arg_obj`) when the
+   old code required that type, and the coercing readers (`jsb_arg_to_i32/u32/f64/str`,
+   `jsb_arg_truthy`) when it called `JS_To*`. Read slice buffers last, after every
+   coercion that could run game JS and detach them.
+5. **Results.** Set one result with `jsb_ret_*` or build an object/array with the
+   `jsb_new_*` and `jsb_set_*` calls. A function that sets nothing returns `undefined`.
+6. **Errors.** Throw with `jsb_throw_type/_range/_error/_internal` and return; follow
+   "Error conventions" above. Never keep a `jsb_val`.
+7. **Register.** Call `bind_<name>_define(js_engine_get_jsb(engine), ...)` where the other
+   modules are defined, on the main thread after the engine exists.
+8. **Test.** Add `tests/smz/test_bind_<name>_jsb.c` and a
+   `tests/smz/<name>.cmake` fragment. Pin names, order, `length`, descriptors, results,
+   every binding-authored message and one real service round trip where possible; keep
+   the pre-port capture as the literal expectation.
+9. **Document.** Add the row to the ported-bindings table, record the parity evidence,
+   and add one `CHANGELOG.md` line under "Unreleased". No new dependency is needed.
+
+```c
+/* src/bindings/bind_math.c (sketch) */
+static void js_add(jsb_ctx *ctx) {
+    double a = 0, b = 0;
+    if (!jsb_arg_f64(ctx, 0, &a) || !jsb_arg_f64(ctx, 1, &b)) return;
+    jsb_ret_f64(ctx, a + b);
+}
+
+static bool math_module_init(jsb_ctx *ctx, jsb_val *module) {
+    return jsb_set_fn_n(ctx, module, "add", js_add, 2);
+}
+
+static bool math_setup(jsb_ctx *ctx, void *user) {
+    (void)user;
+    return jsb_define_module(ctx, "__native_math", math_module_init);
+}
+
+bool bind_math_define(jsb_runtime *rt) {
+    if (!rt) return false;
+    return jsb_runtime_setup(rt, math_setup, NULL);
+}
+```
+
+## Threading rules
+
+The runtime is single-threaded. The main thread creates the SDL window, the isolate and
+the context, evaluates scripts, drives the frame loop and owns every GL object. Only that
+thread may:
+
+* enter the isolate and create, use or destroy a `Local`, a `Global`, a `HandleScope`, a
+  `jsb_ctx` or a `jsb_val`;
+* call any jsb function except `jsb_engine_version`;
+* run JS callbacks (`jsb_callback_call`), timers, rAF, audio `onended` or video events;
+* touch a GL name, or call `glDelete*` for a queued name.
+
+Other threads only queue work; the main loop consumes it:
+
+* The audio mixer thread in `src/audio/audio_engine.cpp` consumes PCM under its mutex and
+  never calls JS or GL.
+* The watchdog thread in `src/engine/js_watchdog.cc` may call
+  `Isolate::RequestInterrupt`, which runs its handler on the main thread.
+* The optional control reader in `src/engine/game_loop.c` reads stdin and appends lines
+  under a mutex; the main loop evaluates them.
+* `game_loop_request_stop` only writes a `bool`; it is the one game-loop call documented
+  as safe from another thread.
+* A `jsb_free_fn` is the only jsb callback that may run off the main thread: V8 may invoke
+  it on a GC helper thread during collection, so it releases memory only and calls no jsb,
+  V8 or GL function and takes no lock the main thread may hold.
+
+```c
+/* A worker thread produces commands; it never touches the engine. */
+void audio_thread(void) {
+    QueueItem item = {.kind = AUDIO_ENDED, .voice = id};
+    queue_push(&audio_events, &item);
+}
+
+/* The main loop drains the queue and is the only thread that runs the callback. */
+void main_loop_drain_audio(void) {
+    QueueItem item;
+    while (queue_pop(&audio_events, &item)) {
+        jsb_cval arg = {JSB_TYPE_NUMBER, false, (double)item.voice, NULL};
+        jsb_callback_call(g_onended, 1, &arg, NULL);
+    }
+}
+```
+
+<a id="handle-rules"></a>
+## Lifetime and handle rules (§15.8)
+
+These rules make handle lifetime deterministic in a C runtime. They apply to `jsb`,
+`js_engine_v8.cc` and every binding; the GL half applies to the renderer and canvas
+bindings and is expanded in `webgl.md` when M2 adds real WebGL. A short comment in every
+file that touches handles or GL objects points here (§15.8).
+
+### A `Local<T>` lives only inside its `HandleScope`
+
+A `Local<T>` is a temporary handle, valid only until the `HandleScope` it was created in
+ends. **Never store a `Local` in a C struct, a global or a static.**
+
+```cpp
+// Wrong: `cached` outlives the scope that made it, so the slot is reused.
+static v8::Local<v8::Object> cached;
+
+// Right: keep a Global (next rule), or copy the C data you actually need.
+static v8::Global<v8::Object> cached_global;
+```
+
+### Open a `HandleScope` per call and per loop iteration
+
+Every native function called from JS, and every callback we drive (timers, rAF, audio
+and video events), opens its own `HandleScope`. A loop that creates many handles opens
+one scope per iteration so handles do not pile up.
+
+```cpp
+void on_timer(v8::Isolate *isolate) {
+    v8::HandleScope call_scope(isolate);   // one per callback
+    // ...
+}
+
+for (int i = 0; i < count; i++) {
+    v8::HandleScope iteration(isolate);    // many values, one scope each
+    v8::Local<v8::Value> v = make_value(isolate, i);
+    consume(isolate, v);
+}
+```
+
+### Leave a scope only through `EscapableHandleScope::Escape`
+
+Return a `Local` out of a scope with `EscapableHandleScope::Escape`. Nothing else is
+safe: returning a plain `Local` from a helper whose scope has ended hands back a dead
+slot.
+
+```cpp
+v8::Local<v8::Value> make_object(v8::Isolate *isolate) {
+    v8::EscapableHandleScope scope(isolate);
+    v8::Local<v8::Object> object = v8::Object::New(isolate);
+    return scope.Escape(object);           // the only safe way out
+}
+```
+
+### Keep a JS object in a `v8::Global<T>` with one owner
+
+To keep a JS object beyond the current call, use `v8::Global<T>`. Each Global has exactly
+one owner, and the owner calls `Reset()` when done. Leaked Globals are leaked memory, and
+they also keep the object (and anything it references) alive.
+
+```cpp
+struct AudioVoice {
+    v8::Global<v8::Function> onended;      // owned by this voice
+};
+
+voice->onended.Reset(isolate, local_fn);   // take ownership
+// ... frames later, when the voice can no longer end:
+voice->onended.Reset();                    // release exactly once
+```
+
+jsb wraps this rule in `jsb_callback`: `jsb_callback_new` takes the Global,
+`jsb_callback_call` uses it, and `jsb_callback_free` resets it. `jsb_runtime_destroy`
+resets any that remain.
+
+### Weak Globals with finalizers only release native resources
+
+Weak Globals with finalizers are used only to release native resources. The finalizer
+does not run JS and does not touch GL, because it may run during a GC, on a GC helper
+thread, while the main thread holds locks.
+
+```cpp
+static void on_texture_collected(const v8::WeakCallbackInfo<Texture> &info) {
+    delete info.GetParameter();            // release C memory only
+}
+
+v8::Global<v8::Object> wrapper;
+wrapper.SetWeak(texture, on_texture_collected,
+                v8::WeakCallbackType::kParameter);
+```
+
+For GL names the finalizer must not call GL either; it queues the name (see "A GC
+finalizer queues GL names" below).
+
+### Say who owns every `ArrayBuffer` backing store
+
+Every `ArrayBuffer` backing store states who owns its memory: V8, or our allocator. Report
+native memory that JS keeps alive through another object with
+`AdjustAmountOfExternalAllocatedMemory`, so GC timing stays honest. jsb exposes both
+forms: `jsb_new_buffer_copy` gives V8 the copy, `jsb_new_external_buffer` hands native
+memory to JS with a `free_fn`, and `jsb_adjust_external_memory` reports memory behind a
+small wrapper.
+
+```c
+/* V8 owns this copy; the caller keeps `data`. */
+jsb_val *copy = jsb_new_buffer_copy(ctx, data, len);
+
+/* JS owns this native block; free_pixels runs exactly once. */
+jsb_val *external = jsb_new_external_buffer(ctx, pixels, bytes,
+                                            free_pixels, NULL);
+
+/* A texture behind a tiny JS wrapper: report the real cost. */
+jsb_adjust_external_memory(ctx, (int64_t)bytes);   /* when created */
+/* ... when the texture is freed ... */
+jsb_adjust_external_memory(ctx, -(int64_t)bytes);
+```
+
+Do not report an external buffer twice: V8 already counts `jsb_new_external_buffer`
+memory.
+
+### Only the main thread enters the isolate
+
+Only the main thread enters the isolate. Other threads post work to it; they never call
+V8, never touch a `Local`, a `Global` or a `jsb_ctx`. This is why the audio mixer thread
+and the watchdog timer call host services or `Isolate::RequestInterrupt`, not JS.
+
+```c
+/* Wrong: a worker thread entering the isolate. */
+void audio_thread(void) {
+    v8::Isolate *isolate = run->isolate;
+    v8::HandleScope scope(isolate);        // never on this thread
+}
+
+/* Right: the worker queues work; the main loop runs it on its next turn. */
+void audio_thread(void) {
+    queue_event(AUDIO_ENDED, voice_id);
+    /* game_loop_step calls jsb_callback_call on the main thread. */
+}
+```
+
+### Every GL object belongs to one context and the main thread
+
+Every GL object (texture, buffer, framebuffer, renderbuffer, program, shader, VAO,
+query, sampler) belongs to one context and is only touched on the main thread.
+
+```c
+/* The renderer binding runs inside a JS call on the main thread, so it may
+   create the texture directly; no other thread may use `name`. */
+GLuint name = 0;
+glGenTextures(1, &name);
+```
+
+### A JS WebGL object wraps exactly one GL name and owns it
+
+Each JS WebGL object (`WebGLTexture` and so on) wraps exactly one GL name and **owns**
+it. Nothing else deletes that name.
+
+```c
+typedef struct {
+    GLuint name;      /* owned by this wrapper */
+    bool alive;
+} WebGLTexture;
+```
+
+### A GC finalizer queues GL names; the frame drains the queue
+
+The GL name is freed when JS calls `delete*()`, or when the wrapper is garbage-collected.
+A GC finalizer never calls GL directly: it **queues** the name, and the queue is drained
+at the end of the frame on the main thread.
+
+```c
+static void texture_finalizer(const v8::WeakCallbackInfo<WebGLTexture> &info) {
+    queue_gl_delete(GL_TEXTURE, info.GetParameter()->name);   /* no GL here */
+    delete info.GetParameter();
+}
+
+/* end of frame, main thread: */
+drain_gl_delete_queue();                                     /* calls glDelete* */
+```
+
+### After `delete*()` the wrapper is dead and reports Chrome's error
+
+After `delete*()`, the wrapper is marked dead, and later use reports the same WebGL
+error that Chrome does.
+
+```js
+gl.deleteTexture(texture);
+gl.bindTexture(gl.TEXTURE_2D, texture);  // INVALID_OPERATION, as in Chrome
+```
+
+### On context loss, wrappers are invalidated but names are not deleted
+
+On context loss, every wrapper is marked invalid and GL names are forgotten, not
+deleted.
+
+```c
+void on_context_lost(Renderer *renderer) {
+    for (size_t i = 0; i < renderer->texture_count; i++) {
+        renderer->textures[i].alive = false;
+        renderer->textures[i].name = 0;      /* forget; do not glDelete */
+    }
+}
+```
+
+### Shader errors log the shader source line
+
+Shader compilation errors are logged with the shader source line, so plugin authors can
+see them.
+
+```c
+if (!compiled) {
+    log_error("%s:%d: shader compile failed: %s",
+              shader_name, source_line, info_log);
+}
+```
+
+### How jsb applies the V8 rules
 
 * `jsb_ctx` and `jsb_val` are the C face of these rules. Both are valid only until the
   native call (or setup callback) that received the ctx returns. **Never keep a
@@ -503,6 +919,20 @@ How jsb applies them:
   all before disposing of the isolate.
 * jsb is main-thread only. The one exception is a `jsb_free_fn`, which V8 may call from
   a GC helper thread (see "Buffers").
+
+```c
+/* jsb_ctx and jsb_val are call-scoped: use them, never store them. */
+static void fn_identity(jsb_ctx *ctx) {
+    jsb_val *arg = jsb_arg_val(ctx, 0);   /* valid until fn_identity returns */
+    jsb_ret_val(ctx, arg);                /* the same ctx also owns the result */
+}
+
+/* To keep a function for a later event, make a Global-backed handle. */
+jsb_callback cb = {0};
+if (jsb_callback_new(ctx, jsb_arg_val(ctx, 0), &cb)) {
+    /* the owner later calls jsb_callback_call(cb, ...) and jsb_callback_free(&cb) */
+}
+```
 
 ## Runtime stack
 

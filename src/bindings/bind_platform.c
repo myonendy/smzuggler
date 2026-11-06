@@ -168,6 +168,15 @@ static bool js_platform_setup(jsb_ctx *ctx, void *user)
     return jsb_define_module(ctx, "__native_platform", js_platform_module_init);
 }
 
+/* Defines __native_platform and __native_process on borrowed `rt`.
+ *
+ * Why: this is the platform binding's only public entry and the window
+ * functions reach SDL through the borrowed `platform`; keeping it in a file
+ * static is the jsb substitute for a per-module user pointer. `platform`
+ * may be NULL (window-less tests) and must outlive JS use of the module.
+ * Main thread only, after platform_init and outside any JS call. Returns
+ * false, after jsb prints the pending exception, when a module or the
+ * process helpers could not be defined. */
 bool bind_platform_define(jsb_runtime *rt, Platform *platform)
 {
     s_platform = platform;

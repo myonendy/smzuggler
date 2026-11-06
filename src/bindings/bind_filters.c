@@ -423,6 +423,12 @@ bool bind_filters_define(jsb_runtime *rt)
     return true;
 }
 
+/* Deletes the built-in filter shaders and forgets the runtime.
+ *
+ * Why: the shader programs are native resources owned by this binding, so
+ * they must be released before the renderer and its GL context go away
+ * (spec section 15.8); the borrowed runtime is not destroyed here. Main
+ * thread only, outside any JS call, and safe to call more than once. */
 void bind_filters_shutdown(void)
 {
     if (s_color_matrix_shader) { filter_delete_shader(s_color_matrix_shader); s_color_matrix_shader = 0; }

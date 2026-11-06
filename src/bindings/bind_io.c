@@ -419,6 +419,14 @@ static bool io_define_setup(jsb_ctx *ctx, void *user)
     return jsb_define_module(ctx, "__native_io", io_module_init);
 }
 
+/* Defines the __native_io global on `rt` inside jsb's setup scope.
+ *
+ * Why: this is the binding's only public entry, called once by the host
+ * after the engine exists (spec section 4.1). `rt` is borrowed and must
+ * outlive the module; no jsb handle is kept. Paths still go through the
+ * game-root and save-path guards in file_io. Main thread only. Returns
+ * false, after printing on stderr or from jsb, when `rt` is NULL or the
+ * module could not be defined. */
 bool bind_io_define(jsb_runtime *rt)
 {
     if (!rt) {

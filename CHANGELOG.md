@@ -43,6 +43,7 @@ All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
 - Document the blocked Map 92 JIT-less preflight and the owner rerun recipe. (M1-T031)
+- Complete the jsb API guide and §15.8 handle rules with examples, and document every jsb, binding and engine function. (M1-T030)
 - Validate `--js-flags` before isolate creation and record monotonic perf profiles with jitdump injection before archiving. (M1-T029)
 - Add `--cpu-prof[=FILE]`, which records V8's CPU samples and writes a game-relative Chrome DevTools `.cpuprofile` on exit. (M1-T028)
 - Document the blocked M1 V8 drive preflight and the owner battery rerun recipe. (M1-T032)
