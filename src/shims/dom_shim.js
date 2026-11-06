@@ -768,10 +768,6 @@
                     __native_canvas2d.resize(this._context2d._handle, this._width, this._height);
                 }
             }
-            if (this._contextWebGL && typeof this._contextWebGL._resize === "function" &&
-                this._width > 0 && this._height > 0) {
-                this._contextWebGL._resize(this._width, this._height);
-            }
         }
     });
 
@@ -787,10 +783,6 @@
                     this._width > 0 && this._height > 0) {
                     __native_canvas2d.resize(this._context2d._handle, this._width, this._height);
                 }
-            }
-            if (this._contextWebGL && typeof this._contextWebGL._resize === "function" &&
-                this._width > 0 && this._height > 0) {
-                this._contextWebGL._resize(this._width, this._height);
             }
         }
     });

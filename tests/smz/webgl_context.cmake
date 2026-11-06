@@ -9,10 +9,5 @@ target_link_libraries(test_webgl_context PRIVATE
     smz_js_engine_v8 SDL3::SDL3 OpenGL::GL ${RMMZ_SYS_LIBS})
 set_target_properties(test_webgl_context PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(test_webgl_context PRIVATE ${PROJECT_SOURCE_DIR}/src)
-if(MSVC)
-    target_compile_options(test_webgl_context PRIVATE /UNDEBUG)
-else()
-    target_compile_options(test_webgl_context PRIVATE -UNDEBUG)
-endif()
 add_test(NAME webgl_context COMMAND test_webgl_context
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

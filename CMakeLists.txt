@@ -288,9 +288,8 @@ target_link_libraries(outsider PRIVATE
     ${RMMZ_SYS_LIBS}
 )
 
-# main.c is not in this card's owned files, so the WebGL module joins the
-# binding list through the linker: the main executable's Canvas2D define call
-# goes to src/webgl/webgl_runtime.c, which defines Canvas2D and then WebGL2.
+# main.c is outside this card's files, so the linker routes the Canvas2D
+# define call through webgl_runtime.c, which then defines WebGL2 too.
 if(UNIX AND NOT APPLE AND NOT ANDROID)
     target_link_options(outsider PRIVATE "-Wl,--wrap=bind_canvas2d_define")
 endif()

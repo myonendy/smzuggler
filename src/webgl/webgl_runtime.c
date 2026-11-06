@@ -4,13 +4,12 @@
  * Registers the WebGL2 module alongside the existing Canvas2D binding.
  *
  * Why: main.c is not part of this card's owned files, but the runtime still
- * has to define `__native_webgl` before shims run. The build redirects the
- * main executable's bind_canvas2d_define reference through --wrap (see
- * CMakeLists.txt); this tiny wrapper keeps that build detail in src/webgl/
- * and leaves the Canvas2D binding untouched. See docs/webgl.md.
+ * has to define `__native_webgl` before shims run. CMake redirects the main
+ * executable's bind_canvas2d_define reference through --wrap; this wrapper
+ * keeps that detail in src/webgl/ and leaves Canvas2D untouched.
  *
- * Rules: main thread only. The wrapper must not change Canvas2D's result; a
- * WebGL failure is reported but does not fail the runtime's Canvas2D setup.
+ * Rules: main thread only. A WebGL failure is reported but does not fail the
+ * runtime's Canvas2D setup.
  */
 #include "webgl/webgl.h"
 
@@ -24,11 +23,8 @@
 /* The linker's --wrap target for bind_canvas2d_define. */
 extern bool __real_bind_canvas2d_define(jsb_runtime *rt);
 
-/* Defines Canvas2D first, then WebGL2 on the same live runtime.
- *
- * Why: the runtime's binding order stays as before, and the WebGL module is
- * present before script_loader evaluates dom_shim.js. Returns Canvas2D's
- * result; a WebGL define failure is logged because it only disables WebGL. */
+/* Defines Canvas2D first, then WebGL2 before dom_shim.js is evaluated.
+ * Returns Canvas2D's result; WebGL failure only disables WebGL. */
 bool __wrap_bind_canvas2d_define(jsb_runtime *rt)
 {
     bool ok = __real_bind_canvas2d_define(rt);

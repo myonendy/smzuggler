@@ -4,14 +4,13 @@
  * Native WebGL2 context over GLES 3.0 / GL 3.3 core (spec section 4.2).
  *
  * Why: real PIXI and UltraMode7 call canvas.getContext('webgl2') and drive the
- * GL state machine directly. This file owns the GL context, C state and V8
- * objects in one place because the hot calls must be v8::CFunction fast calls
- * rather than only jsb slow callbacks, while each JS wrapper must own exactly
- * one GL name (spec section 15.8). Textures, FBOs, shaders and extensions are
- * M2-T002/M2-T003. See docs/webgl.md.
+ * GL state machine directly. This file owns the context, C state and V8 objects
+ * because the hot calls must be v8::CFunction fast calls rather than only jsb
+ * slow callbacks, and each wrapper owns exactly one GL name (spec section
+ * 15.8). Textures, FBOs, shaders and extensions are M2-T002/M2-T003.
  *
  * Rules: main thread only. No v8::Local is stored in C; explicit deletes free
- * names now and GC deletes only queue them for the end-of-frame drain.
+ * names now and GC deletes only queue them for the context drain.
  */
 #include "webgl/webgl.h"
 
@@ -54,12 +53,10 @@ using v8::WeakCallbackInfo;
 
 /* ---- GL entry points -------------------------------------------------- */
 
-/* One resolved entry point per call; function-pointer fields avoid the PFN
- * name split between desktop GL and GLES headers. */
+/* One resolved entry point per call; avoids the PFN name split between APIs. */
 struct GL {
     GLenum (APIENTRY *GetError)(void);
     void (APIENTRY *GetIntegerv)(GLenum, GLint *);
-    void (APIENTRY *GetFloatv)(GLenum, GLfloat *);
     const GLubyte *(APIENTRY *GetString)(GLenum);
     void (APIENTRY *Viewport)(GLint, GLint, GLsizei, GLsizei);
     void (APIENTRY *ClearColor)(GLfloat, GLfloat, GLfloat, GLfloat);
@@ -67,7 +64,6 @@ struct GL {
     void (APIENTRY *Enable)(GLenum);
     void (APIENTRY *Disable)(GLenum);
     GLboolean (APIENTRY *IsEnabled)(GLenum);
-    void (APIENTRY *BlendFunc)(GLenum, GLenum);
     void (APIENTRY *GenBuffers)(GLsizei, GLuint *);
     void (APIENTRY *DeleteBuffers)(GLsizei, const GLuint *);
     void (APIENTRY *BindBuffer)(GLenum, GLuint);
@@ -110,7 +106,6 @@ static bool gl_load(void)
     int missing = 0;
     LOAD(glGetError, GetError);
     LOAD(glGetIntegerv, GetIntegerv);
-    LOAD(glGetFloatv, GetFloatv);
     LOAD(glGetString, GetString);
     LOAD(glViewport, Viewport);
     LOAD(glClearColor, ClearColor);
@@ -118,7 +113,6 @@ static bool gl_load(void)
     LOAD(glEnable, Enable);
     LOAD(glDisable, Disable);
     LOAD(glIsEnabled, IsEnabled);
-    LOAD(glBlendFunc, BlendFunc);
     LOAD(glGenBuffers, GenBuffers);
     LOAD(glDeleteBuffers, DeleteBuffers);
     LOAD(glBindBuffer, BindBuffer);
@@ -185,7 +179,6 @@ static bool backend_create(void)
     return s_owned_context &&
            SDL_GL_MakeCurrent(s_hidden_window, s_owned_context);
 }
-
 /* Brings up SDL video, a GL context and entry points exactly once. */
 static bool backend_ready(void)
 {
@@ -200,7 +193,7 @@ static bool backend_ready(void)
 
 #define MAX_CONTEXTS 8
 
-/* One queued GC delete, drained at frame end (spec section 15.8). */
+/* One queued GC delete, drained on the main thread (spec section 15.8). */
 struct Pending { Pending *next; GLuint name; bool buffer; };
 
 /* One WebGL2 context and its drawing-buffer size. */
@@ -227,7 +220,6 @@ static GLContext *live(GLContext *ctx)
     if (!ctx || ctx->id == 0 || ctx->id > MAX_CONTEXTS) return NULL;
     return s_contexts[ctx->id - 1] == ctx ? ctx : NULL;
 }
-
 /* Applies WebGL2's documented initial state to a new context. */
 static void default_state(GLContext *ctx)
 {
@@ -241,7 +233,6 @@ static void default_state(GLContext *ctx)
     gl.Disable(GL_POLYGON_OFFSET_FILL);
     gl.Enable(GL_DITHER);
 }
-
 /* Creates a context in the first free slot; NULL when GL is unavailable. */
 static GLContext *context_create(int width, int height)
 {
@@ -264,7 +255,6 @@ static GLContext *context_create(int width, int height)
     }
     return ctx;
 }
-
 /* Deletes queued names and frees the pending nodes. */
 static void drain(GLContext *ctx)
 {
@@ -278,7 +268,6 @@ static void drain(GLContext *ctx)
         node = next;
     }
 }
-
 /* Destroys a context; wrappers that outlive it become inert. */
 static void context_destroy(GLContext *ctx)
 {
@@ -290,7 +279,6 @@ static void context_destroy(GLContext *ctx)
     ctx->id = 0;
     free(ctx);
 }
-
 /* Creates one buffer or VAO record; NULL on allocation/GL failure. */
 static GLObject *object_create(GLContext *ctx, bool buffer)
 {
@@ -308,7 +296,6 @@ static GLObject *object_create(GLContext *ctx, bool buffer)
     object->buffer = buffer;
     return object;
 }
-
 /* Explicit delete: releases the name now and marks the wrapper dead. */
 static void object_delete(GLObject *object)
 {
@@ -322,8 +309,7 @@ static void object_delete(GLObject *object)
     object->name = 0;
     object->deleted = true;
 }
-
-/* GC delete: queue the name for the frame drain, then free the record. */
+/* GC delete: queue the name for the context drain, then free the record. */
 static void object_gc(GLObject *object)
 {
     if (!object) return;
@@ -351,19 +337,16 @@ static void record_fast(const char *name)
         if (!strcmp(g_fast_names[i], name)) return;
     if (g_fast_count < 32) g_fast_names[g_fast_count++] = name;
 }
-
 /* Returns a V8 string for borrowed UTF-8 `text`. */
 static Local<String> utf8(Isolate *isolate, const char *text)
 {
     return String::NewFromUtf8(isolate, text).ToLocalChecked();
 }
-
 /* Throws a TypeError with `message`. */
 static void throw_type(Isolate *isolate, const char *message)
 {
     isolate->ThrowException(Exception::TypeError(utf8(isolate, message)));
 }
-
 /* Reads ToInt32; missing -> 0. */
 static int32_t arg_i32(Isolate *isolate, const FunctionCallbackInfo<Value> &info,
                        int index)
@@ -371,7 +354,6 @@ static int32_t arg_i32(Isolate *isolate, const FunctionCallbackInfo<Value> &info
     if (index >= info.Length()) return 0;
     return info[index]->Int32Value(isolate->GetCurrentContext()).FromMaybe(0);
 }
-
 /* Reads ToUint32; missing -> 0. */
 static uint32_t arg_u32(Isolate *isolate, const FunctionCallbackInfo<Value> &info,
                         int index)
@@ -379,7 +361,6 @@ static uint32_t arg_u32(Isolate *isolate, const FunctionCallbackInfo<Value> &inf
     if (index >= info.Length()) return 0;
     return info[index]->Uint32Value(isolate->GetCurrentContext()).FromMaybe(0);
 }
-
 /* Reads a float; missing -> 0. */
 static float arg_f32(Isolate *isolate, const FunctionCallbackInfo<Value> &info,
                      int index)
@@ -388,7 +369,6 @@ static float arg_f32(Isolate *isolate, const FunctionCallbackInfo<Value> &info,
     return (float)info[index]->NumberValue(isolate->GetCurrentContext())
         .FromMaybe(0);
 }
-
 /* Reads an int64; missing -> 0. */
 static int64_t arg_i64(Isolate *isolate, const FunctionCallbackInfo<Value> &info,
                        int index)
@@ -396,14 +376,12 @@ static int64_t arg_i64(Isolate *isolate, const FunctionCallbackInfo<Value> &info
     if (index >= info.Length()) return 0;
     return info[index]->IntegerValue(isolate->GetCurrentContext()).FromMaybe(0);
 }
-
 /* Reads truthiness; missing -> false. */
 static bool arg_bool(Isolate *isolate, const FunctionCallbackInfo<Value> &info,
                      int index)
 {
     return index < info.Length() && info[index]->BooleanValue(isolate);
 }
-
 /* Returns the context behind a receiver, or NULL when it is not ours. */
 static GLContext *context_of(Local<Object> receiver)
 {
@@ -411,7 +389,6 @@ static GLContext *context_of(Local<Object> receiver)
     return static_cast<GLContext *>(
         receiver->GetAlignedPointerFromInternalField(0));
 }
-
 /* Returns the wrapper record behind a JS value, or NULL for null/undefined. */
 static GLObject *object_of(Local<Value> value)
 {
@@ -421,7 +398,6 @@ static GLObject *object_of(Local<Value> value)
     return static_cast<GLObject *>(
         object->GetAlignedPointerFromInternalField(0));
 }
-
 /* Resolves null or a wrapper/number to a GL name (0 for null). */
 static uint32_t gl_name(Local<Value> value)
 {
@@ -433,7 +409,6 @@ static uint32_t gl_name(Local<Value> value)
             .FromMaybe(0);
     return 0;
 }
-
 /* Borrowed bytes of an ArrayBuffer/view; `store` keeps them alive for GL. */
 struct Bytes {
     std::shared_ptr<v8::BackingStore> store;
@@ -462,52 +437,36 @@ static bool bytes_of(Local<Value> value, Bytes *bytes)
 
 enum Op {
     OP_VIEWPORT, OP_CLEAR_COLOR, OP_CLEAR, OP_ENABLE, OP_DISABLE, OP_IS_ENABLED,
-    OP_GET_ERROR, OP_GET_PARAMETER, OP_BLEND_FUNC,
+    OP_GET_ERROR, OP_GET_PARAMETER,
     OP_CREATE_BUFFER, OP_DELETE_BUFFER, OP_BIND_BUFFER, OP_BUFFER_DATA,
     OP_BUFFER_SUB_DATA, OP_CREATE_VAO, OP_DELETE_VAO, OP_BIND_VAO,
     OP_ENABLE_ATTRIB, OP_DISABLE_ATTRIB, OP_VERTEX_ATTRIB, OP_DRAW_ARRAYS,
     OP_DRAW_ELEMENTS, OP_ACTIVE_TEXTURE, OP_BIND_TEXTURE, OP_USE_PROGRAM,
     OP_BIND_FRAMEBUFFER, OP_UNIFORM1F, OP_UNIFORM1I, OP_UNIFORM4F,
-    OP_UNIFORM1FV, OP_UNIFORM4FV, OP_UNIFORM_MATRIX4FV, OP_RESIZE
+    OP_UNIFORM1FV, OP_UNIFORM4FV, OP_UNIFORM_MATRIX4FV
 };
 
 /* One JS method: name, `length` and its switch case. */
 struct Method { const char *name; int length; Op op; };
 
 static const Method kMethods[] = {
-    {"viewport", 4, OP_VIEWPORT},
-    {"clearColor", 4, OP_CLEAR_COLOR},
-    {"clear", 1, OP_CLEAR},
-    {"enable", 1, OP_ENABLE},
-    {"disable", 1, OP_DISABLE},
-    {"isEnabled", 1, OP_IS_ENABLED},
-    {"getError", 0, OP_GET_ERROR},
-    {"getParameter", 1, OP_GET_PARAMETER},
-    {"blendFunc", 2, OP_BLEND_FUNC},
+    {"viewport", 4, OP_VIEWPORT}, {"clearColor", 4, OP_CLEAR_COLOR},
+    {"clear", 1, OP_CLEAR}, {"enable", 1, OP_ENABLE},
+    {"disable", 1, OP_DISABLE}, {"isEnabled", 1, OP_IS_ENABLED},
+    {"getError", 0, OP_GET_ERROR}, {"getParameter", 1, OP_GET_PARAMETER},
     {"createBuffer", 0, OP_CREATE_BUFFER},
-    {"deleteBuffer", 1, OP_DELETE_BUFFER},
-    {"bindBuffer", 2, OP_BIND_BUFFER},
-    {"bufferData", 3, OP_BUFFER_DATA},
-    {"bufferSubData", 3, OP_BUFFER_SUB_DATA},
-    {"createVertexArray", 0, OP_CREATE_VAO},
-    {"deleteVertexArray", 1, OP_DELETE_VAO},
-    {"bindVertexArray", 1, OP_BIND_VAO},
-    {"enableVertexAttribArray", 1, OP_ENABLE_ATTRIB},
+    {"deleteBuffer", 1, OP_DELETE_BUFFER}, {"bindBuffer", 2, OP_BIND_BUFFER},
+    {"bufferData", 3, OP_BUFFER_DATA}, {"bufferSubData", 3, OP_BUFFER_SUB_DATA},
+    {"createVertexArray", 0, OP_CREATE_VAO}, {"deleteVertexArray", 1, OP_DELETE_VAO},
+    {"bindVertexArray", 1, OP_BIND_VAO}, {"enableVertexAttribArray", 1, OP_ENABLE_ATTRIB},
     {"disableVertexAttribArray", 1, OP_DISABLE_ATTRIB},
     {"vertexAttribPointer", 6, OP_VERTEX_ATTRIB},
-    {"drawArrays", 3, OP_DRAW_ARRAYS},
-    {"drawElements", 4, OP_DRAW_ELEMENTS},
-    {"activeTexture", 1, OP_ACTIVE_TEXTURE},
-    {"bindTexture", 2, OP_BIND_TEXTURE},
-    {"useProgram", 1, OP_USE_PROGRAM},
-    {"bindFramebuffer", 2, OP_BIND_FRAMEBUFFER},
-    {"uniform1f", 2, OP_UNIFORM1F},
-    {"uniform1i", 2, OP_UNIFORM1I},
-    {"uniform4f", 5, OP_UNIFORM4F},
-    {"uniform1fv", 2, OP_UNIFORM1FV},
-    {"uniform4fv", 2, OP_UNIFORM4FV},
-    {"uniformMatrix4fv", 3, OP_UNIFORM_MATRIX4FV},
-    {"_resize", 2, OP_RESIZE},
+    {"drawArrays", 3, OP_DRAW_ARRAYS}, {"drawElements", 4, OP_DRAW_ELEMENTS},
+    {"activeTexture", 1, OP_ACTIVE_TEXTURE}, {"bindTexture", 2, OP_BIND_TEXTURE},
+    {"useProgram", 1, OP_USE_PROGRAM}, {"bindFramebuffer", 2, OP_BIND_FRAMEBUFFER},
+    {"uniform1f", 2, OP_UNIFORM1F}, {"uniform1i", 2, OP_UNIFORM1I},
+    {"uniform4f", 5, OP_UNIFORM4F}, {"uniform1fv", 2, OP_UNIFORM1FV},
+    {"uniform4fv", 2, OP_UNIFORM4FV}, {"uniformMatrix4fv", 3, OP_UNIFORM_MATRIX4FV},
 };
 
 /* Uploads a float uniform vector of `components` width. */
@@ -522,40 +481,33 @@ static void upload_fv(GLContext *ctx, int32_t location, Local<Value> data,
     if (components == 1) gl.Uniform1fv(location, count, v);
     else gl.Uniform4fv(location, count, v);
 }
-
 /* Creates a JS wrapper for a buffer/VAO record; defined with its finalizers. */
 static Local<Object> make_object(Isolate *isolate, Local<Context> context,
                                  GLObject *object);
-
-/* Handles every slow path; `data` is the table row being called. */
-static void slow_method(const FunctionCallbackInfo<Value> &info)
+/* Handles the context-state calls; false when `op` is another group's. */
+static bool slow_state(const FunctionCallbackInfo<Value> &info, Op op)
 {
     Isolate *isolate = info.GetIsolate();
-    Local<Context> context = isolate->GetCurrentContext();
-    const Method *method =
-        static_cast<const Method *>(info.Data().As<External>()->Value());
-    GLContext *ctx = context_of(info.This());
-
-    switch (method->op) {
+    switch (op) {
     case OP_VIEWPORT:
         gl.Viewport(arg_i32(isolate, info, 0), arg_i32(isolate, info, 1),
                     arg_i32(isolate, info, 2), arg_i32(isolate, info, 3));
-        break;
+        return true;
     case OP_CLEAR_COLOR:
         gl.ClearColor(arg_f32(isolate, info, 0), arg_f32(isolate, info, 1),
                       arg_f32(isolate, info, 2), arg_f32(isolate, info, 3));
-        break;
-    case OP_CLEAR: gl.Clear(arg_u32(isolate, info, 0)); break;
-    case OP_ENABLE: gl.Enable(arg_u32(isolate, info, 0)); break;
-    case OP_DISABLE: gl.Disable(arg_u32(isolate, info, 0)); break;
+        return true;
+    case OP_CLEAR: gl.Clear(arg_u32(isolate, info, 0)); return true;
+    case OP_ENABLE: gl.Enable(arg_u32(isolate, info, 0)); return true;
+    case OP_DISABLE: gl.Disable(arg_u32(isolate, info, 0)); return true;
     case OP_IS_ENABLED:
         info.GetReturnValue().Set(
             gl.IsEnabled(arg_u32(isolate, info, 0)) == GL_TRUE);
-        break;
+        return true;
     case OP_GET_ERROR:
         info.GetReturnValue().Set(
             Integer::NewFromUnsigned(isolate, gl.GetError()));
-        break;
+        return true;
     case OP_GET_PARAMETER: {
         uint32_t pname = arg_u32(isolate, info, 0);
         if (pname == GL_VERSION || pname == GL_VENDOR ||
@@ -567,30 +519,36 @@ static void slow_method(const FunctionCallbackInfo<Value> &info)
             gl.GetIntegerv(pname, &value);
             info.GetReturnValue().Set(Integer::New(isolate, value));
         }
-        break;
+        return true;
     }
-        gl.BlendFunc(arg_u32(isolate, info, 0), arg_u32(isolate, info, 1));
-        break;
-    case OP_BLEND_FUNC:
-        gl.BlendFunc(arg_u32(isolate, info, 0), arg_u32(isolate, info, 1));
-        break;
-    case OP_CREATE_BUFFER:
-    case OP_CREATE_VAO: {
-        GLObject *object = object_create(ctx, method->op == OP_CREATE_BUFFER);
-        if (!object) { info.GetReturnValue().SetNull(); break; }
+    case OP_ACTIVE_TEXTURE: gl.ActiveTexture(arg_u32(isolate, info, 0)); return true;
+    case OP_BIND_FRAMEBUFFER:
+        gl.BindFramebuffer(arg_u32(isolate, info, 0), gl_name(info[1]));
+        return true;
+    default: return false;
+    }
+}
+/* Handles buffer creation, binding and uploads; false for another group. */
+static bool slow_buffer(const FunctionCallbackInfo<Value> &info, GLContext *ctx,
+                        Op op)
+{
+    Isolate *isolate = info.GetIsolate();
+    Local<Context> context = isolate->GetCurrentContext();
+    switch (op) {
+    case OP_CREATE_BUFFER: {
+        GLObject *object = object_create(ctx, true);
+        if (!object) { info.GetReturnValue().SetNull(); return true; }
         info.GetReturnValue().Set(make_object(isolate, context, object));
-        break;
+        return true;
     }
-    case OP_DELETE_BUFFER:
-    case OP_DELETE_VAO: {
+    case OP_DELETE_BUFFER: {
         GLObject *object = object_of(info[0]);
-        if (object && object->buffer == (method->op == OP_DELETE_BUFFER))
-            object_delete(object);
-        break;
+        if (object && object->buffer) object_delete(object);
+        return true;
     }
     case OP_BIND_BUFFER:
         gl.BindBuffer(arg_u32(isolate, info, 0), gl_name(info[1]));
-        break;
+        return true;
     case OP_BUFFER_DATA: {
         Local<Value> source = info[1];
         Bytes bytes;
@@ -600,37 +558,58 @@ static void slow_method(const FunctionCallbackInfo<Value> &info)
             if (n < 0) {
                 isolate->ThrowException(Exception::RangeError(
                     utf8(isolate, "buffer size must not be negative")));
-                break;
+                return true;
             }
             size = (size_t)n;
         } else if (bytes_of(source, &bytes)) {
             size = bytes.len;
         } else {
             throw_type(isolate, "expected an ArrayBuffer, a view or a size");
-            break;
+            return true;
         }
         gl.BufferData(arg_u32(isolate, info, 0), (GLsizeiptr)size, bytes.data,
                       arg_u32(isolate, info, 2));
-        break;
+        return true;
     }
     case OP_BUFFER_SUB_DATA: {
         Bytes bytes;
         if (!bytes_of(info[2], &bytes)) {
             throw_type(isolate, "bufferSubData expects an ArrayBuffer or a view");
-            break;
+            return true;
         }
         gl.BufferSubData(arg_u32(isolate, info, 0),
                          (GLintptr)arg_i64(isolate, info, 1),
                          (GLsizeiptr)bytes.len, bytes.data);
-        break;
+        return true;
     }
-    case OP_BIND_VAO: gl.BindVertexArray(gl_name(info[0])); break;
+    default: return false;
+    }
+}
+/* Handles VAO creation, attribute layout and the draw calls. */
+static bool slow_vao(const FunctionCallbackInfo<Value> &info, GLContext *ctx,
+                     Op op)
+{
+    Isolate *isolate = info.GetIsolate();
+    Local<Context> context = isolate->GetCurrentContext();
+    switch (op) {
+    case OP_CREATE_VAO: {
+        GLObject *object = object_create(ctx, false);
+        if (!object) { info.GetReturnValue().SetNull(); return true; }
+        info.GetReturnValue().Set(make_object(isolate, context, object));
+        return true;
+    }
+    case OP_DELETE_VAO: {
+        GLObject *object = object_of(info[0]);
+        if (object && !object->buffer) object_delete(object);
+        return true;
+    }
+    case OP_BIND_VAO: gl.BindVertexArray(gl_name(info[0])); return true;
     case OP_ENABLE_ATTRIB:
         gl.EnableVertexAttribArray(arg_u32(isolate, info, 0));
-        break;
+        return true;
     case OP_DISABLE_ATTRIB:
         gl.DisableVertexAttribArray(arg_u32(isolate, info, 0));
-        break;
+        return true;
     case OP_VERTEX_ATTRIB:
         gl.VertexAttribPointer(arg_u32(isolate, info, 0),
                                arg_i32(isolate, info, 1),
@@ -638,113 +617,153 @@ static void slow_method(const FunctionCallbackInfo<Value> &info)
                                arg_bool(isolate, info, 3) ? GL_TRUE : GL_FALSE,
                                arg_i32(isolate, info, 4),
                                (const void *)(intptr_t)arg_i64(isolate, info, 5));
-        break;
+        return true;
     case OP_DRAW_ARRAYS:
         gl.DrawArrays(arg_u32(isolate, info, 0), arg_i32(isolate, info, 1),
                       arg_i32(isolate, info, 2));
-        break;
+        return true;
     case OP_DRAW_ELEMENTS:
         gl.DrawElements(arg_u32(isolate, info, 0), arg_i32(isolate, info, 1),
                         arg_u32(isolate, info, 2),
                         (const void *)(intptr_t)arg_i64(isolate, info, 3));
-        break;
-    case OP_ACTIVE_TEXTURE: gl.ActiveTexture(arg_u32(isolate, info, 0)); break;
+        return true;
+    default: return false;
+    }
+}
+/* Handles texture/program binding and uniforms; false for another group. */
+static bool slow_uniform(const FunctionCallbackInfo<Value> &info, GLContext *ctx,
+                         Op op)
+{
+    Isolate *isolate = info.GetIsolate();
+    switch (op) {
     case OP_BIND_TEXTURE:
         gl.BindTexture(arg_u32(isolate, info, 0), gl_name(info[1]));
-        break;
-    case OP_USE_PROGRAM: gl.UseProgram(gl_name(info[0])); break;
-    case OP_BIND_FRAMEBUFFER:
-        gl.BindFramebuffer(arg_u32(isolate, info, 0), gl_name(info[1]));
-        break;
+        return true;
+    case OP_USE_PROGRAM: gl.UseProgram(gl_name(info[0])); return true;
     case OP_UNIFORM1F:
         gl.Uniform1f(arg_i32(isolate, info, 0), arg_f32(isolate, info, 1));
-        break;
+        return true;
     case OP_UNIFORM1I:
         gl.Uniform1i(arg_i32(isolate, info, 0), arg_i32(isolate, info, 1));
-        break;
+        return true;
     case OP_UNIFORM4F:
         gl.Uniform4f(arg_i32(isolate, info, 0), arg_f32(isolate, info, 1),
                      arg_f32(isolate, info, 2), arg_f32(isolate, info, 3),
                      arg_f32(isolate, info, 4));
-        break;
-    case OP_UNIFORM1FV: upload_fv(ctx, arg_i32(isolate, info, 0), info[1], 1); break;
-    case OP_UNIFORM4FV: upload_fv(ctx, arg_i32(isolate, info, 0), info[1], 4); break;
+        return true;
+    case OP_UNIFORM1FV:
+        upload_fv(ctx, arg_i32(isolate, info, 0), info[1], 1);
+        return true;
+    case OP_UNIFORM4FV:
+        upload_fv(ctx, arg_i32(isolate, info, 0), info[1], 4);
+        return true;
     case OP_UNIFORM_MATRIX4FV: {
         Bytes bytes;
-        if (!bytes_of(info[2], &bytes)) break;
+        if (!bytes_of(info[2], &bytes)) return true;
         gl.UniformMatrix4fv(arg_i32(isolate, info, 0),
                             (GLsizei)(bytes.len / (16 * sizeof(float))),
                             arg_bool(isolate, info, 1) ? GL_TRUE : GL_FALSE,
                             (const float *)bytes.data);
-        break;
+        return true;
     }
-    case OP_RESIZE: {
-        int width = arg_i32(isolate, info, 0);
-        int height = arg_i32(isolate, info, 1);
-        if (width <= 0 || height <= 0) break;
-        ctx->width = width;
-        ctx->height = height;
-        gl.Viewport(0, 0, width, height);
-        Local<Object> self = info.This();
-        self->Set(context, utf8(isolate, "drawingBufferWidth"),
-                  Integer::New(isolate, width)).Check();
-        self->Set(context, utf8(isolate, "drawingBufferHeight"),
-                  Integer::New(isolate, height)).Check();
-        break;
-    }
+    default: return false;
     }
 }
-
-/* Fast bindBuffer. */
+/* Handles every slow path; `data` is the table row being called. */
+static void slow_method(const FunctionCallbackInfo<Value> &info)
+{
+    Isolate *isolate = info.GetIsolate();
+    const Method *method =
+        static_cast<const Method *>(info.Data().As<External>()->Value());
+    GLContext *ctx = live(context_of(info.This()));
+    if (!ctx) {
+        throw_type(isolate, "Illegal invocation");
+        return;
+    }
+    Op op = method->op;
+    if (!slow_state(info, op) && !slow_buffer(info, ctx, op) &&
+        !slow_vao(info, ctx, op))
+        slow_uniform(info, ctx, op);
+}
+/* Fast path for bindBuffer; receiver and buffer wrapper are borrowed. */
 void fast_bind_buffer(Local<Object> r, int32_t t, Local<Value> b)
-{ GLContext *c = context_of(r); if (c) gl.BindBuffer((GLenum)t, gl_name(b)); }
-/* Fast bufferSubData. */
+{
+    GLContext *c = live(context_of(r));
+    if (c) gl.BindBuffer((GLenum)t, gl_name(b));
+}
+/* Fast path for bufferSubData; `d` is borrowed and stays alive for the call. */
 void fast_buffer_sub_data(Local<Object> r, int32_t t, int32_t o, Local<Value> d)
 {
-    GLContext *c = context_of(r);
+    GLContext *c = live(context_of(r));
     Bytes bytes;
     if (c && bytes_of(d, &bytes))
         gl.BufferSubData((GLenum)t, o, (GLsizeiptr)bytes.len, bytes.data);
 }
-/* Fast drawElements. */
+/* Fast path for drawElements; count is indices, offset is bytes. */
 void fast_draw_elements(Local<Object> r, int32_t m, int32_t n, int32_t t,
                         int32_t o)
-{ GLContext *c = context_of(r); if (c) gl.DrawElements((GLenum)m, n, (GLenum)t, (const void *)(intptr_t)o); }
-/* Fast bindTexture. */
+{
+    GLContext *c = live(context_of(r));
+    if (c) gl.DrawElements((GLenum)m, n, (GLenum)t, (const void *)(intptr_t)o);
+}
+/* Fast path for bindTexture; wrappers arrive with M2-T002. */
 void fast_bind_texture(Local<Object> r, int32_t t, Local<Value> x)
-{ GLContext *c = context_of(r); if (c) gl.BindTexture((GLenum)t, gl_name(x)); }
-/* Fast bindVertexArray. */
+{
+    GLContext *c = live(context_of(r));
+    if (c) gl.BindTexture((GLenum)t, gl_name(x));
+}
+/* Fast path for bindVertexArray; the wrapper keeps ownership of the name. */
 void fast_bind_vertex_array(Local<Object> r, Local<Value> a)
-{ GLContext *c = context_of(r); if (c) gl.BindVertexArray(gl_name(a)); }
-/* Fast useProgram. */
+{
+    GLContext *c = live(context_of(r));
+    if (c) gl.BindVertexArray(gl_name(a));
+}
+/* Fast path for useProgram; program wrappers arrive with M2-T003. */
 void fast_use_program(Local<Object> r, Local<Value> p)
-{ GLContext *c = context_of(r); if (c) gl.UseProgram(gl_name(p)); }
-/* Fast uniform1f. */
+{
+    GLContext *c = live(context_of(r));
+    if (c) gl.UseProgram(gl_name(p));
+}
+/* Fast path for uniform1f(location, x); no result, main thread only. */
 void fast_uniform1f(Local<Object> r, int32_t l, double x)
-{ GLContext *c = context_of(r); if (c) gl.Uniform1f(l, (float)x); }
-/* Fast uniform1i. */
+{
+    GLContext *c = live(context_of(r));
+    if (c) gl.Uniform1f(l, (float)x);
+}
+/* Fast path for uniform1i(location, x); no result, main thread only. */
 void fast_uniform1i(Local<Object> r, int32_t l, int32_t x)
-{ GLContext *c = context_of(r); if (c) gl.Uniform1i(l, x); }
-/* Fast uniform4f. */
+{
+    GLContext *c = live(context_of(r));
+    if (c) gl.Uniform1i(l, x);
+}
+/* Fast path for uniform4f(location, x, y, z, w); main thread only. */
 void fast_uniform4f(Local<Object> r, int32_t l, double x, double y, double z,
                     double w)
-{ GLContext *c = context_of(r); if (c) gl.Uniform4f(l, (float)x, (float)y, (float)z, (float)w); }
-/* Fast uniform1fv. */
+{
+    GLContext *c = live(context_of(r));
+    if (c) gl.Uniform4f(l, (float)x, (float)y, (float)z, (float)w);
+}
+/* Fast path for uniform1fv; `d` is a borrowed float ArrayBuffer/view. */
 void fast_uniform1fv(Local<Object> r, int32_t l, Local<Value> d)
-{ GLContext *c = context_of(r); if (c) upload_fv(c, l, d, 1); }
-/* Fast uniform4fv. */
+{
+    GLContext *c = live(context_of(r));
+    if (c) upload_fv(c, l, d, 1);
+}
+/* Fast path for uniform4fv; `d` is a borrowed float vector array. */
 void fast_uniform4fv(Local<Object> r, int32_t l, Local<Value> d)
-{ GLContext *c = context_of(r); if (c) upload_fv(c, l, d, 4); }
-/* Fast uniformMatrix4fv. */
+{
+    GLContext *c = live(context_of(r));
+    if (c) upload_fv(c, l, d, 4);
+}
+/* Fast path for uniformMatrix4fv; `d` is a borrowed 4x4 float matrix array. */
 void fast_uniform_matrix4fv(Local<Object> r, int32_t l, bool t, Local<Value> d)
 {
-    GLContext *c = context_of(r);
+    GLContext *c = live(context_of(r));
     Bytes bytes;
     if (!c || !bytes_of(d, &bytes)) return;
     gl.UniformMatrix4fv(l, (GLsizei)(bytes.len / (16 * sizeof(float))),
                         t ? GL_TRUE : GL_FALSE, (const float *)bytes.data);
 }
-
 /* Returns the CFunction for a hot op, or an empty one for a slow method. */
 static CFunction fast_for(Op op)
 {
@@ -764,7 +783,6 @@ static CFunction fast_for(Op op)
     default: return CFunction();
     }
 }
-
 /* Every constant PIXI and the tests read; values are the GLES/WebGL enums. */
 struct Constant { const char *name; int value; };
 static const Constant kConstants[] = {
@@ -829,13 +847,11 @@ void context_finalizer_second(const WeakCallbackInfo<WeakRecord<GLContext>> &inf
     record->handle.Reset();
     delete record;
 }
-
 /* First pass: defer the context's GL work to the second pass. */
 void context_finalizer(const WeakCallbackInfo<WeakRecord<GLContext>> &info)
 {
     info.SetSecondPassCallback(&context_finalizer_second);
 }
-
 /* Second pass: queue a collected wrapper's GL name, then free the record. */
 void object_finalizer_second(const WeakCallbackInfo<WeakRecord<GLObject>> &info)
 {
@@ -844,13 +860,11 @@ void object_finalizer_second(const WeakCallbackInfo<WeakRecord<GLObject>> &info)
     record->handle.Reset();
     delete record;
 }
-
 /* First pass: defer a wrapper's GL work to the second pass. */
 void object_finalizer(const WeakCallbackInfo<WeakRecord<GLObject>> &info)
 {
     info.SetSecondPassCallback(&object_finalizer_second);
 }
-
 /* Creates a JS wrapper owning one buffer/VAO record (spec section 15.8). */
 Local<Object> make_object(Isolate *isolate, Local<Context> context,
                           GLObject *object)
@@ -866,7 +880,6 @@ Local<Object> make_object(Isolate *isolate, Local<Context> context,
                            v8::WeakCallbackType::kParameter);
     return wrapper;
 }
-
 /* Installs every WebGL method/constant on one context instance. */
 static void define_methods(Isolate *isolate, Local<Context> context,
                            Local<Object> target)
@@ -891,7 +904,6 @@ static void define_methods(Isolate *isolate, Local<Context> context,
                     Integer::New(isolate, kConstants[i].value))
             .Check();
 }
-
 /* Creates the native context object returned by createContext. */
 Local<Object> make_context(Isolate *isolate, Local<Context> context,
                            GLContext *ctx)
@@ -912,7 +924,6 @@ Local<Object> make_context(Isolate *isolate, Local<Context> context,
                            v8::WeakCallbackType::kParameter);
     return object;
 }
-
 /* createContext(width, height) -> a WebGL2 context or null. */
 void js_create_context(const FunctionCallbackInfo<Value> &info)
 {
@@ -923,7 +934,6 @@ void js_create_context(const FunctionCallbackInfo<Value> &info)
     info.GetReturnValue().Set(
         make_context(isolate, isolate->GetCurrentContext(), ctx));
 }
-
 /* fastApiInfo() -> {count, names}. */
 void js_fast_api_info(const FunctionCallbackInfo<Value> &info)
 {
@@ -938,7 +948,6 @@ void js_fast_api_info(const FunctionCallbackInfo<Value> &info)
     result->Set(context, utf8(isolate, "names"), names).Check();
     info.GetReturnValue().Set(result);
 }
-
 /* Defines the module in the current V8 context; runs inside jsb setup. */
 bool define_module(jsb_ctx *ctx, void *user)
 {
@@ -978,13 +987,11 @@ extern "C" bool webgl_define(jsb_runtime *rt)
     }
     return jsb_runtime_setup(rt, define_module, NULL);
 }
-
 /* See webgl.h: webgl_fast_api_count. */
 extern "C" size_t webgl_fast_api_count(void)
 {
     return g_fast_count;
 }
-
 /* See webgl.h: webgl_fast_api_name. */
 extern "C" const char *webgl_fast_api_name(size_t index)
 {
