@@ -90,8 +90,7 @@ def local_identity_hit(text: str, names: list[str]) -> bool:
     `scene` or `notes` is a refusal rather than something to redact silently.
     The matched value is discarded.
     """
-    lower = text.lower()
-    return any(name.lower() in lower for name in names)
+    return any(pattern.search(text) for pattern in identity_patterns(names))
 
 
 def is_save_path(path: Path) -> bool:
@@ -143,7 +142,7 @@ def clean_value(value: object, home: str, names: list[str], patterns: list) -> o
     Containers are copied; dictionaries keep only string keys.
     """
     if isinstance(value, str):
-        return make_bundle.scrub_text(value, home, names, patterns)
+        return make_bundle.scrub_text(value, home, [], patterns)
     if isinstance(value, list):
         return [clean_value(item, home, names, patterns) for item in value]
     if isinstance(value, dict):
@@ -246,7 +245,7 @@ def scrub_markdown(path: Path, home: str, names: list[str], patterns: list) -> b
     deny-list rewrites. Unknown Markdown files are not collected.
     """
     text = replace_home(path.read_text(encoding='utf-8'), home)
-    return make_bundle.scrub_text(text, home, names, patterns).encode('utf-8')
+    return make_bundle.scrub_text(text, home, [], patterns).encode('utf-8')
 
 
 def stage_reports(files: list[Path], root: Path, home: str, names: list[str], patterns: list) -> tuple[list[tuple[str, bytes]], list[str]]:
@@ -346,14 +345,28 @@ def default_denylist() -> str | None:
 
 
 def identity_patterns(names: list[str]) -> list[re.Pattern]:
-    """Compile local identity names as literal deny-list patterns.
+    """Match whole identity tokens except within fixed schema vocabulary.
 
-    Used only when no project list exists; it keeps scan.py's fail-closed
-    behaviour across the same names the tree check refuses. The list is never
-    printed or packed.
+    A default SteamOS user is also a component of the profile names. Exclude
+    those complete tokens, including in report filenames, without exempting a
+    bare name in notes. These same regexes drive refusal, scrubbing and the
+    fallback scanner so the packager cannot rewrite a legitimate profile.
     """
-    values = names or ['__smzuggler_no_identity__']
-    return [re.compile(re.escape(name), re.I) for name in values]
+    patterns = []
+    boundary = r'[A-Za-z0-9]'
+    for name in names or ['__smzuggler_no_identity__']:
+        exclusions = []
+        for token in ('steam-deck', 'deck-proxy'):
+            for match in re.finditer(re.escape(name), token, re.I):
+                prefix = re.escape(token[:match.start()])
+                tail = re.escape(token[match.start():])
+                before = (f'(?<={prefix})(?<!{boundary}{prefix})'
+                          if prefix else '')
+                exclusions.append(f'(?!{before}{tail}(?!{boundary}))')
+        expression = (f'(?<!{boundary})' + ''.join(exclusions) +
+                      re.escape(name) + f'(?!{boundary})')
+        patterns.append(re.compile(expression, re.I))
+    return patterns
 
 
 def deny_source(denylist: str | None, names: list[str]) -> tuple[str | None, list[re.Pattern], str | None]:
@@ -370,8 +383,9 @@ def deny_source(denylist: str | None, names: list[str]) -> tuple[str | None, lis
     path = default_denylist()
     if path:
         return path, make_bundle.scan.load_denylist(path), None
-    values = names or ['__smzuggler_no_identity__']
-    return None, identity_patterns(values), '\n'.join(values) + '\n'
+    patterns = identity_patterns(names)
+    fallback = '\n'.join('re:' + pattern.pattern for pattern in patterns) + '\n'
+    return None, patterns, fallback
 
 
 def pack_report(root: Path, out: Path, denylist: str | None) -> int:
@@ -383,7 +397,8 @@ def pack_report(root: Path, out: Path, denylist: str | None) -> int:
         print(f'scrub-report: {refusal}; refusing to pack', file=sys.stderr)
         return 1
     resolved_denylist, patterns, fallback_text = deny_source(denylist, names)
-    reports, dropped = stage_reports(files, root, home, names, patterns)
+    scrub_patterns = patterns + identity_patterns(names)
+    reports, dropped = stage_reports(files, root, home, names, scrub_patterns)
     note = scrubbed_note(reports, dropped)
     readme = make_bundle.build_readme(reports, dropped).encode('utf-8')
     staged = [('README.txt', readme), ('SCRUBBED.txt', note), *reports]
@@ -412,7 +427,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description='Scrub a smzuggler Deck report directory into a local archive.')
     parser.add_argument('report_dir', help='directory written by --perf-suite')
-    parser.add_argument('--out', default='deck-report.zip',
+    parser.add_argument('--out', default='deck-report.tar.gz',
                         help='archive to write (.tar.gz/.tgz or .zip)')
     parser.add_argument('--denylist',
                         help='deny-list file (scan.py default otherwise)')

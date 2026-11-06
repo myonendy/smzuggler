@@ -42,7 +42,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
-- Add the outside-tester kit: `--scrub-report` packs only the fixed report schema, writes `SCRUBBED.txt` and refuses saves or local identities; optional `deck-proxy` caps carry `gate: proxy`. (M2-T008)
+- Add the outside-tester kit: `--scrub-report` packs only the fixed report schema, writes `SCRUBBED.txt` and refuses saves or local identities while preserving Deck profile tokens; optional `deck-proxy` caps carry `gate: proxy`. (M2-T008)
 - Add the §14 perf harness with compressed MZ fixture validation, scratch scene loading, scripted S1-S3 windows and profile-aware analysis. (M2-T007)
 - Add always-compiled frame-timing instrumentation with `--frame-stats` JSON Lines, markers and a summary. (M2-T006)
 - Add the `-DMZ_GLES=angle` provider switch, a Release-safe host probe test and the Linux CI oracle build recipe. (M2-T004)

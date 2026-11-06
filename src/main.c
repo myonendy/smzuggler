@@ -920,7 +920,7 @@ static int scrub_report_run(const char *report_dir, const char *out_path,
 {
     char script[1024];
     const char *out;
-    char *args[7];
+    char *args[6];
     if (!report_dir || !report_dir[0]) {
         fprintf(stderr, "scrub-report: give the report directory\n");
         return 2;
@@ -930,7 +930,7 @@ static int scrub_report_run(const char *report_dir, const char *out_path,
         fprintf(stderr, "scrub-report: tools/perf/scrub_report.py not found\n");
         return 1;
     }
-    out = (out_path && out_path[0]) ? out_path : "deck-report.zip";
+    out = (out_path && out_path[0]) ? out_path : "deck-report.tar.gz";
     args[0] = "python3";
     args[1] = script;
     args[2] = (char *)report_dir;

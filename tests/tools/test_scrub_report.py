@@ -158,6 +158,64 @@ class ScrubReportTests(unittest.TestCase):
             env=self.env, capture_output=True, text=True)
         self.assertEqual(scan.returncode, 0, scan.stdout + scan.stderr)
 
+    def test_default_deck_identity_preserves_schema(self):
+        """Default SteamOS identities must not corrupt fixed profile tokens."""
+        self.env.update(USER='deck', LOGNAME='deck', HOSTNAME='steamdeck')
+        self.write_schema_report()
+        for with_denylist in (True, False):
+            with self.subTest(with_denylist=with_denylist):
+                args = [sys.executable, str(SCRIPT), str(self.report),
+                        '--out', str(self.out)]
+                if with_denylist:
+                    args += ['--denylist', str(self.deny)]
+                result = subprocess.run(args, env=self.env,
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                dest = self.extract()
+                report = json.loads((dest / 'report' /
+                    'perf-report-steam-deck-S1.json').read_text())
+                self.assertEqual(report['profile'], 'steam-deck')
+                self.assertEqual(report['gate'], 'confirm-pass')
+                text = (dest / 'report' /
+                        'perf-report-steam-deck-S1.md').read_text()
+                self.assertIn('steam-deck', text)
+
+    def test_proxy_and_identity_substrings_survive(self):
+        """Profile enums and larger words must survive local token checks."""
+        self.env.update(USER='deck', LOGNAME='deck', HOSTNAME='steamdeck')
+        self.write_schema_report()
+        for path in self.report.iterdir():
+            text = path.read_text().replace('steam-deck', 'deck-proxy')
+            path.write_text(text)
+            path.rename(path.with_name(path.name.replace('steam-deck',
+                                                       'deck-proxy')))
+        path = self.report / 'perf-report-deck-proxy-S1.json'
+        report = json.loads(path.read_text())
+        report.update(profile='deck-proxy', gate='proxy', passed=False,
+                      notes='steamdecking decking')
+        path.write_text(json.dumps(report))
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        dest = self.extract()
+        packed = json.loads((dest / 'report' / path.name).read_text())
+        self.assertEqual(packed['profile'], 'deck-proxy')
+        self.assertEqual(packed['gate'], 'proxy')
+        self.assertFalse(packed['passed'])
+        self.assertEqual(packed['notes'], 'steamdecking decking')
+
+    def test_bare_deck_identity_is_refused(self):
+        """A schema vocabulary exemption must not hide a bare user in notes."""
+        self.env.update(USER='deck', LOGNAME='deck', HOSTNAME='steamdeck')
+        self.write_schema_report()
+        path = self.report / 'perf-report-steam-deck-S1.json'
+        report = json.loads(path.read_text())
+        report['notes'] = 'collected by deck'
+        path.write_text(json.dumps(report))
+        result = self.invoke()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('local identity', result.stderr)
+        self.assertFalse(self.out.exists())
+
     def test_save_file_is_refused(self):
         """A tree holding a project save is never packed, even when nested."""
         self.write_schema_report()

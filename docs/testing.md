@@ -245,7 +245,10 @@ your own legitimately installed copy.
    `--scrub-report` keeps only the fixed report schema (frame records,
    summaries, markers and run metadata), writes home prefixes as `~`, adds
    `SCRUBBED.txt`, and refuses to pack when it finds a local user or host
-   name or any save file. Packing goes through
+   name or any save file. Identity checks use whole tokens and exempt the
+   fixed `steam-deck` and `deck-proxy` vocabulary, so the default SteamOS
+   account can pack reports; a bare account name in notes is refused.
+   Packing goes through
    `tools/share/make_bundle.py`, so the archive is scanned before it is
    written. Nothing is uploaded automatically.
 5. Optional: open the `.json` files and read them. They are plain text.
