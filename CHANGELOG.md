@@ -42,6 +42,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Grow the native canvas registry so late-created HUD and message text survives scenes with more than 256 live canvases.
 - Load the game's own `js/libs/pixi.js` by default and skip `pixi_shim.js`/`tilemap_shim.js`, with `--renderer=outsider` keeping the old shim path. (M2-T005)
 - Add GLSL ES 1.00/3.00 shader compile/link with a desktop-GL core rewrite, source-line compile logs, driver-probed WebGL2 extensions and Chrome-typed getParameter limits. (M2-T003)
 - Add WebGL2 texture uploads (typed arrays, Canvas2D, images, ImageData), UNPACK flip/premultiply, framebuffers, depth-stencil renderbuffers, readPixels and stencil-tested draws, with bounds checks for aligned pixel rows and isolated host-source unpack state. (M2-T002)

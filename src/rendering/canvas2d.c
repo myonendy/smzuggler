@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2026 General Arcade (Pte. Ltd.)
  * SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-GeneralArcade-Commercial
+ * Copyright (C) 2026 The smzuggler contributors
+ * Modified 2026-11-06: grow the context registry for late-created window text.
  */
 
 #include "rendering/canvas2d.h"
@@ -80,15 +82,16 @@ typedef struct {
     bool           active;
 } Canvas2DCtx;
 
-#define MAX_CONTEXTS 256
-
-static Canvas2DCtx    s_contexts[MAX_CONTEXTS];
+/* Handles, not context pointers, cross API calls. The registry may move when
+   a scene needs more canvases; pixel buffers and saved state remain owned. */
+static Canvas2DCtx   *s_contexts;
+static size_t        s_ctx_capacity;
 static Canvas2DHandle s_next_handle = 1;
 static size_t         s_ctx_count   = 0;
 
 static Canvas2DCtx *find_ctx(Canvas2DHandle h)
 {
-    for (size_t i = 0; i < MAX_CONTEXTS; i++) {
+    for (size_t i = 0; i < s_ctx_capacity; i++) {
         if (s_contexts[i].active && s_contexts[i].handle == h) {
             return &s_contexts[i];
         }
@@ -244,14 +247,14 @@ static void free_state(DrawState *s)
 
 void canvas2d_init(void)
 {
-    memset(s_contexts, 0, sizeof(s_contexts));
+    canvas2d_shutdown();
     s_next_handle = 1;
     s_ctx_count = 0;
 }
 
 void canvas2d_shutdown(void)
 {
-    for (size_t i = 0; i < MAX_CONTEXTS; i++) {
+    for (size_t i = 0; i < s_ctx_capacity; i++) {
         if (s_contexts[i].active) {
             free(s_contexts[i].pixels);
             free_state(&s_contexts[i].state);
@@ -261,6 +264,9 @@ void canvas2d_shutdown(void)
             s_contexts[i].active = false;
         }
     }
+    free(s_contexts);
+    s_contexts = NULL;
+    s_ctx_capacity = 0;
     s_ctx_count = 0;
 
     for (int i = 0; i < s_font_count; i++) {
@@ -280,6 +286,24 @@ void canvas2d_shutdown(void)
     }
 }
 
+/* Reuse inactive slots before growing. Called only on the runtime thread;
+   allocation/size failure leaves the existing registry and handles untouched. */
+static Canvas2DCtx *acquire_context_slot(void)
+{
+    for (size_t i = 0; i < s_ctx_capacity; i++) {
+        if (!s_contexts[i].active) return &s_contexts[i];
+    }
+    size_t capacity = s_ctx_capacity ? s_ctx_capacity * 2 : 256;
+    if (capacity < s_ctx_capacity || capacity > SIZE_MAX / sizeof(*s_contexts)) return NULL;
+    Canvas2DCtx *contexts = realloc(s_contexts, capacity * sizeof(*contexts));
+    if (!contexts) return NULL;
+    memset(contexts + s_ctx_capacity, 0, (capacity - s_ctx_capacity) * sizeof(*contexts));
+    Canvas2DCtx *slot = &contexts[s_ctx_capacity];
+    s_contexts = contexts;
+    s_ctx_capacity = capacity;
+    return slot;
+}
+
 Canvas2DHandle canvas2d_create(int width, int height)
 {
     if (width <= 0 || height <= 0) return CANVAS2D_HANDLE_INVALID;
@@ -288,26 +312,21 @@ Canvas2DHandle canvas2d_create(int width, int height)
     uint64_t alloc_check = (uint64_t)width * (uint64_t)height * 4;
     if (alloc_check > SIZE_MAX) return CANVAS2D_HANDLE_INVALID;
 
-    for (size_t i = 0; i < MAX_CONTEXTS; i++) {
-        if (!s_contexts[i].active) {
-            Canvas2DCtx *ctx = &s_contexts[i];
-            size_t buf_size = (size_t)alloc_check;
-            ctx->pixels = calloc(1, buf_size);
-            if (!ctx->pixels) return CANVAS2D_HANDLE_INVALID;
+    Canvas2DCtx *ctx = acquire_context_slot();
+    if (!ctx) return CANVAS2D_HANDLE_INVALID;
+    ctx->pixels = calloc(1, (size_t)alloc_check);
+    if (!ctx->pixels) return CANVAS2D_HANDLE_INVALID;
 
-            ctx->width = width;
-            ctx->height = height;
-            ctx->handle = s_next_handle++;
-            if (s_next_handle == 0) s_next_handle = 1; /* skip INVALID */
-            ctx->active = true;
-            ctx->state_depth = 0;
-            init_state(&ctx->state);
+    ctx->width = width;
+    ctx->height = height;
+    ctx->handle = s_next_handle++;
+    if (s_next_handle == 0) s_next_handle = 1; /* skip INVALID */
+    ctx->active = true;
+    ctx->state_depth = 0;
+    init_state(&ctx->state);
 
-            s_ctx_count++;
-            return ctx->handle;
-        }
-    }
-    return CANVAS2D_HANDLE_INVALID;
+    s_ctx_count++;
+    return ctx->handle;
 }
 
 void canvas2d_destroy(Canvas2DHandle handle)
