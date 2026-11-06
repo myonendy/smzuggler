@@ -97,7 +97,7 @@ def local_identity_hit(text: str, names: list[str]) -> bool:
 def is_save_path(path: Path) -> bool:
     """True for RPG Maker saves, including the project's `.rmmzsave` suffix."""
     lower = path.name.lower()
-    return lower.endswith(SAVE_SUFFIXES) or lower.startswith('global')
+    return lower.endswith(SAVE_SUFFIXES)
 
 
 def walk_files(root: Path) -> list[Path]:

@@ -45,9 +45,11 @@ sudo tools/perf/deck-proxy.sh --restore
 ```
 
 `--run -- COMMAND...` applies the caps and then runs `COMMAND` under
-`taskset -c 0-7`; the caller still restores afterwards. If a cpufreq policy,
-the Intel GPU frequency node or `powerprofilesctl` is missing, the script says
-so and continues with the caps it could apply.
+`taskset -c 0-7` as the sudo caller, with that user's `HOME`, so the game does
+not write its state into root's directories. A direct root invocation has no
+caller to drop to and keeps root. The caller still restores afterwards. If a
+cpufreq policy, the Intel GPU frequency node or `powerprofilesctl` is missing,
+the script says so and continues with the caps it could apply.
 
 The suite writes the same frame streams as any other profile. The analyser
 writes `perf-report-deck-proxy-<scene>.json` and `.md` with `gate: proxy`.

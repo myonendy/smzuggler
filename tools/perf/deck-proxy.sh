@@ -18,6 +18,10 @@
 # Usage: sudo tools/perf/deck-proxy.sh [--run -- COMMAND...]
 #        sudo tools/perf/deck-proxy.sh --restore
 #        tools/perf/deck-proxy.sh --help
+#
+# --run drops back to the sudo caller before starting COMMAND, so the game's
+# HOME and XDG state go to that user's directories, not root's. When the
+# script is started as root directly (no SUDO_USER) COMMAND runs as root.
 
 set -eu
 
@@ -189,6 +193,32 @@ apply_all() {
     print_run_command
 }
 
+# Home directory of a login name, or nothing when the account is unknown.
+home_of() {
+    if command -v getent >/dev/null 2>&1; then
+        getent passwd "$1" | cut -d: -f6
+    else
+        awk -F: -v user="$1" '$1 == user { print $6 }' /etc/passwd
+    fi
+}
+
+# Start COMMAND under the CPU list as the sudo caller, so the game writes its
+# state to that user's HOME. A root invocation has no caller identity and
+# deliberately keeps root (documented above); an unknown caller fails loudly.
+run_capped() {
+    target=${SUDO_USER:-}
+    if [ -z "$target" ] || [ "$target" = root ]; then
+        exec taskset -c "$CPU_LIST" "$@"
+    fi
+    target_home=$(home_of "$target")
+    if [ -z "$target_home" ]; then
+        printf 'deck-proxy: cannot find home for %s\n' "$target" >&2
+        exit 1
+    fi
+    exec runuser -u "$target" -- env HOME="$target_home" \
+        taskset -c "$CPU_LIST" "$@"
+}
+
 # Entry point: help, restore, capped run, or apply-and-print.
 main() {
     case ${1:-} in
@@ -202,9 +232,8 @@ main() {
             shift
             [ "${1:-}" = "--" ] && shift
             [ "$#" -gt 0 ] || { usage >&2; exit 2; }
-            need_root
             apply_all
-            exec taskset -c "$CPU_LIST" "$@"
+            run_capped "$@"
             ;;
         '')
             apply_all

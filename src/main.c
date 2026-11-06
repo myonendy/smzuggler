@@ -1397,6 +1397,9 @@ static int runtime_main(int argc, char *argv[])
         } else if (strcmp(argv[i], "--scrub-report") == 0 && i + 1 < argc) {
             scrub_requested = true;
             scrub_path = argv[++i];
+        } else if (strcmp(argv[i], "--scrub-report") == 0) {
+            /* No directory follows: let the dispatch print the usage error. */
+            scrub_requested = true;
         } else if (strncmp(argv[i], "--scrub-report=", 15) == 0) {
             scrub_requested = true;
             scrub_path = argv[i] + 15;
@@ -1441,15 +1444,6 @@ static int runtime_main(int argc, char *argv[])
         } else if (strncmp(argv[i], "--cpu-prof=", 11) == 0) {
             cpu_prof_requested = true;
             cpu_prof_path = argv[i] + 11;
-        } else if (strcmp(argv[i], "--scrub-report") == 0 &&
-                   i + 1 < argc) {
-            i++; /* consumed by the scrub dispatch above */
-        } else if (strncmp(argv[i], "--scrub-report=", 15) == 0) {
-            continue; /* consumed by the scrub dispatch above */
-        } else if (strcmp(argv[i], "--out") == 0 && i + 1 < argc) {
-            i++; /* consumed by the scrub dispatch above */
-        } else if (strncmp(argv[i], "--out=", 6) == 0) {
-            continue; /* consumed by the scrub dispatch above */
         } else if (strcmp(argv[i], "--perf-suite") == 0 ||
                    strncmp(argv[i], "--perf-suite=", 13) == 0) {
             continue; /* validated with the other §14 options above */
