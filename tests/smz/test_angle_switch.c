@@ -13,6 +13,7 @@
  * CI runner with no display.
  */
 #include <EGL/egl.h>
+#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -25,27 +26,42 @@ static int text_has(const char *text, const char *needle)
 /** Return the EGL client extension string, or NULL when the client has none. */
 static const char *client_extensions(void)
 {
-    const char *extensions = eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
-    return extensions;
+    return eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
+}
+
+/**
+ * Fail loudly with a diagnostic, then abort through assert.
+ *
+ * The message names the provider contract that broke, while the assert makes
+ * the failure visible to ctest without relying on anyone reading the log.
+ */
+static void check(int ok, const char *what)
+{
+    if (!ok) fprintf(stderr, "angle_switch: %s\n", what);
+    assert(ok);
 }
 
 /**
  * Link-time provider contract; runs without a window or GPU device.
  *
- * Returns 0 when the library linked into this binary is the provider the
- * build selected, printing the client vendor and extensions for the record.
- * Returns nonzero with a diagnostic when the EGL client cannot answer, when an
- * ANGLE build did not reach ANGLE, or when a system build unexpectedly did.
+ * The build defines exactly one provider macro, and the EGL client extension
+ * string proves which library the link actually reached. The test owns no
+ * resources, so it is safe to call on any thread and returns 0 on success.
  */
 int main(void)
 {
     const char *extensions;
     const char *expected;
+    int want_angle;
 
-#if defined(SMZ_GLES_ANGLE)
+#if defined(SMZ_GLES_ANGLE) && defined(SMZ_GLES_SYSTEM)
+#error "MZ_GLES must select exactly one provider"
+#elif defined(SMZ_GLES_ANGLE)
     expected = "angle";
+    want_angle = 1;
 #elif defined(SMZ_GLES_SYSTEM)
     expected = "system";
+    want_angle = 0;
 #else
     fputs("MZ_GLES provider is not defined; the build is inconsistent\n", stderr);
     return 1;
@@ -55,20 +71,11 @@ int main(void)
     printf("MZ_GLES provider: %s\n", expected);
     printf("EGL client extensions: %s\n",
            extensions != NULL ? extensions : "(none)");
-    if (extensions == NULL) {
-        fputs("EGL client reports no extensions; cannot identify the provider\n",
-              stderr);
-        return 1;
-    }
 
-    if (strcmp(expected, "angle") == 0) {
-        if (!text_has(extensions, "EGL_ANGLE_")) {
-            fputs("MZ_GLES=angle did not link an ANGLE EGL client\n", stderr);
-            return 1;
-        }
-    } else if (text_has(extensions, "EGL_ANGLE_")) {
-        fputs("MZ_GLES=system linked an ANGLE EGL client\n", stderr);
-        return 1;
-    }
+    check(extensions != NULL,
+          "EGL client reports no extensions; cannot identify the provider");
+    check(want_angle == text_has(extensions, "EGL_ANGLE_"),
+          want_angle ? "MZ_GLES=angle did not link an ANGLE EGL client"
+                     : "MZ_GLES=system linked an ANGLE EGL client");
     return 0;
 }
