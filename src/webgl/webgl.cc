@@ -90,6 +90,49 @@ struct GL {
     void (APIENTRY *Uniform4fv)(GLint, GLsizei, const GLfloat *);
     void (APIENTRY *UniformMatrix4fv)(GLint, GLsizei, GLboolean, const GLfloat *);
     void (APIENTRY *BindFramebuffer)(GLenum, GLuint);
+    /* Texture, framebuffer and renderbuffer entry points (card M2-T002). */
+    void (APIENTRY *GenTextures)(GLsizei, GLuint *);
+    void (APIENTRY *DeleteTextures)(GLsizei, const GLuint *);
+    void (APIENTRY *TexImage2D)(GLenum, GLint, GLint, GLsizei, GLsizei, GLint,
+                                GLenum, GLenum, const void *);
+    void (APIENTRY *TexSubImage2D)(GLenum, GLint, GLint, GLint, GLsizei, GLsizei,
+                                   GLenum, GLenum, const void *);
+    void (APIENTRY *TexParameteri)(GLenum, GLenum, GLint);
+    void (APIENTRY *PixelStorei)(GLenum, GLint);
+    void (APIENTRY *GenFramebuffers)(GLsizei, GLuint *);
+    void (APIENTRY *DeleteFramebuffers)(GLsizei, const GLuint *);
+    void (APIENTRY *FramebufferTexture2D)(GLenum, GLenum, GLenum, GLuint, GLint);
+    void (APIENTRY *FramebufferRenderbuffer)(GLenum, GLenum, GLenum, GLuint);
+    GLenum (APIENTRY *CheckFramebufferStatus)(GLenum);
+    void (APIENTRY *GenRenderbuffers)(GLsizei, GLuint *);
+    void (APIENTRY *DeleteRenderbuffers)(GLsizei, const GLuint *);
+    void (APIENTRY *BindRenderbuffer)(GLenum, GLuint);
+    void (APIENTRY *RenderbufferStorage)(GLenum, GLenum, GLsizei, GLsizei);
+    void (APIENTRY *ReadPixels)(GLint, GLint, GLsizei, GLsizei, GLenum, GLenum,
+                                void *);
+    void (APIENTRY *StencilFunc)(GLenum, GLint, GLuint);
+    void (APIENTRY *StencilOp)(GLenum, GLenum, GLenum);
+    void (APIENTRY *StencilMask)(GLuint);
+    void (APIENTRY *ClearStencil)(GLint);
+    void (APIENTRY *DepthFunc)(GLenum);
+    void (APIENTRY *DepthMask)(GLboolean);
+    void (APIENTRY *ColorMask)(GLboolean, GLboolean, GLboolean, GLboolean);
+    /* Minimal shader pipeline so a stencil draw has a program (M2-T003 will
+     * extend it); the stencil test criterion needs one real draw call. */
+    GLuint (APIENTRY *CreateShader)(GLenum);
+    void (APIENTRY *ShaderSource)(GLuint, GLsizei, const GLchar *const *,
+                                  const GLint *);
+    void (APIENTRY *CompileShader)(GLuint);
+    GLuint (APIENTRY *CreateProgram)(void);
+    void (APIENTRY *AttachShader)(GLuint, GLuint);
+    void (APIENTRY *LinkProgram)(GLuint);
+    void (APIENTRY *GetShaderiv)(GLuint, GLenum, GLint *);
+    void (APIENTRY *GetProgramiv)(GLuint, GLenum, GLint *);
+    void (APIENTRY *GetShaderInfoLog)(GLuint, GLsizei, GLsizei *, GLchar *);
+    void (APIENTRY *GetProgramInfoLog)(GLuint, GLsizei, GLsizei *, GLchar *);
+    void (APIENTRY *DeleteShader)(GLuint);
+    void (APIENTRY *DeleteProgram)(GLuint);
+    void (APIENTRY *BindAttribLocation)(GLuint, GLuint, const GLchar *);
 };
 
 static GL gl;
@@ -138,6 +181,42 @@ static bool gl_load(void)
     LOAD(glUniform4fv, Uniform4fv);
     LOAD(glUniformMatrix4fv, UniformMatrix4fv);
     LOAD(glBindFramebuffer, BindFramebuffer);
+    LOAD(glGenTextures, GenTextures);
+    LOAD(glDeleteTextures, DeleteTextures);
+    LOAD(glTexImage2D, TexImage2D);
+    LOAD(glTexSubImage2D, TexSubImage2D);
+    LOAD(glTexParameteri, TexParameteri);
+    LOAD(glPixelStorei, PixelStorei);
+    LOAD(glGenFramebuffers, GenFramebuffers);
+    LOAD(glDeleteFramebuffers, DeleteFramebuffers);
+    LOAD(glFramebufferTexture2D, FramebufferTexture2D);
+    LOAD(glFramebufferRenderbuffer, FramebufferRenderbuffer);
+    LOAD(glCheckFramebufferStatus, CheckFramebufferStatus);
+    LOAD(glGenRenderbuffers, GenRenderbuffers);
+    LOAD(glDeleteRenderbuffers, DeleteRenderbuffers);
+    LOAD(glBindRenderbuffer, BindRenderbuffer);
+    LOAD(glRenderbufferStorage, RenderbufferStorage);
+    LOAD(glReadPixels, ReadPixels);
+    LOAD(glStencilFunc, StencilFunc);
+    LOAD(glStencilOp, StencilOp);
+    LOAD(glStencilMask, StencilMask);
+    LOAD(glClearStencil, ClearStencil);
+    LOAD(glDepthFunc, DepthFunc);
+    LOAD(glDepthMask, DepthMask);
+    LOAD(glColorMask, ColorMask);
+    LOAD(glCreateShader, CreateShader);
+    LOAD(glShaderSource, ShaderSource);
+    LOAD(glCompileShader, CompileShader);
+    LOAD(glCreateProgram, CreateProgram);
+    LOAD(glAttachShader, AttachShader);
+    LOAD(glLinkProgram, LinkProgram);
+    LOAD(glGetShaderiv, GetShaderiv);
+    LOAD(glGetProgramiv, GetProgramiv);
+    LOAD(glGetShaderInfoLog, GetShaderInfoLog);
+    LOAD(glGetProgramInfoLog, GetProgramInfoLog);
+    LOAD(glDeleteShader, DeleteShader);
+    LOAD(glDeleteProgram, DeleteProgram);
+    LOAD(glBindAttribLocation, BindAttribLocation);
     if (missing) fprintf(stderr, "webgl: %d GL entry point(s) missing\n", missing);
     return missing == 0;
 }
@@ -214,8 +293,18 @@ static bool backend_ready(void)
 #define MAX_CONTEXTS 8
 
 /* One queued GC delete, drained on the main thread (spec section 15.8). */
-struct Pending { Pending *next; GLuint name; bool buffer; };
-/* One wrapper-owned GL name; `buffer` selects buffers vs vertex arrays. */
+struct Pending { Pending *next; GLuint name; int kind; };
+/* Kinds of GL name a wrapper can own; each wrapper owns exactly one. */
+enum GLObjectKind {
+    GL_OBJECT_BUFFER = 0,
+    GL_OBJECT_VERTEX_ARRAY = 1,
+    GL_OBJECT_TEXTURE = 2,
+    GL_OBJECT_FRAMEBUFFER = 3,
+    GL_OBJECT_RENDERBUFFER = 4,
+    GL_OBJECT_SHADER = 5,
+    GL_OBJECT_PROGRAM = 6,
+};
+/* One wrapper-owned GL name; `kind` selects the delete entry point. */
 struct GLObject;
 
 /* One WebGL2 context, its drawing-buffer size and the wrappers it owns. */
@@ -226,6 +315,14 @@ struct GLContext {
     Pending *pending;
     GLObject *objects;
     GLenum synth_error;
+    /* Unpack state applied to Canvas2D/image sources only; typed arrays keep
+     * the GL defaults (WebGL2 spec 5.14.8 pixel storage parameters). */
+    GLint unpack_flip_y;
+    GLint unpack_premultiply_alpha;
+    GLint unpack_alignment;
+    GLint pack_alignment;
+    GLint unpack_row_length;
+    GLint pack_row_length;
 };
 
 /* A wrapper-owned GL name; `context` is NULL once the context is gone. */
@@ -233,9 +330,40 @@ struct GLObject {
     GLContext *context;
     GLObject *next;
     GLuint name;
-    bool buffer;
+    int kind;
     bool deleted;
 };
+
+/* Frees one GL name of `kind`; only called on the main thread with a current
+ * context. A zero name is ignored, as the delete entry points do. */
+static void delete_name(int kind, GLuint name)
+{
+    if (!name) return;
+    switch (kind) {
+    case GL_OBJECT_BUFFER: gl.DeleteBuffers(1, &name); break;
+    case GL_OBJECT_VERTEX_ARRAY: gl.DeleteVertexArrays(1, &name); break;
+    case GL_OBJECT_TEXTURE: gl.DeleteTextures(1, &name); break;
+    case GL_OBJECT_FRAMEBUFFER: gl.DeleteFramebuffers(1, &name); break;
+    case GL_OBJECT_RENDERBUFFER: gl.DeleteRenderbuffers(1, &name); break;
+    case GL_OBJECT_SHADER: gl.DeleteShader(name); break;
+    case GL_OBJECT_PROGRAM: gl.DeleteProgram(name); break;
+    default: break;
+    }
+}
+/* Creates one GL name of `kind`, or 0 when the driver refuses. */
+static GLuint gen_name(int kind)
+{
+    GLuint name = 0;
+    switch (kind) {
+    case GL_OBJECT_BUFFER: gl.GenBuffers(1, &name); break;
+    case GL_OBJECT_VERTEX_ARRAY: gl.GenVertexArrays(1, &name); break;
+    case GL_OBJECT_TEXTURE: gl.GenTextures(1, &name); break;
+    case GL_OBJECT_FRAMEBUFFER: gl.GenFramebuffers(1, &name); break;
+    case GL_OBJECT_RENDERBUFFER: gl.GenRenderbuffers(1, &name); break;
+    default: break;
+    }
+    return name;
+}
 
 static GLContext *s_contexts[MAX_CONTEXTS];
 /* Contexts whose JS wrapper was collected, drained outside GC. */
@@ -260,6 +388,13 @@ static void default_state(GLContext *ctx)
     gl.Disable(GL_SCISSOR_TEST);
     gl.Disable(GL_POLYGON_OFFSET_FILL);
     gl.Enable(GL_DITHER);
+    /* WebGL2 pixel-storage defaults: alignment 4, no flip, no premultiply. */
+    ctx->unpack_flip_y = 0;
+    ctx->unpack_premultiply_alpha = 0;
+    ctx->unpack_alignment = 4;
+    ctx->pack_alignment = 4;
+    ctx->unpack_row_length = 0;
+    ctx->pack_row_length = 0;
 }
 /* Creates a context in the first free slot; NULL when GL is unavailable. */
 static GLContext *context_create(int width, int height)
@@ -290,8 +425,7 @@ static void drain_pending(GLContext *ctx)
     ctx->pending = NULL;
     while (node) {
         Pending *next = node->next;
-        if (node->buffer) gl.DeleteBuffers(1, &node->name);
-        else gl.DeleteVertexArrays(1, &node->name);
+        delete_name(node->kind, node->name);
         free(node);
         node = next;
     }
@@ -302,8 +436,7 @@ static void release_objects(GLContext *ctx)
 {
     for (GLObject *object = ctx->objects; object; object = object->next) {
         if (!object->deleted && object->name) {
-            if (object->buffer) gl.DeleteBuffers(1, &object->name);
-            else gl.DeleteVertexArrays(1, &object->name);
+            delete_name(object->kind, object->name);
         }
         object->name = 0;
         object->deleted = true;
@@ -361,23 +494,25 @@ static void drain_destroy_queue(void)
     s_destroy_count = 0;
     for (size_t i = 0; i < count; i++) context_destroy(s_destroy_queue[i]);
 }
-/* Creates one buffer or VAO record and links it into its context. */
-static GLObject *object_create(GLContext *ctx, bool buffer)
+/* Wraps an existing GL name of `kind` in a record linked into `ctx`. */
+static GLObject *object_wrap(GLContext *ctx, int kind, GLuint name)
 {
-    GLuint name = 0;
-    if (buffer) gl.GenBuffers(1, &name); else gl.GenVertexArrays(1, &name);
     GLObject *object = name ? (GLObject *)calloc(1, sizeof(*object)) : NULL;
     if (!object) {
-        if (buffer) gl.DeleteBuffers(1, &name);
-        else gl.DeleteVertexArrays(1, &name);
+        if (name) delete_name(kind, name);
         return NULL;
     }
     object->context = ctx;
     object->next = ctx->objects;
     ctx->objects = object;
     object->name = name;
-    object->buffer = buffer;
+    object->kind = kind;
     return object;
+}
+/* Creates one wrapper record for a new GL name and links it into its context. */
+static GLObject *object_create(GLContext *ctx, int kind)
+{
+    return object_wrap(ctx, kind, gen_name(kind));
 }
 /* Unlinks `object` from its context's live-wrapper list, if linked. */
 static void object_unlink(GLObject *object)
@@ -395,8 +530,7 @@ static void object_delete(GLObject *object)
 {
     if (!object || object->deleted) return;
     if (object->context && object->name) {
-        if (object->buffer) gl.DeleteBuffers(1, &object->name);
-        else gl.DeleteVertexArrays(1, &object->name);
+        delete_name(object->kind, object->name);
     }
     object_unlink(object);
     object->name = 0;
@@ -411,7 +545,7 @@ static void object_gc(GLObject *object)
         Pending *node = (Pending *)malloc(sizeof(*node));
         if (node) {
             node->name = object->name;
-            node->buffer = object->buffer;
+            node->kind = object->kind;
             node->next = ctx->pending;
             ctx->pending = node;
         }
@@ -562,7 +696,22 @@ enum Op {
     OP_ENABLE_ATTRIB, OP_DISABLE_ATTRIB, OP_VERTEX_ATTRIB, OP_DRAW_ARRAYS,
     OP_DRAW_ELEMENTS, OP_ACTIVE_TEXTURE, OP_BIND_TEXTURE, OP_USE_PROGRAM,
     OP_BIND_FRAMEBUFFER, OP_UNIFORM1F, OP_UNIFORM1I, OP_UNIFORM4F,
-    OP_UNIFORM1FV, OP_UNIFORM4FV, OP_UNIFORM_MATRIX4FV
+    OP_UNIFORM1FV, OP_UNIFORM4FV, OP_UNIFORM_MATRIX4FV,
+    /* Card M2-T002: textures, framebuffers, renderbuffers and readback. */
+    OP_CREATE_TEXTURE, OP_DELETE_TEXTURE, OP_TEX_IMAGE_2D,
+    OP_TEX_SUB_IMAGE_2D, OP_TEX_PARAMETERI, OP_PIXEL_STOREI,
+    OP_CREATE_FRAMEBUFFER, OP_DELETE_FRAMEBUFFER, OP_FRAMEBUFFER_TEXTURE_2D,
+    OP_FRAMEBUFFER_RENDERBUFFER, OP_CHECK_FRAMEBUFFER_STATUS,
+    OP_CREATE_RENDERBUFFER, OP_DELETE_RENDERBUFFER, OP_BIND_RENDERBUFFER,
+    OP_RENDERBUFFER_STORAGE, OP_READ_PIXELS,
+    OP_STENCIL_FUNC, OP_STENCIL_OP, OP_STENCIL_MASK, OP_CLEAR_STENCIL,
+    OP_DEPTH_FUNC, OP_DEPTH_MASK, OP_COLOR_MASK,
+    /* Minimal shader pipeline; the stencil test needs one real draw call. */
+    OP_CREATE_SHADER, OP_SHADER_SOURCE, OP_COMPILE_SHADER, OP_CREATE_PROGRAM,
+    OP_ATTACH_SHADER, OP_LINK_PROGRAM, OP_GET_SHADER_PARAMETER,
+    OP_GET_PROGRAM_PARAMETER, OP_GET_SHADER_INFO_LOG,
+    OP_GET_PROGRAM_INFO_LOG, OP_DELETE_SHADER, OP_DELETE_PROGRAM,
+    OP_BIND_ATTRIB_LOCATION
 };
 
 /* One JS method: name, `length` and its switch case. */
@@ -586,6 +735,40 @@ static const Method kMethods[] = {
     {"uniform1f", 2, OP_UNIFORM1F}, {"uniform1i", 2, OP_UNIFORM1I},
     {"uniform4f", 5, OP_UNIFORM4F}, {"uniform1fv", 2, OP_UNIFORM1FV},
     {"uniform4fv", 2, OP_UNIFORM4FV}, {"uniformMatrix4fv", 3, OP_UNIFORM_MATRIX4FV},
+    {"createTexture", 0, OP_CREATE_TEXTURE},
+    {"deleteTexture", 1, OP_DELETE_TEXTURE},
+    {"texImage2D", 6, OP_TEX_IMAGE_2D},
+    {"texSubImage2D", 7, OP_TEX_SUB_IMAGE_2D},
+    {"texParameteri", 3, OP_TEX_PARAMETERI},
+    {"pixelStorei", 2, OP_PIXEL_STOREI},
+    {"createFramebuffer", 0, OP_CREATE_FRAMEBUFFER},
+    {"deleteFramebuffer", 1, OP_DELETE_FRAMEBUFFER},
+    {"framebufferTexture2D", 5, OP_FRAMEBUFFER_TEXTURE_2D},
+    {"framebufferRenderbuffer", 4, OP_FRAMEBUFFER_RENDERBUFFER},
+    {"checkFramebufferStatus", 1, OP_CHECK_FRAMEBUFFER_STATUS},
+    {"createRenderbuffer", 0, OP_CREATE_RENDERBUFFER},
+    {"deleteRenderbuffer", 1, OP_DELETE_RENDERBUFFER},
+    {"bindRenderbuffer", 2, OP_BIND_RENDERBUFFER},
+    {"renderbufferStorage", 4, OP_RENDERBUFFER_STORAGE},
+    {"readPixels", 7, OP_READ_PIXELS},
+    {"stencilFunc", 3, OP_STENCIL_FUNC}, {"stencilOp", 3, OP_STENCIL_OP},
+    {"stencilMask", 1, OP_STENCIL_MASK},
+    {"clearStencil", 1, OP_CLEAR_STENCIL},
+    {"depthFunc", 1, OP_DEPTH_FUNC}, {"depthMask", 1, OP_DEPTH_MASK},
+    {"colorMask", 4, OP_COLOR_MASK},
+    {"createShader", 1, OP_CREATE_SHADER},
+    {"shaderSource", 2, OP_SHADER_SOURCE},
+    {"compileShader", 1, OP_COMPILE_SHADER},
+    {"createProgram", 0, OP_CREATE_PROGRAM},
+    {"attachShader", 2, OP_ATTACH_SHADER},
+    {"linkProgram", 1, OP_LINK_PROGRAM},
+    {"getShaderParameter", 2, OP_GET_SHADER_PARAMETER},
+    {"getProgramParameter", 2, OP_GET_PROGRAM_PARAMETER},
+    {"getShaderInfoLog", 1, OP_GET_SHADER_INFO_LOG},
+    {"getProgramInfoLog", 1, OP_GET_PROGRAM_INFO_LOG},
+    {"deleteShader", 1, OP_DELETE_SHADER},
+    {"deleteProgram", 1, OP_DELETE_PROGRAM},
+    {"bindAttribLocation", 3, OP_BIND_ATTRIB_LOCATION},
 };
 
 /* Uploads a float uniform vector of `components` width; shared by both paths.
@@ -665,14 +848,14 @@ static bool slow_buffer(const FunctionCallbackInfo<Value> &info, GLContext *ctx,
     Local<Context> context = isolate->GetCurrentContext();
     switch (op) {
     case OP_CREATE_BUFFER: {
-        GLObject *object = object_create(ctx, true);
+        GLObject *object = object_create(ctx, GL_OBJECT_BUFFER);
         if (!object) { info.GetReturnValue().SetNull(); return true; }
         info.GetReturnValue().Set(make_object(isolate, context, object));
         return true;
     }
     case OP_DELETE_BUFFER: {
         GLObject *object = object_of(info[0]);
-        if (object && object->buffer) object_delete(object);
+        if (object && object->kind == GL_OBJECT_BUFFER) object_delete(object);
         return true;
     }
     case OP_BIND_BUFFER:
@@ -722,14 +905,14 @@ static bool slow_vao(const FunctionCallbackInfo<Value> &info, GLContext *ctx,
     Local<Context> context = isolate->GetCurrentContext();
     switch (op) {
     case OP_CREATE_VAO: {
-        GLObject *object = object_create(ctx, false);
+        GLObject *object = object_create(ctx, GL_OBJECT_VERTEX_ARRAY);
         if (!object) { info.GetReturnValue().SetNull(); return true; }
         info.GetReturnValue().Set(make_object(isolate, context, object));
         return true;
     }
     case OP_DELETE_VAO: {
         GLObject *object = object_of(info[0]);
-        if (object && !object->buffer) object_delete(object);
+        if (object && object->kind == GL_OBJECT_VERTEX_ARRAY) object_delete(object);
         return true;
     }
     case OP_BIND_VAO: gl.BindVertexArray(gl_name(ctx, info[0])); return true;
@@ -984,6 +1167,32 @@ static const Constant kConstants[] = {
     {"CLAMP_TO_EDGE", GL_CLAMP_TO_EDGE}, {"REPEAT", GL_REPEAT},
     {"FRAMEBUFFER", GL_FRAMEBUFFER}, {"FRAMEBUFFER_BINDING", GL_FRAMEBUFFER_BINDING},
     {"VERTEX_ARRAY_BINDING", GL_VERTEX_ARRAY_BINDING},
+    {"TEXTURE_WRAP_S", GL_TEXTURE_WRAP_S},
+    {"TEXTURE_WRAP_T", GL_TEXTURE_WRAP_T},
+    {"TEXTURE_BINDING_2D", GL_TEXTURE_BINDING_2D},
+    {"RENDERBUFFER", GL_RENDERBUFFER},
+    {"RENDERBUFFER_BINDING", GL_RENDERBUFFER_BINDING},
+    {"FRAMEBUFFER_COMPLETE", GL_FRAMEBUFFER_COMPLETE},
+    {"FRAMEBUFFER_INCOMPLETE_ATTACHMENT", GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT},
+    {"FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT",
+     GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT},
+    {"FRAMEBUFFER_UNSUPPORTED", GL_FRAMEBUFFER_UNSUPPORTED},
+    {"COLOR_ATTACHMENT0", GL_COLOR_ATTACHMENT0},
+    {"DEPTH_ATTACHMENT", GL_DEPTH_ATTACHMENT},
+    {"STENCIL_ATTACHMENT", GL_STENCIL_ATTACHMENT},
+    {"DEPTH_STENCIL_ATTACHMENT", GL_DEPTH_STENCIL_ATTACHMENT},
+    {"DEPTH24_STENCIL8", GL_DEPTH24_STENCIL8},
+    {"STENCIL_INDEX8", GL_STENCIL_INDEX8},
+    {"RGBA8", GL_RGBA8}, {"RGB8", GL_RGB8},
+    {"READ_FRAMEBUFFER", GL_READ_FRAMEBUFFER},
+    {"DRAW_FRAMEBUFFER", GL_DRAW_FRAMEBUFFER},
+    {"UNPACK_ALIGNMENT", GL_UNPACK_ALIGNMENT},
+    {"PACK_ALIGNMENT", GL_PACK_ALIGNMENT},
+    {"UNPACK_ROW_LENGTH", GL_UNPACK_ROW_LENGTH},
+    {"PACK_ROW_LENGTH", GL_PACK_ROW_LENGTH},
+    {"KEEP", GL_KEEP}, {"REPLACE", GL_REPLACE}, {"INCR", GL_INCR},
+    {"DECR", GL_DECR}, {"INVERT", GL_INVERT}, {"INCR_WRAP", GL_INCR_WRAP},
+    {"DECR_WRAP", GL_DECR_WRAP},
     {"UNPACK_FLIP_Y_WEBGL", 0x9240},
     {"UNPACK_PREMULTIPLY_ALPHA_WEBGL", 0x9241},
 };
