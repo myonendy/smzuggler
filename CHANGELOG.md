@@ -42,6 +42,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Add GLSL ES 1.00/3.00 shader compile/link with a desktop-GL core rewrite, source-line compile logs, driver-probed WebGL2 extensions and Chrome-typed getParameter limits. (M2-T003)
 - Add WebGL2 texture uploads (typed arrays, Canvas2D, images, ImageData), UNPACK flip/premultiply, framebuffers, depth-stencil renderbuffers, readPixels and stencil-tested draws, with bounds checks for aligned pixel rows and isolated host-source unpack state. (M2-T002)
 - Add a native WebGL2 context over GLES 3.0 with buffer/VAO state, draws, V8 Fast API hot calls, canvas-driven drawing-buffer resize and non-allocating fast paths. (M2-T001)
 - Add the outside-tester kit: `--scrub-report` packs only the fixed report schema, writes `SCRUBBED.txt` and refuses saves or local identities while preserving Deck profile tokens; optional `deck-proxy` caps carry `gate: proxy`. (M2-T008)

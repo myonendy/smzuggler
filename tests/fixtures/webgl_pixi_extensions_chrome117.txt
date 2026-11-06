@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 The smzuggler contributors
+#
+# Extension names PIXI 5.3.12 calls getExtension with on a WebGL2 context,
+# and whether Chrome 117.0.5938.63 (ANGLE) returned an object for each one.
+# Recorded from PIXI's own getExtensions/validateContext paths; WebGL2 core
+# removes the WebGL1-only names, which therefore answer null in Chrome too.
+# Format: <name> <yes|no>; comments and blank lines are ignored.
+ANGLE_instanced_arrays no
+EXT_color_buffer_float yes
+EXT_texture_filter_anisotropic yes
+MOZ_OES_vertex_array_object no
+OES_element_index_uint no
+OES_texture_float no
+OES_texture_float_linear yes
+OES_texture_half_float no
+OES_texture_half_float_linear no
+OES_vertex_array_object no
+WEBGL_depth_texture no
+WEBGL_draw_buffers no
+WEBGL_lose_context yes
+WEBKIT_OES_vertex_array_object no

@@ -2,8 +2,8 @@
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
 The WebGL2 context, state, buffers, VAOs, textures, framebuffers,
-renderbuffers and draws over GLES 3.0, and the GLES provider switch they run
-on. Spec §4.2 and §11 Q5.
+renderbuffers, draws, shader pipeline, extensions and parameters over GLES 3.0,
+and the GLES provider switch they run on. Spec §4.2 and §11 Q5.
 -->
 
 # WebGL2 over GLES 3.0
@@ -12,8 +12,9 @@ The WebGL2 surface real PIXI and UltraMode7 drive, implemented in
 `src/webgl/webgl.cc` on GLES 3.0 / GL 3.3 core (spec §4.2). This page covers the
 GLES provider switch, the context, state, buffer, vertex-array and draw entry
 points, textures and pixel uploads, framebuffers and renderbuffers, stencil,
-readback and the object lifetime rules. Extensions follow in M2-T003. Spec §4.2
-and §11 Q5: Q5 is open, so this page describes the switch, not a ruling.
+readback, shaders and the GLSL ES rewrite, extensions, parameters and the
+object lifetime rules. Spec §4.2 and §11 Q5: Q5 is open, so this page describes
+the switch, not a ruling.
 
 ## What this milestone provides
 
@@ -28,6 +29,11 @@ and §11 Q5: Q5 is open, so this page describes the switch, not a ruling.
   unpack rules.
 - Framebuffers with texture or renderbuffer attachments, depth-stencil
   renderbuffers, `readPixels` into a typed array, and the stencil test.
+- GLSL ES 1.00 and 3.00 shader compilation and linking, including the
+  desktop-GL 3.3 core rewrite described below, with compile errors that name
+  the author's source line.
+- `getExtension`/`getSupportedExtensions` over a driver capability probe, and
+  Chrome-typed `getParameter` values for the limits PIXI reads.
 - V8 Fast API registration for the hot calls listed below.
 - An `angle_switch` ctest that runs a binary built against the selected
   provider and confirms from the EGL client extensions that the linked library
@@ -38,9 +44,9 @@ and §11 Q5: Q5 is open, so this page describes the switch, not a ruling.
   leaves colour unchanged.
 - Pinned ANGLE metadata and a documented Linux CI oracle job, in
   [Building smzuggler](build.md).
-
-It deliberately does **not** implement extensions yet (M2-T003), and it does
-not claim that PIXI runs on it yet.
+- `webgl_shaders` and `webgl_extensions` ctests covering both GLSL ES
+  versions, the compile-error log, the recorded PIXI extension probes and the
+  parameter types and limits.
 
 ## Context binding
 
@@ -123,7 +129,7 @@ path PIXI and VisuMZ use. `bindFramebuffer(target, null)` restores framebuffer
 leaves the colour attachment unchanged, exactly as the hardware does; the
 `webgl_fbo` ctest proves that path before passing the same draw.
 
-## Readback and the minimal shader path
+## Readback, shaders and GLSL ES rewriting
 
 `readPixels(x, y, width, height, format, type, view)` copies into the caller's
 typed array, which stays JS-owned. Its byte length must cover the PACK layout
@@ -131,12 +137,64 @@ described above or the context records `INVALID_OPERATION`.
 Readback works from a bound framebuffer and from the default framebuffer after
 `bindFramebuffer(FRAMEBUFFER, null)`.
 
-The stencil criterion needs one real draw, so `createShader`, `shaderSource`,
-`compileShader`, `createProgram`, `attachShader`, `bindAttribLocation`,
-`linkProgram`, `getShaderParameter`, `getProgramParameter`, `get*InfoLog` and
-`delete*` are present. Compile failures print the GLSL log and the shader source
-lines. This is the minimum for the stencil test; M2-T003 adds the remaining
-shader/uniform introspection PIXI needs.
+`createShader`, `shaderSource`, `compileShader`, `createProgram`,
+`attachShader`, `bindAttribLocation`, `linkProgram`, `getShaderParameter`,
+`getProgramParameter`, `getShaderInfoLog`, `getProgramInfoLog`,
+`getUniformLocation`, `getAttribLocation`, `getActiveUniform`,
+`getActiveAttrib`, the `uniform*` setters and `delete*` cover the path PIXI and
+UltraMode7 drive.
+
+WebGL shaders are GLSL ES. On the GLES 3.0 provider the driver compiles them
+unchanged, as Chrome does. A desktop GL 3.3 core context cannot accept
+`#version 300 es` or the GLSL ES 1.00 spellings, so `glsl_for_target` rewrites
+the source only on that path:
+
+- `#version 300 es` becomes `#version 330 core`; a shader with no version (or
+  `#version 100`) is treated as GLSL ES 1.00 and gets the desktop version line.
+- `attribute` becomes `in`, `varying` becomes `out` in a vertex shader and
+  `in` in a fragment shader, `texture2D`/`textureCube` become `texture`, and
+  `gl_FragColor` becomes the declared `smz_FragColor` output.
+- Standalone `precision` statements and inline `highp`/`mediump`/`lowp` are
+  removed; `GL_OES_standard_derivatives` is enabled in core so its directive
+  is dropped.
+- `#line 1` after the prologue keeps driver error numbers aligned with the
+  author's source lines.
+
+A compile failure logs the driver message plus the numbered original source to
+stderr, and `getShaderInfoLog` returns the same numbered source after the
+driver text. That is a deliberate superset of Chrome's log so plugin authors
+get the line that §15.8 requires; `webgl_shaders` checks it.
+
+## Extensions and parameters
+
+`getExtension(name)` returns an object only when the current driver was probed
+at startup and really provides the capability; every other name returns
+`null`, including WebGL1-only names that are core in WebGL2. Policies:
+
+| Probe | Backed when | Chrome 117 (WebGL2) |
+|---|---|---|
+| `EXT_color_buffer_float` | GLES has `GL_EXT_color_buffer_float`, or desktop core (core feature) | yes |
+| `EXT_texture_filter_anisotropic` | driver lists `GL_EXT_texture_filter_anisotropic` | yes |
+| `OES_texture_float_linear` | GLES has `GL_OES_texture_float_linear`, or desktop core (core feature) | yes |
+| `WEBGL_lose_context` | not backed yet; the runtime cannot honestly lose/restore the SDL context | yes |
+
+The anisotropic object exposes `TEXTURE_MAX_ANISOTROPY_EXT` and
+`MAX_TEXTURE_MAX_ANISOTROPY_EXT`. `getSupportedExtensions()` lists exactly the
+backed names, so it never advertises a probe the driver cannot honour.
+`tests/fixtures/webgl_pixi_extensions_chrome117.txt` records every name PIXI
+5.3.12 probes on a WebGL2 context and Chrome 117's answer; `webgl_extensions`
+fails if the supported set invents a name, and requires Chrome's WebGL2-only
+`null` answers to stay `null`.
+
+`getParameter` forwards limits to `glGetIntegerv`, so values are the driver's
+real limits rather than invented constants: `MAX_TEXTURE_SIZE`,
+`MAX_VERTEX_ATTRIBS`, `MAX_TEXTURE_IMAGE_UNITS`,
+`MAX_COMBINED_TEXTURE_IMAGE_UNITS`, `MAX_RENDERBUFFER_SIZE` and the rest.
+State arrays (`VIEWPORT`, `SCISSOR_BOX`, `MAX_VIEWPORT_DIMS`) come back as
+`Int32Array`, float state (`COLOR_CLEAR_VALUE`, depth range, line width) as
+`Float32Array` or a number, and boolean state as a boolean, matching Chrome's
+IDL types. `MAX_TEXTURE_MAX_ANISOTROPY_EXT` works when the anisotropic
+extension is backed.
 
 ## Hot calls and lifetime
 
@@ -184,7 +242,13 @@ uploads known pixels from a typed array, a two-row Canvas2D canvas and an
 FLIP_Y/PREMULTIPLY transform a host source but not a typed array.
 `tests/smz/test_webgl_fbo.c` builds a texture plus depth24-stencil8
 renderbuffer, draws through a shader, proves a stencil-failed draw leaves colour
-unchanged, then restores framebuffer `0` and reads it back. Every device test
+unchanged, then restores framebuffer `0` and reads it back.
+`tests/smz/test_webgl_shaders.c` compiles and links a GLSL ES 3.00 program and
+a GLSL ES 1.00 program, draws with each and reads the result back, then checks
+that a syntax error's log names the author's source line.
+`tests/smz/test_webgl_extensions.c` walks the recorded PIXI 5.3.12 probe list,
+checks that unbacked and unknown names return `null`, and checks the parameter
+types and limits. Every device test
 skips only when the backend reports no GL device or entry point; the fast-api
 test needs no device. Rows for every entry point are in
 [compat-surface.md](compat-surface.md).

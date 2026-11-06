@@ -253,7 +253,9 @@ dump and rejection of a stale `name` row through the CLI.
 | `WebGL2RenderingContext.prototype.enable` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Enables a GL capability. |
 | `WebGL2RenderingContext.prototype.enableVertexAttribArray` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Enables a VAO attribute. |
 | `WebGL2RenderingContext.prototype.getError` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Returns and clears the GL error. |
-| `WebGL2RenderingContext.prototype.getParameter` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Scalar, vector and capability state; full limits are M2-T003. |
+| `WebGL2RenderingContext.prototype.getParameter` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_extensions.c` | Driver limits, Chrome-typed arrays/floats/booleans and capability state. |
+| `WebGL2RenderingContext.prototype.getExtension` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_extensions.c` | Returns an object only for a driver-probed extension; otherwise null. |
+| `WebGL2RenderingContext.prototype.getSupportedExtensions` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_extensions.c` | Lists exactly the backed extension names. |
 | `WebGL2RenderingContext.prototype.isEnabled` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Reads a GL capability. |
 | `WebGL2RenderingContext.prototype.uniform1f` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fast_api.cc` | Scalar float uniform; V8 Fast API hot call. |
 | `WebGL2RenderingContext.prototype.uniform1fv` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fast_api.cc` | Float vector uniform; V8 Fast API hot call. |
@@ -269,7 +271,7 @@ dump and rejection of a stale `name` row through the CLI.
 | `WebGL2RenderingContext.prototype.checkFramebufferStatus` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Returns the framebuffer completeness enum. |
 | `WebGL2RenderingContext.prototype.clearStencil` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Sets the value used by STENCIL_BUFFER_BIT clears. |
 | `WebGL2RenderingContext.prototype.colorMask` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Selects which colour channels a draw writes. |
-| `WebGL2RenderingContext.prototype.compileShader` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Compiles a shader and logs source lines on failure. |
+| `WebGL2RenderingContext.prototype.compileShader` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_shaders.c` | Compiles a shader and logs numbered source lines on failure. |
 | `WebGL2RenderingContext.prototype.createFramebuffer` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Returns a wrapper owning one GL framebuffer name. |
 | `WebGL2RenderingContext.prototype.createProgram` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Returns a wrapper owning one GL program name. |
 | `WebGL2RenderingContext.prototype.createRenderbuffer` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Returns a wrapper owning one GL renderbuffer name. |
@@ -286,13 +288,17 @@ dump and rejection of a stale `name` row through the CLI.
 | `WebGL2RenderingContext.prototype.framebufferTexture2D` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Attaches a texture level to a framebuffer attachment. |
 | `WebGL2RenderingContext.prototype.getProgramInfoLog` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Returns the program link info log. |
 | `WebGL2RenderingContext.prototype.getProgramParameter` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Reads LINK_STATUS, DELETE_STATUS and integer program state. |
-| `WebGL2RenderingContext.prototype.getShaderInfoLog` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Returns the shader compile info log. |
+| `WebGL2RenderingContext.prototype.getShaderInfoLog` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_shaders.c` | Returns the shader compile info log plus numbered source on failure. |
 | `WebGL2RenderingContext.prototype.getShaderParameter` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Reads COMPILE_STATUS, DELETE_STATUS and integer shader state. |
 | `WebGL2RenderingContext.prototype.linkProgram` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Links a program and logs the info log on failure. |
 | `WebGL2RenderingContext.prototype.pixelStorei` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_textures.c` | Stores alignment/row length and the WebGL flip/premultiply flags. |
 | `WebGL2RenderingContext.prototype.readPixels` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Copies GL pixels into a caller-owned typed array. |
 | `WebGL2RenderingContext.prototype.renderbufferStorage` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Allocates renderbuffer storage, including depth24-stencil8. |
-| `WebGL2RenderingContext.prototype.shaderSource` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Stores a string or string-array shader source. |
+| `WebGL2RenderingContext.prototype.shaderSource` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_shaders.c` | Stores a string or string-array source and rewrites GLSL ES for desktop GL core. |
+| `WebGL2RenderingContext.prototype.getUniformLocation` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_shaders.c` | Returns a driver uniform location or null. |
+| `WebGL2RenderingContext.prototype.getAttribLocation` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_shaders.c` | Returns a linked attribute location. |
+| `WebGL2RenderingContext.prototype.getActiveUniform` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_shaders.c` | Returns `{size, type, name}` for an active uniform. |
+| `WebGL2RenderingContext.prototype.getActiveAttrib` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_shaders.c` | Returns `{size, type, name}` for an active attribute. |
 | `WebGL2RenderingContext.prototype.stencilFunc` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Sets the stencil comparison, reference and mask. |
 | `WebGL2RenderingContext.prototype.stencilMask` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Selects which stencil bits a draw or clear writes. |
 | `WebGL2RenderingContext.prototype.stencilOp` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Sets pass/fail stencil operations. |
