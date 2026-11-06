@@ -42,6 +42,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Add a V8 attribution rules file (JIT code, interpreter, GC, builtins) and document the blocked Gate G1 Map 92 measurement. (M1-T033)
 - Document the blocked Map 92 JIT-less preflight and the owner rerun recipe. (M1-T031)
 - Complete the jsb API guide and §15.8 handle rules with examples, and document every jsb, binding and engine function. (M1-T030)
 - Validate `--js-flags` before isolate creation and record monotonic perf profiles with jitdump injection before archiving. (M1-T029)

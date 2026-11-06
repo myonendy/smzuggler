@@ -163,6 +163,9 @@ matches:
 - `fold = true`: the frame counts towards its bucket's total, but self time
   passes to its caller. With `bucket = ""` it counts towards no bucket.
 
+The shipped file keeps the QuickJS-era buckets that the M0 reports and the
+tool tests pin:
+
 | Bucket | Claimed by (summary) |
 | --- | --- |
 | QuickJS interpreter | `libquickjs*`, `JS_*`, `js_*`, `lre_*`; V8 `v8::`, `Builtins_*` and JIT builtins/stubs |
@@ -174,6 +177,25 @@ matches:
 | audio | `audio_*`, SoLoud, Vorbis, Ogg, Opus; ALSA, PulseAudio, PipeWire |
 | video | `video_*`, `vpx_*`, `nestegg_*`, `libvpx*` |
 | libc/other | libc, libm, libstdc++, libgcc, the loader (folded), and the fallback |
+
+The M1 V8 split lives in `docs/perf/buckets-v8.toml`, which
+`attribute.py --rules` selects. It adds the §6.1 V8 buckets without changing
+the shipped report, whose bucket list `tests/tools/test_attribute.py` pins
+exactly:
+
+| Bucket | Claimed by (summary) |
+| --- | --- |
+| V8 JIT code | V8's code generators: `v8::internal::compiler::*`, `CodeGenerator`, TurboFan, Maglev, Sparkplug, `Code::*`, `Builtins_Compile*`. JIT-compiled JavaScript *execution* stays in the shim JS and game JS rows |
+| V8 interpreter | Ignition: `Builtins_Interpreter*`, `v8::internal::Interpreter*`, `Bytecode*`; JIT-map `BytecodeHandler:*` |
+| GC | V8 `Heap`, `Scavenger`, `MarkCompact`, ... |
+| V8 builtins | `Builtins_*` other than the interpreter, JIT-map `Builtin:`/`Stub:`/`RegExp:`, and V8's C++ runtime such as `Runtime_*` |
+| shim JS | JIT-compiled JavaScript from `*_shim.js` or a `/shims/` path |
+| game JS | every other JIT-compiled JavaScript frame |
+
+The Canvas2D, renderer, audio, video and libc/other rules are the same as the
+shipped file. JIT-compiled JavaScript keeps its script-origin split: add shim
+JS and game JS when the question is total jitted JS execution rather than who
+generated the code.
 
 Kernel frames (`[kernel.kallsyms]`, `[vdso]`, or an address in the kernel
 half when the DSO is unknown) and remaining `[unknown]` frames are folded with
@@ -242,6 +264,24 @@ table; the owner fills both rows on dev-laptop on battery with `power-saver`.
 The worker preflight could not open a GPU window or meet the battery state,
 so the table stays empty rather than carrying invented or software-renderer
 numbers.
+
+## Map 92 Gate G1 (M1)
+
+Spec §6 step 3 and the §9 M1 exit apply Gate G1: after warm-up, Map 92's JS
+time on V8 (`timers_ms + jobs_ms + raf_ms`) must be at or below 12 ms mean.
+The gate uses three independent runs of the same drive, each with a 10 s
+warm-up and a 120 s scored window; the worst mean, p95 and p99 of the three
+decide. A mean above 12 ms is `G1: STOP`: no M2 work starts and the owner
+reassesses the plan. A STOP is a valid outcome, so the measurement is never
+tuned to pass.
+
+The report is [Gate G1: Map 92 JS time on V8](perf/m1-g1.md). It carries the
+per-run table, the §6.1 attribution produced by `tools/perf/attribute.py` with
+the V8 rules file above, the §14.4 machine-state block and the verdict. The
+worker could not open a GPU window or meet the battery state, so the card
+reports `BLOCKED: needs dev-laptop GUI run` and leaves the table empty rather
+than carrying invented or software-renderer numbers; the owner rerun recipe is
+in the same file.
 
 ## Binary size
 

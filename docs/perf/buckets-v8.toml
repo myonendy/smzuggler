@@ -1,0 +1,181 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 The smzuggler contributors
+#
+# V8 attribution rules for Gate G1 (spec section 6, step 3; card M1-T033).
+# Why this file exists: the shipped rules in tools/perf/buckets.toml keep the
+# QuickJS-era bucket list, which tests/tools/test_attribute.py pins exactly and
+# this card may not edit. A separate rule file lets the M1 V8 report split JS
+# time into JIT code, interpreter, GC and builtins without changing the
+# QuickJS report. Pass it with `attribute.py --rules docs/perf/buckets-v8.toml`.
+# Documented in docs/perf.md, "Bucket rules", and docs/perf/m1-g1.md.
+#
+# Rules a reader must not break:
+# - Rules are tried in file order and the first match wins, so put specific
+#   rules (GC, interpreter) before broad ones (builtins).
+# - `dso` is a list of basenames, compared exactly or as fnmatch globs; it is
+#   never a full path, because the tool strips paths before matching.
+# - `symbol` is a Python regex searched in the symbol without its +0x offset.
+#   Paths inside a symbol (V8 JIT script URLs) are still present when rules
+#   run, and are stripped only in the reports.
+# - A rule with both keys needs both to match.
+# - `fold = true` frames count towards their bucket's total but pass self time
+#   to the nearest caller that a non-folded rule claims. A folded rule with
+#   bucket = "" claims no bucket at all (kernel and unresolved frames).
+# - Never name a game, its files or its plugins here (AGENTS.md section 4).
+
+fallback = "other"
+
+[[bucket]]
+id = "v8_jit"
+label = "V8 JIT code"
+
+[[bucket]]
+id = "v8_interp"
+label = "V8 interpreter"
+
+[[bucket]]
+id = "gc"
+label = "GC"
+
+[[bucket]]
+id = "v8_builtin"
+label = "V8 builtins"
+
+[[bucket]]
+id = "shim_js"
+label = "shim JS"
+
+[[bucket]]
+id = "game_js"
+label = "game JS"
+
+[[bucket]]
+id = "canvas2d"
+label = "Canvas2D"
+
+[[bucket]]
+id = "renderer"
+label = "renderer/GPU submit"
+
+[[bucket]]
+id = "audio"
+label = "audio"
+
+[[bucket]]
+id = "video"
+label = "video"
+
+[[bucket]]
+id = "other"
+label = "libc/other"
+
+# Kernel frames: time spent in syscalls belongs to whoever made the call.
+[[rule]]
+dso = ["[kernel.kallsyms]", "[vdso]", "[vsyscall]"]
+bucket = ""
+fold = true
+
+# Garbage collection, before the interpreter and builtin rules.
+[[rule]]
+symbol = '^v8::internal::(Heap|Scavenger|MarkCompact|MinorMarkCompact|ConcurrentMarking|IncrementalMarking|GCTracer|MemoryAllocator|Sweeper)'
+bucket = "gc"
+
+# JIT frames from V8 --perf-prof / --perf-basic-prof (perf-<pid>.map or
+# jitted-<pid>-<n>.so). Shim scripts first; every other script is game JS.
+[[rule]]
+dso = ["perf-*.map", "jitted-*.so"]
+symbol = '(_shim\.js|/shims/)'
+bucket = "shim_js"
+
+# Ignition bytecode handlers run interpreted JavaScript, so they belong to
+# the interpreter even though V8 stores them in generated code.
+[[rule]]
+dso = ["perf-*.map", "jitted-*.so"]
+symbol = '^(BytecodeHandler|InterpreterEntryTrampoline):'
+bucket = "v8_interp"
+
+[[rule]]
+dso = ["perf-*.map", "jitted-*.so"]
+symbol = '^(Builtin|Stub|RegExp):'
+bucket = "v8_builtin"
+
+# Remaining JIT frames are JavaScript functions; the script URL says which.
+[[rule]]
+dso = ["perf-*.map", "jitted-*.so"]
+bucket = "game_js"
+
+# V8's Ignition interpreter: entry trampolines and bytecode machinery.
+[[rule]]
+symbol = '^Builtins_Interpreter'
+bucket = "v8_interp"
+
+[[rule]]
+symbol = '^v8::internal::(Interpreter|Bytecode|BytecodeArray|BytecodeGenerator|BytecodeGraphBuilder|Ignition)'
+bucket = "v8_interp"
+
+# V8's JIT compilers and the code they generate (TurboFan, Maglev,
+# Sparkplug). Steady-state Map 92 should show little of this after warm-up.
+[[rule]]
+symbol = '^v8::internal::(compiler::|Compiler::|OptimizedCompilation|Pipeline|CodeGenerator|Turbofan|TurboFan|Maglev|Baseline|Sparkplug|Code::)'
+bucket = "v8_jit"
+
+[[rule]]
+symbol = '^Builtins_(Compile|CompileLazy|CompileOptimized)'
+bucket = "v8_jit"
+
+# V8 builtins, stubs and C++ runtime that serve JavaScript.
+[[rule]]
+symbol = '^(Builtins_|Builtin:|v8::internal::(Builtins|CodeStubAssembler|Runtime_|Runtime::|Accessors|CallInterfaceDescriptor|MacroAssembler|Assembler|CodeFactory|Execution|Isolate::|Factory::))'
+bucket = "v8_builtin"
+
+[[rule]]
+symbol = '^v8::'
+bucket = "v8_builtin"
+
+# Canvas2D raster and text.
+[[rule]]
+dso = ["libfreetype*", "libharfbuzz*"]
+bucket = "canvas2d"
+
+[[rule]]
+symbol = '^(canvas2d_|font_manager_|stbtt_|FT_|hb_)'
+bucket = "canvas2d"
+
+# Renderer, texture upload and GPU submit, including the GPU driver.
+[[rule]]
+dso = ["libGL*", "libEGL*", "libGLES*", "libvulkan*", "*_dri.so", "libnvidia*", "libdrm*", "libgallium*", "libLLVM*"]
+bucket = "renderer"
+
+[[rule]]
+symbol = '^(renderer_|sprite_batch_|gpu_|filter_|filters_|tilemap_|image_upload|glsl_|SDL_.*GPU|gl[A-Z])'
+bucket = "renderer"
+
+# Audio mixing and decode.
+[[rule]]
+dso = ["libvorbis*", "libogg*", "libopus*", "libasound*", "libpulse*", "libpipewire*"]
+bucket = "audio"
+
+[[rule]]
+symbol = '^(audio_|SoLoud::|soloud|stb_vorbis|vorbis_|ogg_|opus_)'
+bucket = "audio"
+
+# Video decode and playback.
+[[rule]]
+dso = ["libvpx*"]
+bucket = "video"
+
+[[rule]]
+symbol = '^(video_|vpx_|nestegg_|plm_)'
+bucket = "video"
+
+# libc and friends: counted in the total, self time goes to the caller.
+[[rule]]
+dso = ["libc.so*", "libc-*", "libm.so*", "libstdc++*", "libgcc_s*", "ld-linux*", "libpthread*"]
+bucket = "other"
+fold = true
+
+# Unresolved frames in any DSO no rule above claimed.
+[[rule]]
+symbol = '^\[unknown\]$'
+bucket = ""
+fold = true
