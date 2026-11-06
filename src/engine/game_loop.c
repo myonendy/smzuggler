@@ -879,9 +879,11 @@ static void present_frame(GameLoop *loop)
 {
     Renderer *r = loop->screenshot_renderer_slot ? *loop->screenshot_renderer_slot : NULL;
     if (r) {
-        int ww = 0, wh = 0;
-        platform_get_window_size(loop->platform, &ww, &wh);
-        renderer_set_output_size(r, ww, wh);
+        /* Do not resize the GPU screen texture here: that would discard the
+           frame that was just drawn when the compositor changed the drawable
+           size mid-frame (common on Wayland). gpu_frame_present blits what
+           was drawn and syncs the offscreen size afterward for the next
+           frame; begin_frame/resize handlers cover the steady state. */
         renderer_present(r);
     }
     platform_swap_buffers(loop->platform);

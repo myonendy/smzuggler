@@ -110,6 +110,8 @@ void renderer_set_screen_viewport(Renderer *r, int x, int y, int w, int h)
 static void begin_frame_with_clear(Renderer *r, float alpha)
 {
     if (r->bound_fbo == 0) {
+        /* Pick up a drawable resize deferred from the previous present. */
+        gpu_frame_resize(r->width, r->height);
         gpu_record_target(0, r->width, r->height);
         record_viewport(r->vp_x, r->vp_y, r->vp_w, r->vp_h);
     }

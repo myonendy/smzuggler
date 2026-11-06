@@ -1224,16 +1224,34 @@ void gpu_frame_present(void)
     Uint32 sw = 0, sh = 0;
     if (!SDL_WaitAndAcquireGPUSwapchainTexture(cb, G.window, &swap, &sw, &sh) || !swap) {
         /* Minimised or occluded: nothing to present. */
+        static int s_null_presents;
+        if ((++s_null_presents % 120) == 1)
+            fprintf(stderr, "gpu: swapchain acquire returned NULL (%d)\n",
+                    s_null_presents);
         SDL_SubmitGPUCommandBuffer(cb);
         return;
     }
 
-    ensure_screen_texture();
+    /* Do not recreate G.screen here. gpu_submit already drew into it; resizing
+       now would discard the frame and blit an empty texture (blank window).
+       Size sync happens in gpu_frame_resize / the next frame's submit. */
+    if (!G.screen) {
+        SDL_SubmitGPUCommandBuffer(cb);
+        return;
+    }
 
     SDL_GPUColorTargetInfo info;
     SDL_zero(info);
     info.texture = swap;
-    info.load_op = SDL_GPU_LOADOP_DONT_CARE;
+    /* Clear when the swapchain size changed so letterboxed edges are black
+       rather than undefined. */
+    info.load_op = (G.screen_w == (int)sw && G.screen_h == (int)sh)
+                       ? SDL_GPU_LOADOP_DONT_CARE
+                       : SDL_GPU_LOADOP_CLEAR;
+    info.clear_color.r = 0.0f;
+    info.clear_color.g = 0.0f;
+    info.clear_color.b = 0.0f;
+    info.clear_color.a = 1.0f;
     info.store_op = SDL_GPU_STOREOP_STORE;
 
     SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(cb, &info, 1, NULL);
@@ -1251,11 +1269,24 @@ void gpu_frame_present(void)
             SDL_BindGPUFragmentSamplers(pass, 0, &tsb, 1);
             float one[4] = { 1.0f, 0, 0, 0 };
             SDL_PushGPUFragmentUniformData(cb, 0, one, sizeof(one));
-            SDL_DrawGPUPrimitives(pass, 6, 1, 0, 0);
+            /* When sizes differ, stretch the drawn frame into the swapchain so a
+               mid-frame compositor resize still shows something instead of a
+               blank or corner-cropped image. */
+            if (G.screen_w == (int)sw && G.screen_h == (int)sh) {
+                SDL_DrawGPUPrimitives(pass, 6, 1, 0, 0);
+            } else {
+                SDL_GPUViewport vp = { 0, 0, (float)sw, (float)sh, 0.0f, 1.0f };
+                SDL_SetGPUViewport(pass, &vp);
+                SDL_DrawGPUPrimitives(pass, 6, 1, 0, 0);
+            }
         }
         SDL_EndGPURenderPass(pass);
     }
     SDL_SubmitGPUCommandBuffer(cb);
+
+    /* Sync the offscreen surface to the drawable for the *next* frame, after
+       this frame's pixels have been presented. */
+    ensure_screen_texture();
 }
 
 /* Readback */

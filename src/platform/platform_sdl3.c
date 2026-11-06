@@ -639,10 +639,19 @@ bool platform_poll_events(Platform *p)
                 break;
 
             case SDL_EVENT_WINDOW_RESIZED:
-            case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+                /* Window coordinates for __dom_setWindowSize / letterbox. */
                 p->resize_pending = true;
                 p->resize_w = ev.window.data1;
                 p->resize_h = ev.window.data2;
+                break;
+
+            case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+                /* Drawable size changed (HiDPI). Keep feeding logical window
+                   size to JS; the GPU backend sizes its screen from
+                   SDL_GetWindowSizeInPixels itself. Using data1/data2 here
+                   treated pixels as CSS pixels and broke letterbox. */
+                p->resize_pending = true;
+                SDL_GetWindowSize(p->window, &p->resize_w, &p->resize_h);
                 break;
 
             case SDL_EVENT_GAMEPAD_ADDED:
