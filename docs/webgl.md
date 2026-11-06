@@ -100,9 +100,9 @@ accessors reading the live context, not snapshot values.
 WebGL renders into framebuffer name `0`; `bindFramebuffer(target, null)` maps to
 `0`. With `RMMZ_RENDER_BACKEND=gl` the backend uses the platform window's
 existing OpenGL context, so WebGL draws into the presented surface. The default
-`gpu` backend has no GL context, so the module creates a hidden GL window until
-real-PIXI/ANGLE replaces it; screen presentation through SDL3 GPU is not claimed
-here. `getError()` returns and clears the native GL error queue (and any
+`gpu` backend has no GL context, so the module creates an EGL offscreen context (or a hidden utility window if
+EGL is unavailable) until real-PIXI/ANGLE replaces it; screen presentation
+through SDL3 GPU is not claimed here. `getError()` returns and clears the native GL error queue (and any
 synthetic error, see below), and a new context starts with
 depth/stencil/cull/blend/scissor off, a transparent clear colour and a viewport
 equal to the drawing buffer.

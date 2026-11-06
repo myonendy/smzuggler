@@ -20,6 +20,7 @@
 #include "jsb/jsb.h"
 
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_egl.h>
 #include <SDL3/SDL_opengl.h>
 #include <v8-fast-api-calls.h>
 #include <v8.h>
@@ -279,12 +280,18 @@ static bool gl_load(void)
 
 /* The window and GL context the module draws on. `s_borrowed_context` belongs
  * to the platform's window and is never destroyed here; `s_owned_context` is
- * the hidden fallback window's context, which this module created. */
+ * the hidden fallback window's context, which this module created. An EGL
+ * offscreen context (pbuffer or surfaceless) is preferred on the GPU backend
+ * so a second SDL window does not appear to the compositor. */
 static bool s_backend_checked;
 static bool s_backend_ready;
 static SDL_Window *s_backend_window;
 static SDL_GLContext s_borrowed_context;
 static SDL_GLContext s_owned_context;
+static bool s_egl_offscreen;
+static EGLDisplay s_egl_display = EGL_NO_DISPLAY;
+static EGLContext s_egl_context = EGL_NO_CONTEXT;
+static EGLSurface s_egl_surface = EGL_NO_SURFACE;
 
 /* Returns the context the module draws on, owned or borrowed, or NULL. */
 static SDL_GLContext backend_context(void)
@@ -294,11 +301,127 @@ static SDL_GLContext backend_context(void)
 /* Makes the module's GL context current; needed before deleting GL names. */
 static bool backend_make_current(void)
 {
+    if (s_egl_offscreen) {
+        PFNEGLMAKECURRENTPROC makeCurrent =
+            (PFNEGLMAKECURRENTPROC)SDL_EGL_GetProcAddress("eglMakeCurrent");
+        return makeCurrent && s_egl_display != EGL_NO_DISPLAY &&
+               s_egl_context != EGL_NO_CONTEXT &&
+               makeCurrent(s_egl_display, s_egl_surface, s_egl_surface,
+                           s_egl_context) == EGL_TRUE;
+    }
     SDL_GLContext context = backend_context();
     return s_backend_window && context &&
            SDL_GL_MakeCurrent(s_backend_window, context);
 }
-/* Uses an existing OpenGL window, or creates a hidden GLES 3.0/GL 3.3 one. */
+/* Creates a GLES 3 / GL 3.3 context with no extra SDL window: surfaceless
+ * when the driver allows it, otherwise a 16x16 pbuffer. */
+static bool backend_try_egl_offscreen(void)
+{
+    PFNEGLGETDISPLAYPROC getDisplay =
+        (PFNEGLGETDISPLAYPROC)SDL_EGL_GetProcAddress("eglGetDisplay");
+    PFNEGLINITIALIZEPROC initialize =
+        (PFNEGLINITIALIZEPROC)SDL_EGL_GetProcAddress("eglInitialize");
+    PFNEGLBINDAPIPROC bindApi =
+        (PFNEGLBINDAPIPROC)SDL_EGL_GetProcAddress("eglBindAPI");
+    PFNEGLCHOOSECONFIGPROC chooseConfig =
+        (PFNEGLCHOOSECONFIGPROC)SDL_EGL_GetProcAddress("eglChooseConfig");
+    PFNEGLCREATECONTEXTPROC createContext =
+        (PFNEGLCREATECONTEXTPROC)SDL_EGL_GetProcAddress("eglCreateContext");
+    PFNEGLCREATEPBUFFERSURFACEPROC createPbuffer =
+        (PFNEGLCREATEPBUFFERSURFACEPROC)SDL_EGL_GetProcAddress(
+            "eglCreatePbufferSurface");
+    PFNEGLMAKECURRENTPROC makeCurrent =
+        (PFNEGLMAKECURRENTPROC)SDL_EGL_GetProcAddress("eglMakeCurrent");
+    PFNEGLDESTROYCONTEXTPROC destroyContext =
+        (PFNEGLDESTROYCONTEXTPROC)SDL_EGL_GetProcAddress("eglDestroyContext");
+    PFNEGLDESTROYSURFACEPROC destroySurface =
+        (PFNEGLDESTROYSURFACEPROC)SDL_EGL_GetProcAddress("eglDestroySurface");
+    if (!getDisplay || !initialize || !bindApi || !chooseConfig ||
+        !createContext || !makeCurrent)
+        return false;
+
+    EGLDisplay dpy = getDisplay(EGL_DEFAULT_DISPLAY);
+    if (dpy == EGL_NO_DISPLAY || !initialize(dpy, NULL, NULL)) return false;
+
+    const EGLint cfg_es[] = {
+        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
+        EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
+        EGL_RED_SIZE, 8,
+        EGL_GREEN_SIZE, 8,
+        EGL_BLUE_SIZE, 8,
+        EGL_ALPHA_SIZE, 8,
+        EGL_DEPTH_SIZE, 16,
+        EGL_STENCIL_SIZE, 8,
+        EGL_NONE
+    };
+    const EGLint cfg_gl[] = {
+        EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
+        EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
+        EGL_RED_SIZE, 8,
+        EGL_GREEN_SIZE, 8,
+        EGL_BLUE_SIZE, 8,
+        EGL_ALPHA_SIZE, 8,
+        EGL_DEPTH_SIZE, 16,
+        EGL_STENCIL_SIZE, 8,
+        EGL_NONE
+    };
+    const EGLint ctx_es[] = { EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE };
+    const EGLint ctx_gl[] = {
+        EGL_CONTEXT_MAJOR_VERSION, 3,
+        EGL_CONTEXT_MINOR_VERSION, 3,
+#ifdef EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT
+        EGL_CONTEXT_OPENGL_PROFILE_MASK, EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT,
+#endif
+        EGL_NONE
+    };
+    const EGLint pbuf[] = { EGL_WIDTH, 16, EGL_HEIGHT, 16, EGL_NONE };
+
+    struct Attempt { EGLenum api; const EGLint *cfg; const EGLint *ctx; };
+    const Attempt attempts[] = {
+        { EGL_OPENGL_ES_API, cfg_es, ctx_es },
+        { EGL_OPENGL_API, cfg_gl, ctx_gl },
+    };
+
+    for (size_t i = 0; i < sizeof(attempts) / sizeof(attempts[0]); i++) {
+        if (!bindApi(attempts[i].api)) continue;
+        EGLConfig config;
+        EGLint n = 0;
+        if (!chooseConfig(dpy, attempts[i].cfg, &config, 1, &n) || n < 1)
+            continue;
+        EGLContext ctx = createContext(dpy, config, EGL_NO_CONTEXT,
+                                       attempts[i].ctx);
+        if (ctx == EGL_NO_CONTEXT) continue;
+        /* A pbuffer has a default framebuffer, which WebGL clear/readPixels
+         * and the existing tests need; surfaceless does not. Prefer pbuffer
+         * so we never create a second compositor window. */
+        if (createPbuffer) {
+            EGLSurface surface = createPbuffer(dpy, config, pbuf);
+            if (surface != EGL_NO_SURFACE &&
+                makeCurrent(dpy, surface, surface, ctx) == EGL_TRUE) {
+                s_egl_display = dpy;
+                s_egl_context = ctx;
+                s_egl_surface = surface;
+                s_egl_offscreen = true;
+                fprintf(stderr, "webgl: using an EGL pbuffer context\n");
+                return true;
+            }
+            if (surface != EGL_NO_SURFACE && destroySurface)
+                destroySurface(dpy, surface);
+        }
+        if (makeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, ctx) == EGL_TRUE) {
+            s_egl_display = dpy;
+            s_egl_context = ctx;
+            s_egl_surface = EGL_NO_SURFACE;
+            s_egl_offscreen = true;
+            fprintf(stderr, "webgl: using an EGL surfaceless context\n");
+            return true;
+        }
+        if (destroyContext) destroyContext(dpy, ctx);
+    }
+    return false;
+}
+/* Uses an existing OpenGL window, an EGL offscreen context, or a hidden
+ * utility window that should stay out of the compositor's task list. */
 static bool backend_create(void)
 {
     int count = 0;
@@ -317,9 +440,16 @@ static bool backend_create(void)
                SDL_GL_MakeCurrent(window, s_borrowed_context);
     }
 
-    s_backend_window = SDL_CreateWindow("smzuggler WebGL", 16, 16,
-                                        SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
+    if (backend_try_egl_offscreen()) return true;
+
+    s_backend_window = SDL_CreateWindow(
+        "smzuggler WebGL", 16, 16,
+        SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | SDL_WINDOW_UTILITY |
+            SDL_WINDOW_NOT_FOCUSABLE);
     if (!s_backend_window) return false;
+    fprintf(stderr,
+            "webgl: created a hidden fallback window "
+            "(EGL offscreen unavailable)\n");
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
