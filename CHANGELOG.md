@@ -42,6 +42,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Add the §14 perf harness: `--perf-suite` scripted S1-S3 windows, read-only `--import-fixture`, and a §14.5 analyser with profile gate words. (M2-T007)
 - Add always-compiled frame-timing instrumentation with `--frame-stats` JSON Lines, markers and a summary. (M2-T006)
 - Add the `-DMZ_GLES=angle` provider switch, a Release-safe host probe test and the Linux CI oracle build recipe. (M2-T004)
 - Alias `global` to `globalThis` in the DOM shim so NW.js map-transfer plugins can probe `global.gc` safely. (M2-T010)

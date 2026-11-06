@@ -5,6 +5,7 @@ Modified 2026-11-01: document the Map 92 report tool and owner-run recipe.
 Modified 2026-11-05: document --js-flags and the V8 perf record recipe.
 Modified 2026-11-05: document the runtime's --cpu-prof recording.
 Modified 2026-11-05: document --frame-stats JSON Lines, markers and overhead.
+Modified 2026-11-06: document the §14 perf suite, fixture import and analyser.
 How to record a CPU profile (tools/perf/attribute.py), turn a Map 92 run into
 the M0 report (tools/perf/map92_report.py), and measure the shipped binary
 (tools/perf/binsize.py). Repository tooling, not part of the runtime.
@@ -395,3 +396,27 @@ Tests: `tests/tools/test_binsize.py` builds a fake build directory from ELF
 objects and ar archives that it generates itself, then checks every total.
 
 Results: [M0 baseline](perf/binary-size.md).
+
+## §14 harness: --perf-suite, input replay and the analyser
+
+`--frame-stats` records one stream. The harness around it runs S1-S3 with the §14.4 timing: 10 s warm-up (not scored), 120 s scored, three runs, worst counts. Later scenes and the battery gate runs are separate owner work.
+
+```sh
+./build/smzuggler-rt --game "<game folder>" \
+    --perf-suite=dev-laptop --frame-stats="$HOME/perf/"
+```
+
+- `--perf-suite` takes `dev-laptop` (default), `steam-deck` (alias `deck`), `deck-proxy` or `extra`; the profile decides the report's `gate` word.
+- `--frame-stats=DIR/` must be a directory. Each scene and run gets its own `frame-stats-<profile>-<scene>-run<N>.jsonl`.
+- `--import-fixture <slot> <fixture>` copies a normal-play save into the fixture directory, read-only at the source, and refuses a wrong map. See [testing-fixtures.md](testing-fixtures.md).
+- A suite without `--frame-stats`, a non-directory stats path, an unknown profile, or `--perf-suite` with `--import-fixture`, `--control` or `--frames` stops with status 2 before a window opens.
+
+The C harness injects the same `InputEvent` records a keyboard produces, so no `--control` channel is needed. S1 idles with a cursor move every 5 s; S2 loads `fx-map92` from a scratch copy and holds a right/down/left/up walk loop with an action tap every 8 s; S3 starts from `fx-map92` and enters one submenu every 12 s. A missing or wrong-map fixture stops the run before the window with a line naming the fixture and the needed map.
+
+`tools/perf/analyse.py` turns the streams into §14.7 reports:
+
+```sh
+python3 tools/perf/analyse.py --dir "$HOME/perf" --out-dir "$HOME/perf"
+```
+
+It drops the first 600 frames, applies §14.5 rules 1-4, and excludes rule-5 scene/transfer windows (marker plus 30 frames) and save/load pairs. With several runs it keeps the worst value. Reports are `perf-report-<profile>-<scene>.json` and `.md`, profile and scene names only. The gate field is `pass`/`fail` for `dev-laptop`, `confirm-pass`/`confirm-fail` for `steam-deck`, and `proxy` or `extra` for the runs that are evidence, never a milestone sign-off. Reports go through `tools/privacy/scan.py` before storage or sharing; nothing is uploaded automatically.
