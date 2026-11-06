@@ -49,10 +49,18 @@ void game_loop_request_stop(GameLoop *loop);
 
 struct Renderer;
 
+/* Borrow the game's renderer pointer slot for presents and screenshots.
+ *
+ * Why: PIXI draws into an offscreen GPU target; present_frame must blit it
+ * to the window every frame. The renderer is created lazily from JS, so the
+ * loop holds Renderer** and dereferences it at present/capture time. Call
+ * once after game_loop_create. Main thread. */
+void game_loop_set_renderer(GameLoop *loop, struct Renderer **renderer_slot);
+
 /* Debug aid: stop automatically after max_frames frames (0 = never). When
-   screenshot_path is non-NULL, the final frame is read back through
-   *renderer_slot (dereferenced at capture time, since the renderer is created
-   lazily by the game) and written there as a binary PPM (P6). */
+   screenshot_path is non-NULL, the final frame is read back through the
+   renderer slot from game_loop_set_renderer and written as a binary PPM
+   (P6). renderer_slot may be NULL to leave the existing slot unchanged. */
 void game_loop_set_frame_limit(GameLoop *loop, int max_frames,
                                const char *screenshot_path, struct Renderer **renderer_slot);
 

@@ -1791,6 +1791,13 @@ static int runtime_main(int argc, char *argv[])
     if (perf_every > 0) {
         game_loop_set_perf_report(loop, perf_every);
     }
+    /* Always wire the renderer so present_frame blits each frame. Without
+       this, only --frames/--control sessions called renderer_present and a
+       normal play window stayed blank on the GPU backend. */
+    {
+        extern Renderer *s_renderer;
+        game_loop_set_renderer(loop, &s_renderer);
+    }
     if (max_frames > 0) {
         extern Renderer *s_renderer;
         game_loop_set_frame_limit(loop, max_frames, screenshot_path, &s_renderer);

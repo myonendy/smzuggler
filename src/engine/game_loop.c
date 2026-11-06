@@ -488,12 +488,19 @@ void game_loop_set_exit_probe(GameLoop *loop, const char *js_expression)
     loop->probe_expr = js_expression ? strdup(js_expression) : NULL;
 }
 
+/* Borrow the renderer pointer for every present (and for screenshots). */
+void game_loop_set_renderer(GameLoop *loop, Renderer **renderer_slot)
+{
+    if (!loop) return;
+    loop->screenshot_renderer_slot = renderer_slot;
+}
+
 /* Stops after `max_frames` frames (0 = never) and optionally screenshots.
  *
  * Why: the evaluator and smoke runs need a bounded session instead of a
  * human closing the window. `screenshot_path` is copied; `renderer_slot`
- * is borrowed and dereferenced only at capture time, because the game
- * creates its renderer lazily. `loop` is borrowed. Main thread. */
+ * when non-NULL updates the present/capture slot (same as
+ * game_loop_set_renderer). `loop` is borrowed. Main thread. */
 void game_loop_set_frame_limit(GameLoop *loop, int max_frames,
                                const char *screenshot_path, Renderer **renderer_slot)
 {
@@ -501,7 +508,8 @@ void game_loop_set_frame_limit(GameLoop *loop, int max_frames,
     loop->max_frames = max_frames > 0 ? max_frames : 0;
     free(loop->screenshot_path);
     loop->screenshot_path = screenshot_path ? strdup(screenshot_path) : NULL;
-    loop->screenshot_renderer_slot = renderer_slot;
+    if (renderer_slot)
+        loop->screenshot_renderer_slot = renderer_slot;
 }
 
 /* Write the current default framebuffer as a binary PPM (RGB, top-down). */
@@ -879,11 +887,9 @@ static void present_frame(GameLoop *loop)
 {
     Renderer *r = loop->screenshot_renderer_slot ? *loop->screenshot_renderer_slot : NULL;
     if (r) {
-        /* Do not resize the GPU screen texture here: that would discard the
-           frame that was just drawn when the compositor changed the drawable
-           size mid-frame (common on Wayland). gpu_frame_present blits what
-           was drawn and syncs the offscreen size afterward for the next
-           frame; begin_frame/resize handlers cover the steady state. */
+        /* Blit the offscreen frame to the window. Do not resize the GPU
+           screen texture here: that would discard pixels when the compositor
+           changes the drawable mid-frame (common on Wayland). */
         renderer_present(r);
     }
     platform_swap_buffers(loop->platform);
