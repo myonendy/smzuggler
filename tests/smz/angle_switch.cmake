@@ -11,6 +11,11 @@
 # use (docs/build.md).
 if(SMZ_GLES_AVAILABLE)
     add_executable(test_angle_switch ${CMAKE_CURRENT_LIST_DIR}/test_angle_switch.c)
+    if(MSVC)
+        target_compile_options(test_angle_switch PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(test_angle_switch PRIVATE -UNDEBUG)
+    endif()
     target_link_libraries(test_angle_switch PRIVATE smz_gles ${RMMZ_SYS_LIBS})
     add_test(NAME angle_switch COMMAND test_angle_switch)
 else()

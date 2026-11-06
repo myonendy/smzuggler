@@ -13,8 +13,8 @@
  * CI runner with no display.
  */
 #include <EGL/egl.h>
-#include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /** Report whether NEEDLE occurs in TEXT; NULL TEXT has no matches. */
@@ -30,15 +30,17 @@ static const char *client_extensions(void)
 }
 
 /**
- * Fail loudly with a diagnostic, then abort through assert.
+ * Fail loudly with a diagnostic and a nonzero exit status in every build.
  *
- * The message names the provider contract that broke, while the assert makes
- * the failure visible to ctest without relying on anyone reading the log.
+ * The message names the provider contract that broke. An explicit exit keeps
+ * the failure visible to ctest even when Release builds define NDEBUG.
  */
 static void check(int ok, const char *what)
 {
-    if (!ok) fprintf(stderr, "angle_switch: %s\n", what);
-    assert(ok);
+    if (!ok) {
+        fprintf(stderr, "angle_switch: %s\n", what);
+        exit(EXIT_FAILURE);
+    }
 }
 
 /**

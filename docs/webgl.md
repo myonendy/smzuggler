@@ -56,6 +56,10 @@ created, while Mesa does not. `tests/smz/test_angle_switch.c` therefore:
 2. fails an ANGLE build whose client does not advertise `EGL_ANGLE_*`;
 3. fails a system build whose client *does* advertise it.
 
+Failures exit nonzero independently of assertions, including in Release builds.
+A regression test supplies missing and mismatched EGL responses with `NDEBUG`
+defined to verify that ctest cannot mistake those failures for success.
+
 It creates no window and no GPU device, so it runs on a headless CI runner.
 The system build's link line contains the platform EGL/GLES libraries only, so
 it has no ANGLE dependency at run time.

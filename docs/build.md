@@ -144,10 +144,14 @@ This is a documented job fragment, not yet part of `.github/workflows/ci.yml`
 ```
 
 That staging block is the same command sequence shown above, run by CI with
-network access and a cache for `$SMZ_DEPS_DIR`. On a GPU runner the same job
+network access and a cache for `$SMZ_DEPS_DIR`. The depot_tools checkout floats
+at its current default branch; ANGLE itself remains pinned to the commit above.
+On a GPU runner the same job
 adds the ordinary game-boot ctest; on a runner without one the smoke test is
 the delivered evidence, and the game boot is recorded as left out rather than
 faked.
 
 The default Linux build is not linked against ANGLE: it links the system
 EGL/GLES libraries, and its `angle_switch` test runs against them.
+The probe exits nonzero for missing extensions or a provider mismatch even in
+Release builds with `NDEBUG` defined.
