@@ -1,18 +1,19 @@
 <!--
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
-The WebGL2 context, state, buffers, VAOs and draws over GLES 3.0, and the
-GLES provider switch they run on. Spec §4.2 and §11 Q5.
+The WebGL2 context, state, buffers, VAOs, textures, framebuffers,
+renderbuffers and draws over GLES 3.0, and the GLES provider switch they run
+on. Spec §4.2 and §11 Q5.
 -->
 
 # WebGL2 over GLES 3.0
 
 The WebGL2 surface real PIXI and UltraMode7 drive, implemented in
 `src/webgl/webgl.cc` on GLES 3.0 / GL 3.3 core (spec §4.2). This page covers the
-GLES provider switch and the context, state, buffer, vertex-array and draw
-entry points. Textures, framebuffers, shaders and extensions follow in M2-T002
-and M2-T003. Spec §4.2 and §11 Q5: Q5 is open, so this page describes the
-switch, not a ruling.
+GLES provider switch, the context, state, buffer, vertex-array and draw entry
+points, textures and pixel uploads, framebuffers and renderbuffers, stencil,
+readback and the object lifetime rules. Extensions follow in M2-T003. Spec §4.2
+and §11 Q5: Q5 is open, so this page describes the switch, not a ruling.
 
 ## What this milestone provides
 
@@ -22,16 +23,24 @@ switch, not a ruling.
 - A native WebGL2 context in `src/webgl/`: `getContext('webgl2')` returns it
   instead of a stub, with full context state, buffers, VAOs and
   `drawArrays`/`drawElements`.
+- Textures from typed arrays, `ArrayBufferView`s, Canvas2D canvases, images and
+  `ImageData`, with `texSubImage2D` updates and WebGL2's flip/premultiply
+  unpack rules.
+- Framebuffers with texture or renderbuffer attachments, depth-stencil
+  renderbuffers, `readPixels` into a typed array, and the stencil test.
 - V8 Fast API registration for the hot calls listed below.
 - An `angle_switch` ctest that runs a binary built against the selected
   provider and confirms from the EGL client extensions that the linked library
   is the one the switch asked for.
+- A `webgl_textures` ctest that uploads known pixels from a typed array and a
+  Canvas2D canvas and reads them back; a `webgl_fbo` ctest that draws into a
+  texture plus depth-stencil renderbuffer and checks that a stencil-failed draw
+  leaves colour unchanged.
 - Pinned ANGLE metadata and a documented Linux CI oracle job, in
   [Building smzuggler](build.md).
 
-It deliberately does **not** implement textures, framebuffers, shaders or
-extensions yet (M2-T002 and M2-T003), and it does not claim that PIXI runs on
-it yet.
+It deliberately does **not** implement extensions yet (M2-T003), and it does
+not claim that PIXI runs on it yet.
 
 ## Context binding
 
@@ -66,6 +75,57 @@ synthetic error, see below), and a new context starts with
 depth/stencil/cull/blend/scissor off, a transparent clear colour and a viewport
 equal to the drawing buffer.
 
+## Textures and pixel uploads
+
+`createTexture`, `deleteTexture`, `bindTexture`, `texParameteri`,
+`texImage2D`, `texSubImage2D` and `pixelStorei` are implemented over the GLES
+entry points. Both `texImage2D` shapes are accepted: the nine-argument
+allocation/`ArrayBufferView` form and the six-argument host-source form.
+`texSubImage2D` likewise takes nine or seven arguments. A null pixel pointer
+allocates storage; a typed array is borrowed for the duration of the call only.
+
+Host sources are an `HTMLCanvasElement` (its live Canvas2D raster), an
+`HTMLImageElement` (`_imageHandle`), or an `ImageData`-like object
+(`{width, height, data}`). The canvas and image pixels come through the existing
+`__native_canvas2d.getPixels` / `__native_image.getImagePixels` bindings, so the
+WebGL module owns no image or canvas memory.
+
+`UNPACK_FLIP_Y_WEBGL` and `UNPACK_PREMULTIPLY_ALPHA_WEBGL` follow WebGL2
+§5.14.8: they transform RGBA8 host sources (rows reversed, RGB multiplied by
+alpha) and are ignored for `ArrayBufferView` uploads. `UNPACK_ALIGNMENT`,
+`PACK_ALIGNMENT`, `UNPACK_ROW_LENGTH` and `PACK_ROW_LENGTH` are stored and
+forwarded to GL. A view smaller than the requested width x height x format size
+records `INVALID_OPERATION` instead of reading past its end.
+
+## Framebuffers, renderbuffers and stencil
+
+`createFramebuffer`, `bindFramebuffer`, `framebufferTexture2D`,
+`framebufferRenderbuffer`, `checkFramebufferStatus`, `createRenderbuffer`,
+`bindRenderbuffer`, `renderbufferStorage` and `delete*` cover the render-target
+path PIXI and VisuMZ use. `bindFramebuffer(target, null)` restores framebuffer
+`0`; a depth24-stencil8 renderbuffer can be attached to
+`DEPTH_STENCIL_ATTACHMENT`, and separate stencil or depth attachments also work.
+
+`stencilFunc`, `stencilOp`, `stencilMask`, `clearStencil`, `depthFunc`,
+`depthMask` and `colorMask` are forwarded. A draw that fails the stencil test
+leaves the colour attachment unchanged, exactly as the hardware does; the
+`webgl_fbo` ctest proves that path before passing the same draw.
+
+## Readback and the minimal shader path
+
+`readPixels(x, y, width, height, format, type, view)` copies into the caller's
+typed array, which stays JS-owned. The view must be at least
+width x height x format size or the context records `INVALID_OPERATION`.
+Readback works from a bound framebuffer and from the default framebuffer after
+`bindFramebuffer(FRAMEBUFFER, null)`.
+
+The stencil criterion needs one real draw, so `createShader`, `shaderSource`,
+`compileShader`, `createProgram`, `attachShader`, `bindAttribLocation`,
+`linkProgram`, `getShaderParameter`, `getProgramParameter`, `get*InfoLog` and
+`delete*` are present. Compile failures print the GLSL log and the shader source
+lines. This is the minimum for the stencil test; M2-T003 adds the remaining
+shader/uniform introspection PIXI needs.
+
 ## Hot calls and lifetime
 
 `bindBuffer`, `bufferSubData`, `drawElements`, `bindTexture`,
@@ -81,29 +141,40 @@ an off-heap backing store. A foreign receiver and invalid `bufferSubData` data
 throw the same `TypeError` from both paths, so whether TurboFan has optimised a
 call site cannot change JS-visible behaviour.
 
-Every buffer/VAO wrapper owns one GL name: `delete*()` frees it now, GC only
-queues it, and the context drains that queue when destroyed. Using a deleted or
-foreign-context wrapper records `INVALID_OPERATION` in the context (returned by
-the next `getError()`) instead of silently binding name `0`. A collected context
-is likewise only queued; the next `createContext` and the exported
-`webgl_drain()` (for the frame loop and teardown) perform the GL deletes on the
-main thread, because spec §15.8 forbids GL calls in a GC finalizer. On context
+Every GL object wrapper owns exactly one GL name: buffers, vertex arrays,
+textures, framebuffers, renderbuffers, shaders and programs. `delete*()` frees
+the name now and marks the wrapper dead; GC only queues the name, and the main
+thread drains that queue (`webgl_drain()`, or the next GL call if the frame loop
+has not reached the end of its frame yet). Using a dead or foreign-context
+wrapper reports `INVALID_OPERATION` on the next `getError()`, exactly like a
+WebGL call after `delete*()`. Deleting or forgetting a wrapper never frees a
+`Local` held elsewhere. Player code never sees a raw GL name.
+
+A collected context is likewise only queued. The next `createContext`, an
+explicit `webgl_drain()`, and teardown perform the GL deletes on the main
+thread, because spec §15.8 forbids GL calls in a GC finalizer. On context
 destruction, names still held by live wrappers are deleted and the wrappers are
 marked dead; if the GL context cannot be made current (lost device or closed
-window), the names are forgotten instead of calling GL. No `Local` is stored in
-C. Teardown calls `webgl_shutdown` to release the per-isolate context template.
+window), names are forgotten instead of calling GL. No `Local` is stored in C.
+Teardown calls `webgl_shutdown` to release the per-isolate context template.
 This is the short form of spec §15.8 and
-[js-binding.md](js-binding.md#handle-rules); M2-T002 adds the full lifetime rules
-for textures and framebuffers.
+[js-binding.md](js-binding.md#handle-rules).
 
 ## Tests
 
 `tests/smz/test_webgl_context.c` creates a context through `dom_shim.js`, sets
 state, uploads buffers, binds a VAO and clears without a GL error; it also
 checks that a canvas resize updates `drawingBufferWidth` and that using a
-deleted buffer yields `INVALID_OPERATION`. It skips only when the backend
-reports no GL device or entry point. The fast-api test needs no device. Rows for
-every entry point are in [compat-surface.md](compat-surface.md).
+deleted buffer yields `INVALID_OPERATION`. `tests/smz/test_webgl_textures.c`
+uploads known pixels from a typed array, a two-row Canvas2D canvas and an
+`ImageData`-like object, reads each back through an FBO, and checks that
+FLIP_Y/PREMULTIPLY transform a host source but not a typed array.
+`tests/smz/test_webgl_fbo.c` builds a texture plus depth24-stencil8
+renderbuffer, draws through a shader, proves a stencil-failed draw leaves colour
+unchanged, then restores framebuffer `0` and reads it back. Every device test
+skips only when the backend reports no GL device or entry point; the fast-api
+test needs no device. Rows for every entry point are in
+[compat-surface.md](compat-surface.md).
 
 ## Platform matrix
 

@@ -1,6 +1,7 @@
 <!--
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
+Modified 2026-11-06: record the WebGL2 texture, FBO, renderbuffer and stencil surface (M2-T002).
 Modified 2026-11-05: record the native WebGL2 context surface (M2-T001).
 Modified 2026-10-31: seed dom_shim.js inventory rows.
 Modified 2026-10-31: seed pixi_shim.js inventory rows.
@@ -229,13 +230,13 @@ dump and rejection of a stale `name` row through the CLI.
 | `HTMLCanvasElement.prototype.toDataURL.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Empty data:image/png;base64, string. |
 | `HTMLCanvasElement.prototype.transferControlToOffscreen` | stub | `src/shims/dom_shim.js` | `-` | Returns this; no OffscreenCanvas. |
 | `HTMLCanvasElement.prototype.transferControlToOffscreen.prototype.constructor` | stub | `src/shims/dom_shim.js` | `-` | Returns this; no OffscreenCanvas. |
-| `WebGL2RenderingContext.prototype.activeTexture` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Selects the active texture unit; texture wrappers are M2-T002. |
+| `WebGL2RenderingContext.prototype.activeTexture` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Selects the active texture unit. |
 | `WebGL2RenderingContext.prototype.canvas` | partial | `src/shims/dom_shim.js` | `tests/smz/test_webgl_context.c` | Set by the shim to the owning canvas element. |
 | `WebGL2RenderingContext.prototype.drawingBufferHeight` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Live height of the default drawing buffer; follows the canvas element's height setter. |
 | `WebGL2RenderingContext.prototype.drawingBufferWidth` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Live width of the default drawing buffer; follows the canvas element's width setter. |
 | `WebGL2RenderingContext.prototype.bindBuffer` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fast_api.cc` | Array/element buffer binding; V8 Fast API hot call. |
-| `WebGL2RenderingContext.prototype.bindFramebuffer` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Binds the default framebuffer (name 0); FBO wrappers are M2-T002. |
-| `WebGL2RenderingContext.prototype.bindTexture` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fast_api.cc` | Numeric/named texture binding; texture wrappers are M2-T002. |
+| `WebGL2RenderingContext.prototype.bindFramebuffer` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Binds framebuffer 0 or a wrapper; null restores framebuffer 0. |
+| `WebGL2RenderingContext.prototype.bindTexture` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fast_api.cc` | Texture binding for numeric names and wrappers; V8 Fast API hot call. |
 | `WebGL2RenderingContext.prototype.bindVertexArray` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fast_api.cc` | VAO binding; V8 Fast API hot call. |
 | `WebGL2RenderingContext.prototype.bufferData` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Uploads bytes or an explicit size. |
 | `WebGL2RenderingContext.prototype.bufferSubData` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fast_api.cc` | Partial upload from an ArrayBuffer/view; V8 Fast API hot call. |
@@ -260,9 +261,43 @@ dump and rejection of a stale `name` row through the CLI.
 | `WebGL2RenderingContext.prototype.uniform4f` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fast_api.cc` | Vec4 float uniform; V8 Fast API hot call. |
 | `WebGL2RenderingContext.prototype.uniform4fv` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fast_api.cc` | Vec4 float uniform array; V8 Fast API hot call. |
 | `WebGL2RenderingContext.prototype.uniformMatrix4fv` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fast_api.cc` | 4x4 matrix uniform; V8 Fast API hot call. |
-| `WebGL2RenderingContext.prototype.useProgram` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fast_api.cc` | Numeric/named program binding; program wrappers are M2-T003. |
+| `WebGL2RenderingContext.prototype.useProgram` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fast_api.cc` | Program binding for numeric names and wrappers; V8 Fast API hot call. |
 | `WebGL2RenderingContext.prototype.vertexAttribPointer` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Float attribute layout. |
 | `WebGL2RenderingContext.prototype.viewport` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_context.c` | Drawing viewport. |
+| `WebGL2RenderingContext.prototype.attachShader` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Attaches a compiled shader to a program. |
+| `WebGL2RenderingContext.prototype.bindRenderbuffer` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Binds a renderbuffer or 0. |
+| `WebGL2RenderingContext.prototype.checkFramebufferStatus` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Returns the framebuffer completeness enum. |
+| `WebGL2RenderingContext.prototype.clearStencil` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Sets the value used by STENCIL_BUFFER_BIT clears. |
+| `WebGL2RenderingContext.prototype.colorMask` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Selects which colour channels a draw writes. |
+| `WebGL2RenderingContext.prototype.compileShader` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Compiles a shader and logs source lines on failure. |
+| `WebGL2RenderingContext.prototype.createFramebuffer` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Returns a wrapper owning one GL framebuffer name. |
+| `WebGL2RenderingContext.prototype.createProgram` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Returns a wrapper owning one GL program name. |
+| `WebGL2RenderingContext.prototype.createRenderbuffer` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Returns a wrapper owning one GL renderbuffer name. |
+| `WebGL2RenderingContext.prototype.createShader` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Returns a wrapper owning one GL shader name. |
+| `WebGL2RenderingContext.prototype.createTexture` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_textures.c` | Returns a wrapper owning one GL texture name. |
+| `WebGL2RenderingContext.prototype.deleteFramebuffer` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Frees the framebuffer name and marks the wrapper dead. |
+| `WebGL2RenderingContext.prototype.deleteProgram` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Frees the program name and marks the wrapper dead. |
+| `WebGL2RenderingContext.prototype.deleteRenderbuffer` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Frees the renderbuffer name and marks the wrapper dead. |
+| `WebGL2RenderingContext.prototype.deleteShader` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Frees the shader name and marks the wrapper dead. |
+| `WebGL2RenderingContext.prototype.deleteTexture` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_textures.c` | Frees the texture name and marks the wrapper dead. |
+| `WebGL2RenderingContext.prototype.depthFunc` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Sets the depth comparison function. |
+| `WebGL2RenderingContext.prototype.depthMask` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Enables or disables depth writes. |
+| `WebGL2RenderingContext.prototype.framebufferRenderbuffer` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Attaches a renderbuffer to a framebuffer attachment. |
+| `WebGL2RenderingContext.prototype.framebufferTexture2D` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Attaches a texture level to a framebuffer attachment. |
+| `WebGL2RenderingContext.prototype.getProgramInfoLog` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Returns the program link info log. |
+| `WebGL2RenderingContext.prototype.getProgramParameter` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Reads LINK_STATUS, DELETE_STATUS and integer program state. |
+| `WebGL2RenderingContext.prototype.getShaderInfoLog` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Returns the shader compile info log. |
+| `WebGL2RenderingContext.prototype.getShaderParameter` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Reads COMPILE_STATUS, DELETE_STATUS and integer shader state. |
+| `WebGL2RenderingContext.prototype.linkProgram` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Links a program and logs the info log on failure. |
+| `WebGL2RenderingContext.prototype.pixelStorei` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_textures.c` | Stores alignment/row length and the WebGL flip/premultiply flags. |
+| `WebGL2RenderingContext.prototype.readPixels` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Copies GL pixels into a caller-owned typed array. |
+| `WebGL2RenderingContext.prototype.renderbufferStorage` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Allocates renderbuffer storage, including depth24-stencil8. |
+| `WebGL2RenderingContext.prototype.shaderSource` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Stores a string or string-array shader source. |
+| `WebGL2RenderingContext.prototype.stencilFunc` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Sets the stencil comparison, reference and mask. |
+| `WebGL2RenderingContext.prototype.stencilMask` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Selects which stencil bits a draw or clear writes. |
+| `WebGL2RenderingContext.prototype.stencilOp` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_fbo.c` | Sets pass/fail stencil operations. |
+| `WebGL2RenderingContext.prototype.texImage2D` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_textures.c` | Allocates/upload views and uploads Canvas2D, image or ImageData sources. |
+| `WebGL2RenderingContext.prototype.texSubImage2D` | partial | `src/webgl/webgl.cc` | `tests/smz/test_webgl_textures.c` | Updates a texture region from a view or host source. |
 | `HTMLCanvasElement.prototype.width` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Resizes the native 2d surface when a handle exists. |
 | `HTMLElement` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | In-memory element; no layout, CSSOM or live NodeList. |
 | `HTMLElement.prototype.appendChild` | partial | `src/shims/dom_shim.js` | `tests/test_dom_shim.c` | Reparents and runs an inserted script when connected. |

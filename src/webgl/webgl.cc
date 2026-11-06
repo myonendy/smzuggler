@@ -7,7 +7,8 @@
  * GL state machine directly. This file owns the context, C state and V8 objects
  * because the hot calls must be v8::CFunction fast calls rather than only jsb
  * slow callbacks, and each wrapper owns exactly one GL name (spec section
- * 15.8). Textures, FBOs, shaders and extensions are M2-T002/M2-T003.
+ * 15.8). Textures, framebuffers, renderbuffers, readback and a minimal shader
+ * pipeline live here; extensions are M2-T003.
  *
  * Rules: main thread only. No v8::Local is stored in C; explicit deletes free
  * names now, GC only queues them (and a collected context) for a main-thread
@@ -50,6 +51,7 @@ using v8::ObjectTemplate;
 using v8::Persistent;
 using v8::PropertyCallbackInfo;
 using v8::String;
+using v8::TryCatch;
 using v8::Value;
 using v8::WeakCallbackInfo;
 
@@ -325,13 +327,16 @@ struct GLContext {
     GLint pack_row_length;
 };
 
-/* A wrapper-owned GL name; `context` is NULL once the context is gone. */
+/* A wrapper-owned GL name; `context` is NULL once the context is gone.
+ * `source` keeps a shader's text only so a compile failure can log the source
+ * lines (spec section 15.8); every other wrapper leaves it NULL. */
 struct GLObject {
     GLContext *context;
     GLObject *next;
     GLuint name;
     int kind;
     bool deleted;
+    char *source;
 };
 
 /* Frees one GL name of `kind`; only called on the main thread with a current
@@ -369,6 +374,9 @@ static GLContext *s_contexts[MAX_CONTEXTS];
 /* Contexts whose JS wrapper was collected, drained outside GC. */
 static GLContext *s_destroy_queue[MAX_CONTEXTS];
 static size_t s_destroy_count;
+/* True when a GC finalizer queued at least one GL name. Kept separate so the
+ * hot paths pay one predictable branch instead of walking every context. */
+static bool s_pending_any;
 
 /* Returns `ctx` while it is registered, else NULL. */
 static GLContext *live(GLContext *ctx)
@@ -430,6 +438,17 @@ static void drain_pending(GLContext *ctx)
         node = next;
     }
 }
+/* Drains every context's GC queue. Only the main thread calls this, and only
+ * outside a finalizer: spec section 15.8 lets a finalizer queue a name but not
+ * touch GL. A missing current context leaves the queue for the next drain. */
+static void drain_pending_all(void)
+{
+    if (!s_pending_any) return;
+    if (!backend_make_current()) return;
+    s_pending_any = false;
+    for (int i = 0; i < MAX_CONTEXTS; i++)
+        if (s_contexts[i]) drain_pending(s_contexts[i]);
+}
 /* Deletes the names live wrappers still hold, then detaches the wrappers.
  * The records themselves belong to the JS wrappers and are not freed here. */
 static void release_objects(GLContext *ctx)
@@ -438,6 +457,8 @@ static void release_objects(GLContext *ctx)
         if (!object->deleted && object->name) {
             delete_name(object->kind, object->name);
         }
+        free(object->source);
+        object->source = NULL;
         object->name = 0;
         object->deleted = true;
         object->context = NULL;
@@ -448,6 +469,8 @@ static void release_objects(GLContext *ctx)
 static void forget_objects(GLContext *ctx)
 {
     for (GLObject *object = ctx->objects; object; object = object->next) {
+        free(object->source);
+        object->source = NULL;
         object->name = 0;
         object->deleted = true;
         object->context = NULL;
@@ -533,6 +556,8 @@ static void object_delete(GLObject *object)
         delete_name(object->kind, object->name);
     }
     object_unlink(object);
+    free(object->source);
+    object->source = NULL;
     object->name = 0;
     object->deleted = true;
 }
@@ -548,12 +573,13 @@ static void object_gc(GLObject *object)
             node->kind = object->kind;
             node->next = ctx->pending;
             ctx->pending = node;
+            s_pending_any = true;
         }
     }
     object_unlink(object);
+    free(object->source);
     free(object);
 }
-
 static const char *g_fast_names[32];
 static size_t g_fast_count;
 
@@ -686,6 +712,242 @@ static bool bytes_of(Local<Value> value, Bytes *bytes)
     }
     bytes->len = view->CopyContents(bytes->storage, sizeof(bytes->storage));
     return true;
+}
+
+/* ---- Texture upload sources ------------------------------------------- */
+
+/* Reads one JS property; an empty handle means the read threw or failed.
+ * Slow path only, so building the name string is fine. */
+static Local<Value> property_value(Local<Context> context, Local<Object> object,
+                                   const char *name)
+{
+    Local<Value> value;
+    if (!object->Get(context, utf8(context->GetIsolate(), name)).ToLocal(&value))
+        return Local<Value>();
+    return value;
+}
+/* Reads a property as ToUint32; missing or failed reads become 0. */
+static uint32_t property_u32(Local<Context> context, Local<Object> object,
+                             const char *name)
+{
+    Local<Value> value = property_value(context, object, name);
+    if (value.IsEmpty()) return 0;
+    return value->Uint32Value(context).FromMaybe(0);
+}
+
+/* One pixel source for texture uploads. Canvas, image, and ImageData sources
+ * are copied into JS-owned ArrayBuffers or an allocated buffer; `keep` in the
+ * caller pins the converted buffer until the upload finishes, while `owned`
+ * covers ImageData copies and flip/premultiply transforms (freed by
+ * `pixel_source_release`). */
+struct PixelSource {
+    const uint8_t *pixels;
+    int width;
+    int height;
+    uint8_t *owned;
+};
+
+/* Calls the existing Canvas2D/image binding to get an ArrayBuffer copy of a
+ * host object's pixels. Going through those bindings keeps src/webgl free of a
+ * link dependency on the renderer and image cache. The returned handle must be
+ * kept in the caller's scope until the GL upload finishes. */
+static Local<ArrayBuffer> native_pixels(Isolate *isolate, const char *module,
+                                        const char *method, uint32_t handle)
+{
+    Local<Context> context = isolate->GetCurrentContext();
+    Local<Value> module_value;
+    if (!context->Global()->Get(context, utf8(isolate, module))
+             .ToLocal(&module_value) || !module_value->IsObject())
+        return Local<ArrayBuffer>();
+    Local<Object> object = module_value.As<Object>();
+    Local<Value> function;
+    if (!object->Get(context, utf8(isolate, method)).ToLocal(&function) ||
+        !function->IsFunction())
+        return Local<ArrayBuffer>();
+    Local<Value> argv[1] = { Integer::NewFromUnsigned(isolate, handle) };
+    TryCatch try_catch(isolate);
+    Local<Value> result;
+    if (!function.As<Function>()->Call(context, object, 1, argv)
+             .ToLocal(&result)) {
+        try_catch.Reset();
+        return Local<ArrayBuffer>();
+    }
+    if (!result->IsArrayBuffer()) return Local<ArrayBuffer>();
+    return result.As<ArrayBuffer>();
+}
+/* Fills `source` from an HTMLCanvasElement's live Canvas2D raster. */
+static bool canvas_source(Local<Context> context, Local<Object> object,
+                          PixelSource *source, Local<ArrayBuffer> *keep)
+{
+    Local<Value> context2d = property_value(context, object, "_context2d");
+    if (context2d.IsEmpty() || !context2d->IsObject()) return false;
+    uint32_t handle = property_u32(context, context2d.As<Object>(), "_handle");
+    uint32_t width = property_u32(context, object, "width");
+    uint32_t height = property_u32(context, object, "height");
+    if (!handle || !width || !height) return false;
+    Local<ArrayBuffer> buffer = native_pixels(
+        context->GetIsolate(), "__native_canvas2d", "getPixels", handle);
+    size_t size = (size_t)width * (size_t)height * 4u;
+    if (buffer.IsEmpty() || !buffer->Data() ||
+        buffer->ByteLength() < size) return false;
+    *keep = buffer;
+    source->pixels = (const uint8_t *)buffer->Data();
+    source->width = (int)width;
+    source->height = (int)height;
+    return true;
+}
+/* Fills `source` from an HTMLImageElement's decoded RGBA pixels. */
+static bool image_source(Local<Context> context, Local<Object> object,
+                         PixelSource *source, Local<ArrayBuffer> *keep)
+{
+    uint32_t handle = property_u32(context, object, "_imageHandle");
+    uint32_t width = property_u32(context, object, "width");
+    uint32_t height = property_u32(context, object, "height");
+    if (!width) width = property_u32(context, object, "naturalWidth");
+    if (!height) height = property_u32(context, object, "naturalHeight");
+    if (!handle || !width || !height) return false;
+    Local<ArrayBuffer> buffer = native_pixels(
+        context->GetIsolate(), "__native_image", "getImagePixels", handle);
+    size_t size = (size_t)width * (size_t)height * 4u;
+    if (buffer.IsEmpty() || !buffer->Data() ||
+        buffer->ByteLength() < size) return false;
+    *keep = buffer;
+    source->pixels = (const uint8_t *)buffer->Data();
+    source->width = (int)width;
+    source->height = (int)height;
+    return true;
+}
+/* Fills `source` from an ImageData-like object ({width, height, data}).
+ * The pixels are copied because the JS typed array may live on the V8 heap. */
+static bool image_data_source(Local<Context> context, Local<Object> object,
+                              PixelSource *source)
+{
+    Local<Value> data = property_value(context, object, "data");
+    if (data.IsEmpty() || !data->IsArrayBufferView()) return false;
+    uint32_t width = property_u32(context, object, "width");
+    uint32_t height = property_u32(context, object, "height");
+    Bytes bytes;
+    if (!width || !height || !bytes_of(data, &bytes)) return false;
+    size_t size = (size_t)width * (size_t)height * 4u;
+    if (bytes.len < size) return false;
+    uint8_t *copy = (uint8_t *)malloc(size);
+    if (!copy) return false;
+    memcpy(copy, bytes.data, size);
+    source->pixels = copy;
+    source->width = (int)width;
+    source->height = (int)height;
+    source->owned = copy;
+    return true;
+}
+/* Resolves any supported host upload source; false for other values. */
+static bool pixel_source(Local<Context> context, Local<Value> value,
+                         PixelSource *source, Local<ArrayBuffer> *keep)
+{
+    memset(source, 0, sizeof(*source));
+    if (!value->IsObject()) return false;
+    Local<Object> object = value.As<Object>();
+    if (canvas_source(context, object, source, keep)) return true;
+    if (image_source(context, object, source, keep)) return true;
+    return image_data_source(context, object, source);
+}
+/* Releases the copy an ImageData or transform made, never borrowed pixels. */
+static void pixel_source_release(PixelSource *source)
+{
+    free(source->owned);
+    source->owned = NULL;
+}
+/* Bytes per component for the GL types this binding accepts. */
+static size_t type_size(GLenum type)
+{
+    switch (type) {
+    case GL_UNSIGNED_BYTE:
+    case GL_BYTE: return 1;
+    case GL_UNSIGNED_SHORT:
+    case GL_SHORT:
+    case GL_HALF_FLOAT: return 2;
+    case GL_UNSIGNED_INT:
+    case GL_INT:
+    case GL_FLOAT: return 4;
+    default: return 0;
+    }
+}
+/* Component count for the pixel formats PIXI and Canvas2D upload. */
+static size_t format_components(GLenum format)
+{
+    switch (format) {
+    case GL_RGBA: return 4;
+    case GL_RGB: return 3;
+    case GL_ALPHA:
+    case GL_DEPTH_COMPONENT: return 1;
+    default: return 0;
+    }
+}
+/* Minimum bytes a width x height upload or readback needs; 0 when unknown. */
+static size_t pixel_bytes(GLenum format, GLenum type, int width, int height)
+{
+    size_t components = format_components(format);
+    size_t unit = type_size(type);
+    if (!components || !unit || width <= 0 || height <= 0) return 0;
+    return (size_t)width * (size_t)height * components * unit;
+}
+/* Applies UNPACK_FLIP_Y_WEBGL and UNPACK_PREMULTIPLY_ALPHA_WEBGL to a host
+ * RGBA8 source, returning either the borrowed pixels or a malloc'ed copy.
+ * WebGL2 ignores both flags for ArrayBufferView uploads (spec 5.14.8). */
+static const uint8_t *transform_rgba(GLContext *ctx, const PixelSource *source,
+                                     uint8_t **owned)
+{
+    *owned = NULL;
+    size_t row = (size_t)source->width * 4u;
+    bool flip = ctx->unpack_flip_y != 0;
+    bool premultiply = ctx->unpack_premultiply_alpha != 0;
+    if (!flip && !premultiply) return source->pixels;
+    uint8_t *copy = (uint8_t *)malloc(row * (size_t)source->height);
+    if (!copy) return source->pixels;
+    for (int y = 0; y < source->height; y++) {
+        int sy = flip ? source->height - 1 - y : y;
+        const uint8_t *src = source->pixels + (size_t)sy * row;
+        uint8_t *dst = copy + (size_t)y * row;
+        if (!premultiply) {
+            memcpy(dst, src, row);
+            continue;
+        }
+        for (int x = 0; x < source->width; x++) {
+            uint8_t alpha = src[x * 4 + 3];
+            dst[x * 4 + 0] = (uint8_t)((src[x * 4 + 0] * alpha + 127u) / 255u);
+            dst[x * 4 + 1] = (uint8_t)((src[x * 4 + 1] * alpha + 127u) / 255u);
+            dst[x * 4 + 2] = (uint8_t)((src[x * 4 + 2] * alpha + 127u) / 255u);
+            dst[x * 4 + 3] = alpha;
+        }
+    }
+    *owned = copy;
+    return copy;
+}
+/* Uploads a host source with the unpack flags applied. RGBA8 is the only
+ * combination browsers promise for DOM sources, so other formats pass through. */
+static void tex_image_source(GLContext *ctx, GLenum target, GLint level,
+                             GLint internalformat, GLenum format, GLenum type,
+                             const PixelSource *source)
+{
+    uint8_t *owned = NULL;
+    const uint8_t *pixels = source->pixels;
+    if (format == GL_RGBA && type == GL_UNSIGNED_BYTE)
+        pixels = transform_rgba(ctx, source, &owned);
+    gl.TexImage2D(target, level, internalformat, source->width, source->height,
+                  0, format, type, pixels);
+    free(owned);
+}
+/* Uploads a host source into an existing texture region. */
+static void tex_sub_image_source(GLContext *ctx, GLenum target, GLint level,
+                                 GLint xoffset, GLint yoffset, GLenum format,
+                                 GLenum type, const PixelSource *source)
+{
+    uint8_t *owned = NULL;
+    const uint8_t *pixels = source->pixels;
+    if (format == GL_RGBA && type == GL_UNSIGNED_BYTE)
+        pixels = transform_rgba(ctx, source, &owned);
+    gl.TexSubImage2D(target, level, xoffset, yoffset, source->width,
+                     source->height, format, type, pixels);
+    free(owned);
 }
 
 enum Op {
@@ -982,6 +1244,498 @@ static bool slow_uniform(const FunctionCallbackInfo<Value> &info, GLContext *ctx
     default: return false;
     }
 }
+/* Wraps a fresh GL name of `kind` and returns it, or null when the driver
+ * refused (the same answer Chrome gives when allocation fails). */
+static void return_object(const FunctionCallbackInfo<Value> &info, GLContext *ctx,
+                          int kind)
+{
+    GLObject *object = object_create(ctx, kind);
+    if (!object) {
+        info.GetReturnValue().SetNull();
+        return;
+    }
+    info.GetReturnValue().Set(make_object(
+        info.GetIsolate(), info.GetIsolate()->GetCurrentContext(), object));
+}
+/* Deletes `value` only when it is our wrapper of `kind`; other values are a
+ * no-op so delete*() stays idempotent, as in WebGL. */
+static void delete_object(Local<Value> value, GLContext *ctx, int kind)
+{
+    GLObject *object = object_of(value);
+    if (object && object->context == ctx && object->kind == kind)
+        object_delete(object);
+}
+/* Resolves a nullable wrapper of `kind`; a dead or foreign wrapper records
+ * INVALID_OPERATION and reports false, as Chrome does after delete. */
+static bool wrapper_name(GLContext *ctx, Local<Value> value, int kind,
+                         GLuint *name)
+{
+    if (value->IsNullOrUndefined()) {
+        *name = 0;
+        return true;
+    }
+    if (!value->IsObject()) return false;
+    GLObject *object = object_of(value);
+    if (!object || object->deleted || object->context != ctx ||
+        object->kind != kind) {
+        ctx->synth_error = GL_INVALID_OPERATION;
+        return false;
+    }
+    *name = object->name;
+    return true;
+}
+/* Stores pixel-store filters and forwards the real GL parameters. The two
+ * WebGL-only enums never reach GL, where they would be INVALID_ENUM. */
+static void pixel_store(const FunctionCallbackInfo<Value> &info, GLContext *ctx)
+{
+    GLenum pname = arg_u32(info.GetIsolate(), info, 0);
+    GLint value = arg_i32(info.GetIsolate(), info, 1);
+    switch (pname) {
+    case 0x9240: ctx->unpack_flip_y = value != 0; return; /* FLIP_Y */
+    case 0x9241: ctx->unpack_premultiply_alpha = value != 0; return; /* PREMUL */
+    case GL_UNPACK_ALIGNMENT: ctx->unpack_alignment = value; break;
+    case GL_PACK_ALIGNMENT: ctx->pack_alignment = value; break;
+    case GL_UNPACK_ROW_LENGTH: ctx->unpack_row_length = value; break;
+    case GL_PACK_ROW_LENGTH: ctx->pack_row_length = value; break;
+    default: ctx->synth_error = GL_INVALID_ENUM; return;
+    }
+    gl.PixelStorei(pname, value);
+}
+/* texImage2D: 9 arguments allocate/upload from a view, 6 upload a host source. */
+static void tex_image(const FunctionCallbackInfo<Value> &info, GLContext *ctx)
+{
+    Isolate *isolate = info.GetIsolate();
+    Local<Context> context = isolate->GetCurrentContext();
+    GLenum target = arg_u32(isolate, info, 0);
+    GLint level = arg_i32(isolate, info, 1);
+    GLint internalformat = arg_i32(isolate, info, 2);
+    if (info.Length() >= 9) {
+        int32_t width = arg_i32(isolate, info, 3);
+        int32_t height = arg_i32(isolate, info, 4);
+        GLint border = arg_i32(isolate, info, 5);
+        GLenum format = arg_u32(isolate, info, 6);
+        GLenum type = arg_u32(isolate, info, 7);
+        Bytes bytes;
+        const void *data = NULL;
+        if (!info[8]->IsNullOrUndefined()) {
+            if (!bytes_of(info[8], &bytes)) {
+                throw_type(isolate, "texImage2D expects a typed array");
+                return;
+            }
+            size_t need = pixel_bytes(format, type, width, height);
+            if (need && bytes.len < need) {
+                ctx->synth_error = GL_INVALID_OPERATION;
+                return;
+            }
+            data = bytes.data;
+        }
+        gl.TexImage2D(target, level, internalformat, width, height, border,
+                      format, type, data);
+        return;
+    }
+    GLenum format = arg_u32(isolate, info, 3);
+    GLenum type = arg_u32(isolate, info, 4);
+    PixelSource source;
+    Local<ArrayBuffer> keep;
+    if (!pixel_source(context, info[5], &source, &keep)) {
+        throw_type(isolate, "texImage2D source is not a Canvas2D, image or "
+                            "ImageData object");
+        return;
+    }
+    tex_image_source(ctx, target, level, internalformat, format, type, &source);
+    pixel_source_release(&source);
+}
+/* texSubImage2D: 9 arguments use a view, 7 upload a host source region. */
+static void tex_sub_image(const FunctionCallbackInfo<Value> &info, GLContext *ctx)
+{
+    Isolate *isolate = info.GetIsolate();
+    Local<Context> context = isolate->GetCurrentContext();
+    GLenum target = arg_u32(isolate, info, 0);
+    GLint level = arg_i32(isolate, info, 1);
+    GLint xoffset = arg_i32(isolate, info, 2);
+    GLint yoffset = arg_i32(isolate, info, 3);
+    if (info.Length() >= 9) {
+        int32_t width = arg_i32(isolate, info, 4);
+        int32_t height = arg_i32(isolate, info, 5);
+        GLenum format = arg_u32(isolate, info, 6);
+        GLenum type = arg_u32(isolate, info, 7);
+        Bytes bytes;
+        if (!bytes_of(info[8], &bytes)) {
+            throw_type(isolate, "texSubImage2D expects a typed array");
+            return;
+        }
+        size_t need = pixel_bytes(format, type, width, height);
+        if (need && bytes.len < need) {
+            ctx->synth_error = GL_INVALID_OPERATION;
+            return;
+        }
+        gl.TexSubImage2D(target, level, xoffset, yoffset, width, height,
+                         format, type, bytes.data);
+        return;
+    }
+    GLenum format = arg_u32(isolate, info, 4);
+    GLenum type = arg_u32(isolate, info, 5);
+    PixelSource source;
+    Local<ArrayBuffer> keep;
+    if (!pixel_source(context, info[6], &source, &keep)) {
+        throw_type(isolate, "texSubImage2D source is not a Canvas2D, image or "
+                            "ImageData object");
+        return;
+    }
+    tex_sub_image_source(ctx, target, level, xoffset, yoffset, format, type,
+                         &source);
+    pixel_source_release(&source);
+}
+/* Handles texture creation, parameters, pixel store and both uploads. */
+static bool slow_texture(const FunctionCallbackInfo<Value> &info, GLContext *ctx,
+                         Op op)
+{
+    Isolate *isolate = info.GetIsolate();
+    switch (op) {
+    case OP_CREATE_TEXTURE: return_object(info, ctx, GL_OBJECT_TEXTURE); return true;
+    case OP_DELETE_TEXTURE:
+        delete_object(info[0], ctx, GL_OBJECT_TEXTURE);
+        return true;
+    case OP_TEX_PARAMETERI:
+        gl.TexParameteri(arg_u32(isolate, info, 0), arg_u32(isolate, info, 1),
+                         arg_i32(isolate, info, 2));
+        return true;
+    case OP_PIXEL_STOREI: pixel_store(info, ctx); return true;
+    case OP_TEX_IMAGE_2D: tex_image(info, ctx); return true;
+    case OP_TEX_SUB_IMAGE_2D: tex_sub_image(info, ctx); return true;
+    default: return false;
+    }
+}
+/* Handles framebuffer creation, attachments and completeness checks. */
+static bool slow_framebuffer(const FunctionCallbackInfo<Value> &info,
+                             GLContext *ctx, Op op)
+{
+    Isolate *isolate = info.GetIsolate();
+    switch (op) {
+    case OP_CREATE_FRAMEBUFFER:
+        return_object(info, ctx, GL_OBJECT_FRAMEBUFFER);
+        return true;
+    case OP_DELETE_FRAMEBUFFER:
+        delete_object(info[0], ctx, GL_OBJECT_FRAMEBUFFER);
+        return true;
+    case OP_FRAMEBUFFER_TEXTURE_2D: {
+        GLuint texture = 0;
+        if (!wrapper_name(ctx, info[3], GL_OBJECT_TEXTURE, &texture)) return true;
+        gl.FramebufferTexture2D(arg_u32(isolate, info, 0),
+                                arg_u32(isolate, info, 1),
+                                arg_u32(isolate, info, 2), texture,
+                                arg_i32(isolate, info, 4));
+        return true;
+    }
+    case OP_FRAMEBUFFER_RENDERBUFFER: {
+        GLuint renderbuffer = 0;
+        if (!wrapper_name(ctx, info[3], GL_OBJECT_RENDERBUFFER, &renderbuffer))
+            return true;
+        gl.FramebufferRenderbuffer(arg_u32(isolate, info, 0),
+                                   arg_u32(isolate, info, 1),
+                                   arg_u32(isolate, info, 2), renderbuffer);
+        return true;
+    }
+    case OP_CHECK_FRAMEBUFFER_STATUS:
+        info.GetReturnValue().Set(Integer::NewFromUnsigned(
+            isolate, gl.CheckFramebufferStatus(arg_u32(isolate, info, 0))));
+        return true;
+    default: return false;
+    }
+}
+/* Handles renderbuffer creation, binding and storage allocation. */
+static bool slow_renderbuffer(const FunctionCallbackInfo<Value> &info,
+                              GLContext *ctx, Op op)
+{
+    Isolate *isolate = info.GetIsolate();
+    switch (op) {
+    case OP_CREATE_RENDERBUFFER:
+        return_object(info, ctx, GL_OBJECT_RENDERBUFFER);
+        return true;
+    case OP_DELETE_RENDERBUFFER:
+        delete_object(info[0], ctx, GL_OBJECT_RENDERBUFFER);
+        return true;
+    case OP_BIND_RENDERBUFFER: {
+        GLuint renderbuffer = 0;
+        if (!wrapper_name(ctx, info[1], GL_OBJECT_RENDERBUFFER, &renderbuffer))
+            return true;
+        gl.BindRenderbuffer(arg_u32(isolate, info, 0), renderbuffer);
+        return true;
+    }
+    case OP_RENDERBUFFER_STORAGE:
+        gl.RenderbufferStorage(arg_u32(isolate, info, 0),
+                               arg_u32(isolate, info, 1),
+                               arg_i32(isolate, info, 2),
+                               arg_i32(isolate, info, 3));
+        return true;
+    default: return false;
+    }
+}
+/* Copies GL pixels into a caller-supplied view; the view stays JS-owned. */
+static void read_pixels(const FunctionCallbackInfo<Value> &info, GLContext *ctx)
+{
+    Isolate *isolate = info.GetIsolate();
+    int32_t x = arg_i32(isolate, info, 0);
+    int32_t y = arg_i32(isolate, info, 1);
+    int32_t width = arg_i32(isolate, info, 2);
+    int32_t height = arg_i32(isolate, info, 3);
+    GLenum format = arg_u32(isolate, info, 4);
+    GLenum type = arg_u32(isolate, info, 5);
+    if (!info[6]->IsArrayBufferView()) {
+        throw_type(isolate, "readPixels expects a typed array");
+        return;
+    }
+    Local<ArrayBufferView> view = info[6].As<ArrayBufferView>();
+    size_t need = pixel_bytes(format, type, width, height);
+    if (need && view->ByteLength() < need) {
+        ctx->synth_error = GL_INVALID_OPERATION;
+        return;
+    }
+    Local<ArrayBuffer> buffer = view->Buffer();
+    uint8_t *data = buffer.IsEmpty() ? NULL : (uint8_t *)buffer->Data();
+    if (!data) return;
+    gl.ReadPixels(x, y, width, height, format, type,
+                  data + view->ByteOffset());
+}
+/* Handles stencil/depth/colour masks and the readback that snapshots them. */
+static bool slow_raster(const FunctionCallbackInfo<Value> &info, GLContext *ctx,
+                        Op op)
+{
+    Isolate *isolate = info.GetIsolate();
+    switch (op) {
+    case OP_READ_PIXELS: read_pixels(info, ctx); return true;
+    case OP_STENCIL_FUNC:
+        gl.StencilFunc(arg_u32(isolate, info, 0), arg_i32(isolate, info, 1),
+                       arg_u32(isolate, info, 2));
+        return true;
+    case OP_STENCIL_OP:
+        gl.StencilOp(arg_u32(isolate, info, 0), arg_u32(isolate, info, 1),
+                     arg_u32(isolate, info, 2));
+        return true;
+    case OP_STENCIL_MASK: gl.StencilMask(arg_u32(isolate, info, 0)); return true;
+    case OP_CLEAR_STENCIL: gl.ClearStencil(arg_i32(isolate, info, 0)); return true;
+    case OP_DEPTH_FUNC: gl.DepthFunc(arg_u32(isolate, info, 0)); return true;
+    case OP_DEPTH_MASK:
+        gl.DepthMask(arg_bool(isolate, info, 0) ? GL_TRUE : GL_FALSE);
+        return true;
+    case OP_COLOR_MASK:
+        gl.ColorMask(arg_bool(isolate, info, 0) ? GL_TRUE : GL_FALSE,
+                     arg_bool(isolate, info, 1) ? GL_TRUE : GL_FALSE,
+                     arg_bool(isolate, info, 2) ? GL_TRUE : GL_FALSE,
+                     arg_bool(isolate, info, 3) ? GL_TRUE : GL_FALSE);
+        return true;
+    default: return false;
+    }
+}
+/* Copies one V8 string into a malloc'ed UTF-8 buffer. */
+static char *copy_string(Isolate *isolate, Local<String> text)
+{
+    int length = text->Utf8Length(isolate);
+    char *out = (char *)malloc((size_t)length + 1);
+    if (!out) return NULL;
+    text->WriteUtf8(isolate, out, length + 1);
+    return out;
+}
+/* Joins the string or string-array form of shaderSource into one C string.
+ * The returned buffer is owned by the caller and freed on replacement. */
+static char *shader_text(Isolate *isolate, Local<Context> context,
+                         Local<Value> value)
+{
+    if (value->IsString()) return copy_string(isolate, value.As<String>());
+    if (!value->IsArray()) return NULL;
+    Local<Array> parts = value.As<Array>();
+    char *out = NULL;
+    size_t used = 0;
+    for (uint32_t i = 0; i < parts->Length(); i++) {
+        Local<Value> part;
+        if (!parts->Get(context, i).ToLocal(&part)) { free(out); return NULL; }
+        Local<String> text;
+        if (!part->ToString(context).ToLocal(&text)) { free(out); return NULL; }
+        int length = text->Utf8Length(isolate);
+        char *grown = (char *)realloc(out, used + (size_t)length + 1);
+        if (!grown) { free(out); return NULL; }
+        out = grown;
+        text->WriteUtf8(isolate, out + used, length + 1);
+        used += (size_t)length;
+    }
+    return out;
+}
+/* Returns our live wrapper of `kind`, or records INVALID_OPERATION. */
+static GLObject *owned_object(GLContext *ctx, Local<Value> value, int kind)
+{
+    GLObject *object = object_of(value);
+    if (!object || object->deleted || object->context != ctx ||
+        object->kind != kind) {
+        ctx->synth_error = GL_INVALID_OPERATION;
+        return NULL;
+    }
+    return object;
+}
+/* Wraps a driver-made name (shaders and programs have no gen_* entry point). */
+static void return_named(const FunctionCallbackInfo<Value> &info, GLContext *ctx,
+                         int kind, GLuint name)
+{
+    GLObject *object = object_wrap(ctx, kind, name);
+    if (!object) {
+        info.GetReturnValue().SetNull();
+        return;
+    }
+    info.GetReturnValue().Set(make_object(
+        info.GetIsolate(), info.GetIsolate()->GetCurrentContext(), object));
+}
+/* Logs a compile failure with its source lines so plugin authors can find the
+ * bad statement, as Chrome does in the console (spec section 15.8). */
+static void log_shader_failure(GLObject *shader)
+{
+    char log[2048];
+    gl.GetShaderInfoLog(shader->name, (GLsizei)sizeof(log), NULL, log);
+    log[sizeof(log) - 1] = '\0';
+    fprintf(stderr, "webgl: shader compilation failed: %s\n", log);
+    const char *line = shader->source;
+    for (int number = 1; line && *line && number <= 200; number++) {
+        const char *end = strchr(line, '\n');
+        int length = end ? (int)(end - line) : (int)strlen(line);
+        fprintf(stderr, "%4d: %.*s\n", number, length, line);
+        if (!end) break;
+        line = end + 1;
+    }
+}
+/* Handles WebGLShader creation, source, compilation and deletion. */
+static bool slow_shader(const FunctionCallbackInfo<Value> &info, GLContext *ctx,
+                        Op op)
+{
+    Isolate *isolate = info.GetIsolate();
+    switch (op) {
+    case OP_CREATE_SHADER:
+        return_named(info, ctx, GL_OBJECT_SHADER,
+                     gl.CreateShader(arg_u32(isolate, info, 0)));
+        return true;
+    case OP_SHADER_SOURCE: {
+        GLObject *shader = owned_object(ctx, info[0], GL_OBJECT_SHADER);
+        if (!shader) return true;
+        char *text = shader_text(isolate, isolate->GetCurrentContext(), info[1]);
+        if (!text) {
+            throw_type(isolate, "shaderSource expects a string or string array");
+            return true;
+        }
+        free(shader->source);
+        shader->source = text;
+        const GLchar *sources[1] = { text };
+        gl.ShaderSource(shader->name, 1, sources, NULL);
+        return true;
+    }
+    case OP_COMPILE_SHADER: {
+        GLObject *shader = owned_object(ctx, info[0], GL_OBJECT_SHADER);
+        if (!shader) return true;
+        gl.CompileShader(shader->name);
+        GLint ok = 0;
+        gl.GetShaderiv(shader->name, GL_COMPILE_STATUS, &ok);
+        if (!ok) log_shader_failure(shader);
+        return true;
+    }
+    case OP_GET_SHADER_PARAMETER: {
+        GLObject *shader = owned_object(ctx, info[0], GL_OBJECT_SHADER);
+        if (!shader) return true;
+        GLenum pname = arg_u32(isolate, info, 1);
+        GLint value = 0;
+        gl.GetShaderiv(shader->name, pname, &value);
+        if (pname == GL_COMPILE_STATUS || pname == GL_DELETE_STATUS)
+            info.GetReturnValue().Set(value == GL_TRUE);
+        else info.GetReturnValue().Set(Integer::New(isolate, value));
+        return true;
+    }
+    case OP_GET_SHADER_INFO_LOG: {
+        GLObject *shader = owned_object(ctx, info[0], GL_OBJECT_SHADER);
+        if (!shader) return true;
+        char log[2048];
+        gl.GetShaderInfoLog(shader->name, (GLsizei)sizeof(log), NULL, log);
+        log[sizeof(log) - 1] = '\0';
+        info.GetReturnValue().Set(utf8(isolate, log));
+        return true;
+    }
+    case OP_DELETE_SHADER:
+        delete_object(info[0], ctx, GL_OBJECT_SHADER);
+        return true;
+    default: return false;
+    }
+}
+/* Handles WebGLProgram creation, attachment, linking and deletion. */
+static bool slow_program(const FunctionCallbackInfo<Value> &info, GLContext *ctx,
+                         Op op)
+{
+    Isolate *isolate = info.GetIsolate();
+    switch (op) {
+    case OP_CREATE_PROGRAM:
+        return_named(info, ctx, GL_OBJECT_PROGRAM, gl.CreateProgram());
+        return true;
+    case OP_ATTACH_SHADER: {
+        GLuint program = 0;
+        GLuint shader = 0;
+        if (!wrapper_name(ctx, info[0], GL_OBJECT_PROGRAM, &program) ||
+            !wrapper_name(ctx, info[1], GL_OBJECT_SHADER, &shader)) return true;
+        gl.AttachShader(program, shader);
+        return true;
+    }
+    case OP_BIND_ATTRIB_LOCATION: {
+        GLuint program = 0;
+        if (!wrapper_name(ctx, info[0], GL_OBJECT_PROGRAM, &program)) return true;
+        Local<String> name;
+        if (!info[2]->ToString(isolate->GetCurrentContext()).ToLocal(&name)) {
+            throw_type(isolate, "bindAttribLocation expects a name");
+            return true;
+        }
+        char *text = copy_string(isolate, name);
+        if (!text) return true;
+        gl.BindAttribLocation(program, arg_u32(isolate, info, 1), text);
+        free(text);
+        return true;
+    }
+    case OP_LINK_PROGRAM: {
+        GLuint program = 0;
+        if (!wrapper_name(ctx, info[0], GL_OBJECT_PROGRAM, &program)) return true;
+        gl.LinkProgram(program);
+        GLint ok = 0;
+        gl.GetProgramiv(program, GL_LINK_STATUS, &ok);
+        if (!ok) {
+            char log[2048];
+            gl.GetProgramInfoLog(program, (GLsizei)sizeof(log), NULL, log);
+            log[sizeof(log) - 1] = '\0';
+            fprintf(stderr, "webgl: program link failed: %s\n", log);
+        }
+        return true;
+    }
+    case OP_DELETE_PROGRAM:
+        delete_object(info[0], ctx, GL_OBJECT_PROGRAM);
+        return true;
+    default: return false;
+    }
+}
+/* Reads program status and info logs; split from slow_program to keep each
+ * switch arm's function under the project's 60-line limit. */
+static bool program_query(const FunctionCallbackInfo<Value> &info,
+                          GLContext *ctx, Op op)
+{
+    Isolate *isolate = info.GetIsolate();
+    if (op != OP_GET_PROGRAM_PARAMETER && op != OP_GET_PROGRAM_INFO_LOG)
+        return false;
+    GLuint program = 0;
+    if (!wrapper_name(ctx, info[0], GL_OBJECT_PROGRAM, &program)) return true;
+    if (op == OP_GET_PROGRAM_PARAMETER) {
+        GLenum pname = arg_u32(isolate, info, 1);
+        GLint value = 0;
+        gl.GetProgramiv(program, pname, &value);
+        if (pname == GL_LINK_STATUS || pname == GL_DELETE_STATUS)
+            info.GetReturnValue().Set(value == GL_TRUE);
+        else info.GetReturnValue().Set(Integer::New(isolate, value));
+        return true;
+    }
+    if (op != OP_GET_PROGRAM_INFO_LOG) return false;
+    char log[4096];
+    gl.GetProgramInfoLog(program, (GLsizei)sizeof(log), NULL, log);
+    log[sizeof(log) - 1] = '\0';
+    info.GetReturnValue().Set(utf8(isolate, log));
+    return true;
+}
 /* Handles every slow path; `data` is the table row being called. */
 static void slow_method(const FunctionCallbackInfo<Value> &info)
 {
@@ -993,15 +1747,22 @@ static void slow_method(const FunctionCallbackInfo<Value> &info)
         throw_illegal(isolate);
         return;
     }
+    drain_pending_all();
     Op op = method->op;
-    if (!slow_state(info, ctx, op) && !slow_buffer(info, ctx, op) &&
-        !slow_vao(info, ctx, op))
-        slow_uniform(info, ctx, op);
+    bool handled =
+        slow_state(info, ctx, op) || slow_buffer(info, ctx, op) ||
+        slow_vao(info, ctx, op) || slow_uniform(info, ctx, op) ||
+        slow_texture(info, ctx, op) || slow_framebuffer(info, ctx, op) ||
+        slow_renderbuffer(info, ctx, op) || slow_raster(info, ctx, op) ||
+        slow_shader(info, ctx, op) || slow_program(info, ctx, op) ||
+        program_query(info, ctx, op);
+    (void)handled;
 }
 /* Returns the receiver's live context, or NULL after throwing exactly what
  * the slow path throws, so optimisation cannot change JS behaviour. */
 static GLContext *fast_context(Isolate *isolate, Local<Object> receiver)
 {
+    if (s_pending_any) drain_pending_all();
     GLContext *ctx = live(context_of(receiver));
     if (!ctx) throw_illegal(isolate);
     return ctx;
@@ -1193,6 +1954,10 @@ static const Constant kConstants[] = {
     {"KEEP", GL_KEEP}, {"REPLACE", GL_REPLACE}, {"INCR", GL_INCR},
     {"DECR", GL_DECR}, {"INVERT", GL_INVERT}, {"INCR_WRAP", GL_INCR_WRAP},
     {"DECR_WRAP", GL_DECR_WRAP},
+    {"COMPILE_STATUS", GL_COMPILE_STATUS}, {"LINK_STATUS", GL_LINK_STATUS},
+    {"DELETE_STATUS", GL_DELETE_STATUS}, {"SHADER_TYPE", GL_SHADER_TYPE},
+    {"ACTIVE_UNIFORMS", GL_ACTIVE_UNIFORMS},
+    {"ACTIVE_ATTRIBUTES", GL_ACTIVE_ATTRIBUTES},
     {"UNPACK_FLIP_Y_WEBGL", 0x9240},
     {"UNPACK_PREMULTIPLY_ALPHA_WEBGL", 0x9241},
 };
@@ -1333,6 +2098,7 @@ void js_create_context(const FunctionCallbackInfo<Value> &info)
 {
     Isolate *isolate = info.GetIsolate();
     drain_destroy_queue();
+    drain_pending_all();
     GLContext *ctx = context_create(arg_i32(isolate, info, 0),
                                     arg_i32(isolate, info, 1));
     if (!ctx) { info.GetReturnValue().SetNull(); return; }
@@ -1413,6 +2179,7 @@ extern "C" bool webgl_define(jsb_runtime *rt)
 extern "C" void webgl_drain(void)
 {
     drain_destroy_queue();
+    drain_pending_all();
 }
 /* See webgl.h: webgl_shutdown. */
 extern "C" void webgl_shutdown(void)

@@ -42,6 +42,7 @@ Project documentation; identity decisions are in docs/DECISIONS.md.
 All notable changes to smzuggler. Outsider's own history is in its git log.
 
 ## Unreleased
+- Add WebGL2 texture uploads (typed arrays, Canvas2D, images, ImageData), UNPACK flip/premultiply, framebuffers, depth-stencil renderbuffers, readPixels and stencil-tested draws. (M2-T002)
 - Add a native WebGL2 context over GLES 3.0 with buffer/VAO state, draws, V8 Fast API hot calls, canvas-driven drawing-buffer resize and non-allocating fast paths. (M2-T001)
 - Add the outside-tester kit: `--scrub-report` packs only the fixed report schema, writes `SCRUBBED.txt` and refuses saves or local identities while preserving Deck profile tokens; optional `deck-proxy` caps carry `gate: proxy`. (M2-T008)
 - Add the §14 perf harness with compressed MZ fixture validation, scratch scene loading, scripted S1-S3 windows and profile-aware analysis. (M2-T007)
