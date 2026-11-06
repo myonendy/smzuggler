@@ -176,6 +176,99 @@ static void check_image_data_and_lifetime(JSEngine *engine)
     expect(engine, "gl.getError()===gl.NO_ERROR", "true");
 }
 
+/* Rejects undersized JS views before GL can cross their byte boundaries. */
+static void check_pixel_layout(JSEngine *engine)
+{
+    expect(engine,
+           "while(gl.getError()!==gl.NO_ERROR){}"
+           "gl.readPixels(0,0,1,2,gl.RGB,gl.UNSIGNED_BYTE,new Uint8Array(6));"
+           "gl.getError()===gl.INVALID_OPERATION", "true");
+    expect(engine,
+           "var layoutTex=gl.createTexture();"
+           "gl.bindTexture(gl.TEXTURE_2D,layoutTex);"
+           "gl.pixelStorei(gl.UNPACK_ROW_LENGTH,3);"
+           "gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,2,0,gl.RGBA,"
+           "gl.UNSIGNED_BYTE,new Uint8Array(8));"
+           "gl.getError()===gl.INVALID_OPERATION", "true");
+    expect(engine,
+           "gl.pixelStorei(gl.UNPACK_ROW_LENGTH,0);"
+           "gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,2,0,gl.RGBA,"
+           "gl.UNSIGNED_BYTE,null);"
+           "gl.pixelStorei(gl.UNPACK_ROW_LENGTH,3);"
+           "gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,1,2,gl.RGBA,"
+           "gl.UNSIGNED_BYTE,new Uint8Array(8));"
+           "gl.pixelStorei(gl.UNPACK_ROW_LENGTH,0);"
+           "gl.getError()===gl.INVALID_OPERATION", "true");
+    expect(engine,
+           "gl.pixelStorei(gl.PACK_ROW_LENGTH,3);"
+           "gl.readPixels(0,0,1,2,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array(8));"
+           "gl.pixelStorei(gl.PACK_ROW_LENGTH,0);"
+           "gl.getError()===gl.INVALID_OPERATION", "true");
+    expect(engine,
+           "gl.readPixels(0,0,1,1,0xdead,gl.UNSIGNED_BYTE,new Uint8Array(0));"
+           "gl.getError()===gl.INVALID_ENUM", "true");
+    expect(engine,
+           "gl.pixelStorei(gl.UNPACK_ALIGNMENT,3);"
+           "gl.getError()===gl.INVALID_VALUE", "true");
+    expect(engine,
+           "gl.bindRenderbuffer(gl.RENDERBUFFER,42);"
+           "gl.getError()===gl.INVALID_OPERATION", "true");
+    expect(engine,
+           "gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,1,2,0,gl.RGB,"
+           "0x8363,new Uint8Array(0));"
+           "gl.getError()===gl.INVALID_ENUM", "true");
+    expect(engine,
+           "gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,1,2,0x1903,"
+           "gl.UNSIGNED_BYTE,new Uint8Array(0));"
+           "gl.getError()===gl.INVALID_ENUM", "true");
+    expect(engine, "gl.deleteTexture(layoutTex);gl.getError()", "0");
+}
+
+/* Host rasters stay tightly packed and leave the caller's unpack state intact. */
+static void check_host_layout(JSEngine *engine)
+{
+    expect(engine,
+           "var odd={width:1,height:2,data:new Uint8Array([1,2,3,4,5,6,7,8])};"
+           "var oddTex=gl.createTexture();"
+           "gl.bindTexture(gl.TEXTURE_2D,oddTex);"
+           "gl.pixelStorei(gl.UNPACK_ALIGNMENT,8);"
+           "gl.pixelStorei(gl.UNPACK_ROW_LENGTH,3);"
+           "gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,"
+           "gl.UNSIGNED_BYTE,odd);"
+           "gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,gl.RGBA,"
+           "gl.UNSIGNED_BYTE,odd);"
+           "var oddFbo=gl.createFramebuffer();"
+           "gl.bindFramebuffer(gl.FRAMEBUFFER,oddFbo);"
+           "gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,"
+           "gl.TEXTURE_2D,oddTex,0);"
+           "var oddPx=new Uint8Array(8);"
+           "gl.readPixels(0,0,1,2,gl.RGBA,gl.UNSIGNED_BYTE,oddPx);"
+           "Array.from(oddPx).join(',')", "1,2,3,4,5,6,7,8");
+    expect(engine,
+           "gl.pixelStorei(gl.PACK_ALIGNMENT,8);"
+           "gl.pixelStorei(gl.PACK_ROW_LENGTH,3);"
+           "var padded=new Uint8Array(20);padded.fill(99);"
+           "gl.readPixels(0,0,1,2,gl.RGBA,gl.UNSIGNED_BYTE,padded);"
+           "gl.pixelStorei(gl.PACK_ALIGNMENT,4);"
+           "gl.pixelStorei(gl.PACK_ROW_LENGTH,0);"
+           "[gl.getError(),padded[0],padded[4],padded[16],padded[19]].join(',')",
+           "0,1,99,5,8");
+    expect(engine,
+           "gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,1,2,gl.RGBA,"
+           "gl.UNSIGNED_BYTE,new Uint8Array(8));"
+           "gl.getError()===gl.INVALID_OPERATION", "true");
+    expect(engine,
+           "gl.pixelStorei(gl.UNPACK_ROW_LENGTH,0);"
+           "gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,1,2,gl.RGBA,"
+           "gl.UNSIGNED_BYTE,new Uint8Array(8));"
+           "gl.getError()===gl.INVALID_OPERATION", "true");
+    expect(engine,
+           "gl.pixelStorei(gl.UNPACK_ALIGNMENT,4);"
+           "gl.bindFramebuffer(gl.FRAMEBUFFER,null);"
+           "gl.deleteFramebuffer(oddFbo);gl.deleteTexture(oddTex);"
+           "gl.getError()", "0");
+}
+
 /* Loads the DOM and Canvas2D shims and runs the device-gated checks. */
 int main(void)
 {
@@ -215,6 +308,8 @@ int main(void)
     }
 
     setup_context(engine);
+    check_pixel_layout(engine);
+    check_host_layout(engine);
     check_typed_array(engine);
     check_canvas_source(engine);
     check_premultiply(engine);

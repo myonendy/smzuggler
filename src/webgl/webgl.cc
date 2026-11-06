@@ -882,13 +882,48 @@ static size_t format_components(GLenum format)
     default: return 0;
     }
 }
-/* Minimum bytes a width x height upload or readback needs; 0 when unknown. */
-static size_t pixel_bytes(GLenum format, GLenum type, int width, int height)
+/* Checks the last byte GL can access, including row padding but excluding
+ * padding after the final row. Main-thread only; no caller memory is retained.
+ * Unknown formats/types, invalid dimensions and overflow fail before GL. */
+static bool pixel_bytes(GLContext *ctx, GLenum format, GLenum type, int width,
+                        int height, bool pack, size_t *need)
 {
     size_t components = format_components(format);
     size_t unit = type_size(type);
-    if (!components || !unit || width <= 0 || height <= 0) return 0;
-    return (size_t)width * (size_t)height * components * unit;
+    if (!components || !unit) {
+        ctx->synth_error = GL_INVALID_ENUM;
+        return false;
+    }
+    if (width < 0 || height < 0) {
+        ctx->synth_error = GL_INVALID_VALUE;
+        return false;
+    }
+    *need = 0;
+    if (!width || !height) return true;
+    size_t alignment = pack ? ctx->pack_alignment : ctx->unpack_alignment;
+    size_t row_length = pack ? ctx->pack_row_length : ctx->unpack_row_length;
+    size_t pixel = components * unit;
+    size_t columns = row_length ? row_length : (size_t)width;
+    if (columns > (SIZE_MAX - alignment + 1) / pixel ||
+        (size_t)width > SIZE_MAX / pixel) {
+        ctx->synth_error = GL_INVALID_OPERATION;
+        return false;
+    }
+    size_t stride = (columns * pixel + alignment - 1) / alignment * alignment;
+    size_t last = (size_t)width * pixel;
+    if (stride && (size_t)(height - 1) > (SIZE_MAX - last) / stride) {
+        ctx->synth_error = GL_INVALID_OPERATION;
+        return false;
+    }
+    *need = stride * (size_t)(height - 1) + last;
+    return true;
+}
+/* Host buffers are packed RGBA8, independent of the user's array layout.
+ * Main-thread only; restore the tracked array state after either host upload. */
+static void host_unpack(GLContext *ctx, bool restore)
+{
+    gl.PixelStorei(GL_UNPACK_ROW_LENGTH, restore ? ctx->unpack_row_length : 0);
+    gl.PixelStorei(GL_UNPACK_ALIGNMENT, restore ? ctx->unpack_alignment : 1);
 }
 /* Applies UNPACK_FLIP_Y_WEBGL and UNPACK_PREMULTIPLY_ALPHA_WEBGL to a host
  * RGBA8 source, returning either the borrowed pixels or a malloc'ed copy.
@@ -922,18 +957,24 @@ static const uint8_t *transform_rgba(GLContext *ctx, const PixelSource *source,
     *owned = copy;
     return copy;
 }
-/* Uploads a host source with the unpack flags applied. RGBA8 is the only
- * combination browsers promise for DOM sources, so other formats pass through. */
+/* Uploads borrowed RGBA8 host pixels on the main thread; unsupported layouts
+ * record INVALID_OPERATION rather than interpreting the raster as another type. */
 static void tex_image_source(GLContext *ctx, GLenum target, GLint level,
                              GLint internalformat, GLenum format, GLenum type,
                              const PixelSource *source)
 {
+    if (format != GL_RGBA || type != GL_UNSIGNED_BYTE) {
+        ctx->synth_error = GL_INVALID_OPERATION;
+        return;
+    }
     uint8_t *owned = NULL;
     const uint8_t *pixels = source->pixels;
     if (format == GL_RGBA && type == GL_UNSIGNED_BYTE)
         pixels = transform_rgba(ctx, source, &owned);
+    host_unpack(ctx, false);
     gl.TexImage2D(target, level, internalformat, source->width, source->height,
                   0, format, type, pixels);
+    host_unpack(ctx, true);
     free(owned);
 }
 /* Uploads a host source into an existing texture region. */
@@ -941,12 +982,18 @@ static void tex_sub_image_source(GLContext *ctx, GLenum target, GLint level,
                                  GLint xoffset, GLint yoffset, GLenum format,
                                  GLenum type, const PixelSource *source)
 {
+    if (format != GL_RGBA || type != GL_UNSIGNED_BYTE) {
+        ctx->synth_error = GL_INVALID_OPERATION;
+        return;
+    }
     uint8_t *owned = NULL;
     const uint8_t *pixels = source->pixels;
     if (format == GL_RGBA && type == GL_UNSIGNED_BYTE)
         pixels = transform_rgba(ctx, source, &owned);
+    host_unpack(ctx, false);
     gl.TexSubImage2D(target, level, xoffset, yoffset, source->width,
                      source->height, format, type, pixels);
+    host_unpack(ctx, true);
     free(owned);
 }
 
@@ -1274,7 +1321,10 @@ static bool wrapper_name(GLContext *ctx, Local<Value> value, int kind,
         *name = 0;
         return true;
     }
-    if (!value->IsObject()) return false;
+    if (!value->IsObject()) {
+        ctx->synth_error = GL_INVALID_OPERATION;
+        return false;
+    }
     GLObject *object = object_of(value);
     if (!object || object->deleted || object->context != ctx ||
         object->kind != kind) {
@@ -1290,6 +1340,13 @@ static void pixel_store(const FunctionCallbackInfo<Value> &info, GLContext *ctx)
 {
     GLenum pname = arg_u32(info.GetIsolate(), info, 0);
     GLint value = arg_i32(info.GetIsolate(), info, 1);
+    if (((pname == GL_UNPACK_ALIGNMENT || pname == GL_PACK_ALIGNMENT) &&
+         value != 1 && value != 2 && value != 4 && value != 8) ||
+        ((pname == GL_UNPACK_ROW_LENGTH || pname == GL_PACK_ROW_LENGTH) &&
+         value < 0)) {
+        ctx->synth_error = GL_INVALID_VALUE;
+        return;
+    }
     switch (pname) {
     case 0x9240: ctx->unpack_flip_y = value != 0; return; /* FLIP_Y */
     case 0x9241: ctx->unpack_premultiply_alpha = value != 0; return; /* PREMUL */
@@ -1322,8 +1379,10 @@ static void tex_image(const FunctionCallbackInfo<Value> &info, GLContext *ctx)
                 throw_type(isolate, "texImage2D expects a typed array");
                 return;
             }
-            size_t need = pixel_bytes(format, type, width, height);
-            if (need && bytes.len < need) {
+            size_t need;
+            if (!pixel_bytes(ctx, format, type, width, height, false, &need))
+                return;
+            if (bytes.len < need) {
                 ctx->synth_error = GL_INVALID_OPERATION;
                 return;
             }
@@ -1364,8 +1423,10 @@ static void tex_sub_image(const FunctionCallbackInfo<Value> &info, GLContext *ct
             throw_type(isolate, "texSubImage2D expects a typed array");
             return;
         }
-        size_t need = pixel_bytes(format, type, width, height);
-        if (need && bytes.len < need) {
+        size_t need;
+        if (!pixel_bytes(ctx, format, type, width, height, false, &need))
+            return;
+        if (bytes.len < need) {
             ctx->synth_error = GL_INVALID_OPERATION;
             return;
         }
@@ -1486,8 +1547,9 @@ static void read_pixels(const FunctionCallbackInfo<Value> &info, GLContext *ctx)
         return;
     }
     Local<ArrayBufferView> view = info[6].As<ArrayBufferView>();
-    size_t need = pixel_bytes(format, type, width, height);
-    if (need && view->ByteLength() < need) {
+    size_t need;
+    if (!pixel_bytes(ctx, format, type, width, height, true, &need)) return;
+    if (view->ByteLength() < need) {
         ctx->synth_error = GL_INVALID_OPERATION;
         return;
     }

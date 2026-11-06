@@ -94,8 +94,20 @@ WebGL module owns no image or canvas memory.
 §5.14.8: they transform RGBA8 host sources (rows reversed, RGB multiplied by
 alpha) and are ignored for `ArrayBufferView` uploads. `UNPACK_ALIGNMENT`,
 `PACK_ALIGNMENT`, `UNPACK_ROW_LENGTH` and `PACK_ROW_LENGTH` are stored and
-forwarded to GL. A view smaller than the requested width x height x format size
-records `INVALID_OPERATION` instead of reading past its end.
+forwarded to GL. Alignment must be 1, 2, 4 or 8 and row length must be
+nonnegative; invalid values record `INVALID_VALUE` without changing state.
+Array views must cover `stride * (height - 1) + width * bytesPerPixel`, where
+`stride = align_up((rowLength || width) * bytesPerPixel, alignment)`; empty
+regions require no bytes. Readback uses PACK state and uploads use UNPACK state.
+Short views or overflowing sizes record `INVALID_OPERATION` before GL can
+access their memory. Unknown formats or types (including currently unsupported
+RED/RG, integer, luminance and packed pixel layouts) record `INVALID_ENUM`
+instead of bypassing validation.
+
+Host uploads accept RGBA/UNSIGNED_BYTE rasters; other layouts record
+`INVALID_OPERATION`. They temporarily use row length 0 and alignment 1,
+then restore the caller's UNPACK state, so odd-width canvases remain tightly
+packed regardless of the typed-array layout.
 
 ## Framebuffers, renderbuffers and stencil
 
@@ -114,8 +126,8 @@ leaves the colour attachment unchanged, exactly as the hardware does; the
 ## Readback and the minimal shader path
 
 `readPixels(x, y, width, height, format, type, view)` copies into the caller's
-typed array, which stays JS-owned. The view must be at least
-width x height x format size or the context records `INVALID_OPERATION`.
+typed array, which stays JS-owned. Its byte length must cover the PACK layout
+described above or the context records `INVALID_OPERATION`.
 Readback works from a bound framebuffer and from the default framebuffer after
 `bindFramebuffer(FRAMEBUFFER, null)`.
 
@@ -144,8 +156,9 @@ call site cannot change JS-visible behaviour.
 Every GL object wrapper owns exactly one GL name: buffers, vertex arrays,
 textures, framebuffers, renderbuffers, shaders and programs. `delete*()` frees
 the name now and marks the wrapper dead; GC only queues the name, and the main
-thread drains that queue (`webgl_drain()`, or the next GL call if the frame loop
-has not reached the end of its frame yet). Using a dead or foreign-context
+thread drains that queue through `webgl_drain()` or the next GL call. The frame
+loop must call `webgl_drain()` at end of frame to satisfy §15.8; that integration
+still requires a follow-up card owning `game_loop.c`. Using a dead or foreign-context
 wrapper reports `INVALID_OPERATION` on the next `getError()`, exactly like a
 WebGL call after `delete*()`. Deleting or forgetting a wrapper never frees a
 `Local` held elsewhere. Player code never sees a raw GL name.
