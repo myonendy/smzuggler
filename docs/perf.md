@@ -227,6 +227,22 @@ text, so a host name, user name or absolute path in the inputs cannot reach
 the Markdown. This card does not commit the generated report and posts
 nothing.
 
+## Map 92 JIT-less comparison (M1)
+
+Spec §6.1 step 5 and the §9 M1 exit need the same Map 92 route measured twice:
+with V8's JIT and with `--js-flags=--jitless`. The build, route, warm-up and
+scored window are identical; only that flag may differ. JS time is
+`timers_ms + jobs_ms + raf_ms` per frame from the frame-time CSV, reported as
+mean and nearest-rank p95/p99, with peak RSS from `/usr/bin/time -v` for
+memory.
+
+The report is [Map 92 JIT-less comparison](perf/m1-jitless.md). It records the
+§14.4 machine-state block, the exact owner rerun recipe and the measured
+table; the owner fills both rows on dev-laptop on battery with `power-saver`.
+The worker preflight could not open a GPU window or meet the battery state,
+so the table stays empty rather than carrying invented or software-renderer
+numbers.
+
 ## Binary size
 
 Spec §9 (M0) asks for a size baseline before V8, ICU (Q8) and ANGLE (Q5)
