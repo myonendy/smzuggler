@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The smzuggler contributors
 // Modified 2026-11-05: remove former engine migration contracts.
+// Modified 2026-11-05: apply host --js-flags before the isolate starts
+// (card M1-T029).
 // Modified 2026-11-04: bound JS recursion below the available main thread stack.
 // Modified 2026-11-04: explicit microtask checkpoints and exception-safe nextTick priority.
 // Modified 2026-11-05: report a throwing tick once, without repeating the
@@ -70,6 +72,12 @@ namespace {
 
 // Isolate data slot holding the JSEngine (slot 0 is jsb's runtime).
 constexpr uint32_t kEngineSlot = 1;
+
+// The validated host --js-flags value held until js_engine_init applies it,
+// and whether V8 has been configured for this process. Both are main-thread
+// only; V8 freezes its flags when the platform starts.
+std::string g_pending_js_flags;
+bool g_js_flags_frozen = false;
 
 // A rejected promise with no handler yet, held until the next checkpoint.
 struct Rejection {
@@ -759,12 +767,23 @@ static size_t main_stack_kib() {
 
 extern "C" {
 
+// Stores the host's validated --js-flags value for the next js_engine_init.
+// Why: V8 reads process-wide flags only before its platform starts, and
+// js_engine_init also supplies the stack size computed for the main thread.
+// Applying the user flags last lets an explicit --stack-size win. `flags` is
+// borrowed and copied; NULL or "" clears the pending value. Returns false once
+// V8 has started, when the flags could no longer take effect. Main thread only.
+bool js_engine_set_js_flags(const char *flags) {
+    if (g_js_flags_frozen) return false;
+    g_pending_js_flags = flags ? flags : "";
+    return true;
+}
+
 // See js_engine.h. The V8 platform is started by jsb on first use and lives
 // until exit; ICU data comes from SMZ_V8_ICU_DATA_PATH (CMakeLists.txt).
 JSEngine *js_engine_init(void) {
     // Process-wide flags must precede the first isolate, including cache keys.
-    static bool flags_set = false;
-    if (!flags_set) {
+    if (!g_js_flags_frozen) {
         size_t kib = main_stack_kib();
         if (!kib) {
             std::fprintf(stderr, "js_engine: cannot determine a safe main thread stack limit\n");
@@ -774,7 +793,9 @@ JSEngine *js_engine_init(void) {
         std::snprintf(flag, sizeof(flag), "--stack-size=%zu", kib);
         if (!jsb_set_flags(flag)) return nullptr;
         std::fprintf(stderr, "js_engine: main thread %s (KiB)\n", flag);
-        flags_set = true;
+        if (!g_pending_js_flags.empty() && !jsb_set_flags(g_pending_js_flags.c_str()))
+            return nullptr;
+        g_js_flags_frozen = true;
     }
     JSEngine *engine = new JSEngine();
     engine->rt = jsb_runtime_create("smzuggler", SMZ_V8_ICU_DATA_PATH);

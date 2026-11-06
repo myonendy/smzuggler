@@ -2,6 +2,7 @@
 SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (C) 2026 The smzuggler contributors
 Modified 2026-11-01: document the Map 92 report tool and owner-run recipe.
+Modified 2026-11-05: document --js-flags and the V8 perf record recipe.
 How to record a CPU profile (tools/perf/attribute.py), turn a Map 92 run into
 the M0 report (tools/perf/map92_report.py), and measure the shipped binary
 (tools/perf/binsize.py). Repository tooling, not part of the runtime.
@@ -35,9 +36,53 @@ perf script -i run.perf.data > run.perf.txt
 - Pin the frame count in control mode, so runs are comparable, and cross-check
   against `GameLoopStats` per phase (§6.1).
 - DWARF unwinding writes large files; keep runs short (a few hundred frames).
-- For V8 builds (M1 on), add `--perf-prof` (or `--perf-basic-prof`) so JIT
-  frames resolve through `/tmp/perf-<pid>.map`; only then are shim JS and game
-  JS separable. Under QuickJS, all JS time lands in the interpreter bucket.
+- For V8 builds (M1 on), use [`--js-flags`](#v8-flags---js-flags) to add
+  `--perf-prof` and inject the JIT dump; only then are shim JS and game JS
+  separable from native code.
+
+## V8 flags (`--js-flags`)
+
+`--js-flags=VALUE` (or the two-argument `--js-flags VALUE`) passes a
+whitespace-separated list of V8 flags to the runtime. The runtime applies them
+before it creates the first isolate, so they take effect for every script.
+The value must be one of the seven flags below; an unknown or malformed token
+prints `Invalid --js-flags flag: ...` and exits with status 2, before a window
+is opened. A numeric flag accepts both `--flag=N` and `--flag N`, as V8 does.
+If the option repeats, the last value wins, as `--data-dir` does.
+
+| Flag | What it does | How to use it |
+| --- | --- | --- |
+| `--perf-prof` | V8 writes `jit-<pid>.dump` in the working directory. It records JIT code maps in Linux perf's jitdump format. | `perf inject --jit -i run.perf.data -o run.jit.perf.data`, then `perf script`. `tools/perf/record.sh` does both. |
+| `--perf-basic-prof` | V8 writes `/tmp/perf-<pid>.map`, the older perf-map format. | Let `perf script`/`perf report` read the map; no injection step. Copy the map with the recording if it must outlive the host. |
+| `--prof` | V8 writes `v8.log`, the tick log. | Process it with the matching V8 build's `--prof-process` (or `tools/linux-tick-processor`) to get JS-level ticks. |
+| `--trace-gc` | Prints Scavenge and Mark-Compact events, sizes and pauses on stdout. | Use it around the 1.0 s and 3.6 s spikes of §6.1; keep the output as a run artifact, not in the repository. |
+| `--jitless` | Runs JavaScript without the JIT. | The M1 measurement in §6.1 step 5; do not use it for a normal frame budget. |
+| `--max-old-space-size=N` | Sets the old-generation heap limit to `N` MiB. | Compare GC pauses and memory against the default for a large scene. |
+| `--stack-size=N` | Sets the V8 recursion limit to `N` KiB. | Overrides the runtime's own value, computed from the free main-thread stack. Keep it below the native stack or a deep recursion can overflow the process stack. |
+
+The flag hash is part of the code-cache key: `js_engine_v8.cc` passes V8's
+`CachedDataVersionTag` (which combines the V8 version and the current flag
+list) to `js_codecache_key`, so changing any flag writes a new `.bin` cache
+file and never consumes a cache compiled under another profiler configuration.
+The flag value itself is not logged.
+
+### perf record with JIT symbols
+
+`tools/perf/record.sh` wraps the §6.1 recording step with `--perf-prof` and
+jitdump injection:
+
+```sh
+tools/perf/record.sh --out run/perf -- \
+    ./build/smzuggler-rt --game <game-dir> <control-mode options>
+```
+
+It runs `perf record -g --call-graph dwarf -e cycles:u -F 499`, moves this
+run's `jit-<pid>.dump` into `run/perf/`, injects it with `perf inject --jit`
+and writes `run/perf/run.perf.txt` for `attribute.py`. To use the older map
+format instead, pass `--js-flags=--perf-basic-prof`; the script then skips the
+injection step. Any other allow-listed flag or combination can be passed the
+same way, for example `--js-flags="--trace-gc"` for a separate GC log run.
+Keep captured profiles, `v8.log`, JIT dumps and maps out of the repository.
 
 ## Attributing
 

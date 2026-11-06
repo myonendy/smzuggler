@@ -9,11 +9,14 @@
  * Modified 2026-11-01: default logs, .jsc cache and config to host data dirs.
  *
  * Modified 2026-11-04: keep runtime services on the process main thread.
+ * Modified 2026-11-05: validate and forward --js-flags to V8 before startup
+ * (card M1-T029).
  *
  * Runtime entry point; owns startup and shutdown on the main thread.
  * See docs/DECISIONS.md (DEC-M0-T001) for identity ownership.
  */
 
+#include <ctype.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -117,6 +120,145 @@ bool rmmz_resolve_log_dir(int argc, char **argv, const char *game_dir,
     return true;
 }
 
+/* Largest --js-flags value accepted, including its trailing NUL. V8 accepts
+ * more, but a diagnostic run needs only a handful of words, and a bound keeps
+ * the parser's stack buffer small. */
+#define SMZ_JS_FLAGS_MAX 512
+
+/** True when FLAG is a boolean flag on the --js-flags allow-list.
+ * Why: a user must not reach arbitrary V8 switches (some write files or change
+ * security-relevant behaviour), so the runtime names the profiler and
+ * measurement flags of spec section 6.1 and accepts nothing else. FLAG is
+ * borrowed and NUL-terminated; no state is kept. */
+static bool js_flag_is_boolean(const char *flag)
+{
+    static const char *const allowed[] = {
+        "--perf-prof", "--perf-basic-prof", "--prof", "--trace-gc", "--jitless",
+    };
+    size_t i;
+    for (i = 0; i < sizeof(allowed) / sizeof(allowed[0]); i++)
+        if (strcmp(flag, allowed[i]) == 0) return true;
+    return false;
+}
+
+/** True when FLAG is `--name=<digits>` for an allowed numeric V8 flag.
+ * `name` is borrowed ("--max-old-space-size" or "--stack-size"); an empty,
+ * signed or non-numeric value is refused so V8 never sees a malformed switch.
+ * `flag` is borrowed and NUL-terminated. */
+static bool js_flag_has_uint(const char *flag, const char *name)
+{
+    size_t n = strlen(name);
+    const char *p;
+    if (strncmp(flag, name, n) != 0 || flag[n] != '=') return false;
+    p = flag + n + 1;
+    if (*p == '\0') return false;
+    for (; *p; p++)
+        if (!isdigit((unsigned char)*p)) return false;
+    return true;
+}
+
+/** True when FLAG is one of the seven V8 flags the runtime allows, with a
+ * numeric value attached as `=N`. The profiler and measurement flags are
+ * documented in docs/perf.md; the two numeric ones keep their V8 units
+ * (old-space MiB, stack KiB). FLAG is borrowed. */
+static bool js_flag_allowed(const char *flag)
+{
+    return js_flag_is_boolean(flag) ||
+           js_flag_has_uint(flag, "--max-old-space-size") ||
+           js_flag_has_uint(flag, "--stack-size");
+}
+
+/** True when TOKEN is an allowed numeric flag name without its value; V8 also
+ * accepts the documented `--flag value` form, which this lets the caller see.
+ * TOKEN is borrowed. */
+static bool js_flag_wants_uint(const char *token)
+{
+    return strcmp(token, "--max-old-space-size") == 0 ||
+           strcmp(token, "--stack-size") == 0;
+}
+
+/** True when TOKEN is one or more decimal digits and so a valid value for a
+ * numeric V8 flag. TOKEN is borrowed and NUL-terminated. */
+static bool js_flag_is_uint(const char *token)
+{
+    if (!token[0]) return false;
+    for (; *token; token++)
+        if (!isdigit((unsigned char)*token)) return false;
+    return true;
+}
+
+/** Returns the first token in WORK that is not on the allow-list, or NULL when
+ * every token is valid; a numeric flag name with no following value returns
+ * that name. Why: the caller reports one bad token, and V8 accepts both
+ * `--flag=N` and `--flag N`, so the check has to look one token ahead. WORK is
+ * NUL-terminated and is modified in place by the token split; its bytes stay
+ * valid for the caller's error message. Main thread only. */
+static const char *js_flags_bad_token(char *work)
+{
+    char *p = work;
+    const char *pending = NULL;
+    while (*p) {
+        char *start;
+        while (*p && isspace((unsigned char)*p)) p++;
+        if (!*p) break;
+        start = p;
+        while (*p && !isspace((unsigned char)*p)) p++;
+        if (*p) *p++ = '\0';
+        if (pending) {
+            if (!js_flag_is_uint(start))
+                return start[0] == '-' ? pending : start;
+            pending = NULL;
+        } else if (js_flag_wants_uint(start)) {
+            pending = start;
+        } else if (!js_flag_allowed(start)) {
+            return start;
+        }
+    }
+    return pending;
+}
+
+/** Copies the last `--js-flags=VALUE` or `--js-flags VALUE` from ARGV into OUT.
+ * Why: V8 flags must be set before the isolate exists, and an unknown switch
+ * must stop the process with status 2 rather than reach V8. The last occurrence
+ * wins, as --data-dir does. `out` is caller-owned and always NUL-terminated on
+ * success; returns 0 when there is no flag or it is valid, 2 after printing the
+ * first bad token to stderr. ARGV is borrowed; main thread only. */
+int smz_js_flags_parse(int argc, char **argv, char *out, size_t out_size)
+{
+    const char *value = NULL;
+    const char *bad;
+    char work[SMZ_JS_FLAGS_MAX];
+    int i;
+    if (out && out_size) out[0] = '\0';
+    for (i = 1; argv && i < argc; i++) {
+        if (!argv[i]) continue;
+        if (strcmp(argv[i], "--js-flags") == 0) {
+            if (i + 1 >= argc || !argv[i + 1]) {
+                fprintf(stderr, "Invalid --js-flags: missing value\n");
+                return 2;
+            }
+            value = argv[++i];
+        } else if (strncmp(argv[i], "--js-flags=", 11) == 0) {
+            value = argv[i] + 11;
+        }
+    }
+    if (!value || !value[0]) return 0;
+    if (!out || out_size == 0 || strlen(value) >= out_size ||
+        strlen(value) >= sizeof(work)) {
+        fprintf(stderr, "Invalid --js-flags: value is too long\n");
+        return 2;
+    }
+    snprintf(out, out_size, "%s", value);
+    snprintf(work, sizeof(work), "%s", value);
+    bad = js_flags_bad_token(work);
+    if (bad) {
+        fprintf(stderr, "Invalid --js-flags flag: %s\n", bad);
+        out[0] = '\0';
+        return 2;
+    }
+    return 0;
+}
+
 /* Compile-time seam so tests/test_data_dir.c can link this helper without
  * pulling the rest of the runtime or a second main(). */
 #ifndef RMMZ_TEST_DATA_DIR
@@ -154,6 +296,11 @@ bool rmmz_resolve_log_dir(int argc, char **argv, const char *game_dir,
 #include "io/file_io.h"
 #include "platform/win_console.h"
 #include "platform/android_support.h"
+
+/* js_engine_v8.cc stores the validated --js-flags value for js_engine_init.
+   js_engine.h is outside this card's file list, so the entry point is declared
+   here, where the only caller lives (card M1-T029). */
+bool js_engine_set_js_flags(const char *flags);
 
 #include <SDL3/SDL.h>
 /* SDL3 dropped the SDL2main library: including this header in the file that
@@ -345,6 +492,12 @@ static int runtime_main(int argc, char *argv[])
     /* Android: printf output is lost unless routed to logcat. No-op elsewhere. */
     android_support_init_logging();
 
+    /* V8 flags must be validated before the window or the isolate exists, so
+       a bad --js-flags is a usage error (status 2), not a half-started run. */
+    char js_flags[SMZ_JS_FLAGS_MAX];
+    int js_flags_status = smz_js_flags_parse(argc, argv, js_flags, sizeof js_flags);
+    if (js_flags_status != 0) return js_flags_status;
+
     /* Parse command-line arguments. */
     const char *game_dir = NULL;
     const char *shim_dir = "src/shims";
@@ -413,6 +566,12 @@ static int runtime_main(int argc, char *argv[])
             control_mode = true;
         } else if (strcmp(argv[i], "--no-audio") == 0) {
             no_audio = 1;
+        } else if (strcmp(argv[i], "--js-flags") == 0 && i + 1 < argc) {
+            /* Validated above; skip the value so it is never the game path. */
+            i++;
+        } else if (strncmp(argv[i], "--js-flags=", 11) == 0) {
+            /* Validated above. */
+            continue;
         } else if (strcmp(argv[i], "--data-dir") == 0 ||
                    strncmp(argv[i], "--data-dir=", 11) == 0) {
             /* Log dir. smz_host_dirs / rmmz_resolve_log_dir read argv later. */
@@ -560,7 +719,14 @@ static int runtime_main(int argc, char *argv[])
 #endif
                       );
 
-    JSEngine *js = js_engine_init();
+    JSEngine *js;
+    if (js_flags[0] && !js_engine_set_js_flags(js_flags)) {
+        fatal_error("Failed to set --js-flags before V8 started");
+        platform_shutdown(platform);
+        error_handler_shutdown();
+        return 1;
+    }
+    js = js_engine_init();
     if (!js) {
         fatal_error("Failed to initialize JS engine");
         platform_shutdown(platform);
